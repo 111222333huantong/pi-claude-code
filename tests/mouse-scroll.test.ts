@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	disableOfficialScrollToEnd,
 	renderScrollButton,
 	resetScrollButtonState,
 	scheduleScrollButtonSync,
@@ -57,6 +58,26 @@ test("scroll button: schedule → immediate teardown → reinstall stays safe", 
 	);
 
 	// 3. 清理
+	resetScrollButtonState();
+	setToolMouseTui(null);
+});
+
+// 0.85 关掉官方 overlay，本仓库 dock 按钮照常。
+test("scroll button: disable official overlay keeps dock button", async () => {
+	const { tui, count } = lazyFullscreenTui();
+	tui.scrollToEndIndicator = () => "Jump to latest message";
+	setToolMouseTui(tui);
+	disableOfficialScrollToEnd(tui);
+	assert.equal(tui.scrollToEndIndicator, undefined);
+
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.ok(count() >= 1);
+	assert.ok(
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
+		"关掉官方 overlay 后 dock 按钮仍可见",
+	);
+
 	resetScrollButtonState();
 	setToolMouseTui(null);
 });

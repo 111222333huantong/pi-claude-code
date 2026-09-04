@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 type AnyToolDefinition = ToolDefinition<any, any, any>;
+import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	humanizeMcpToolName,
@@ -175,6 +176,8 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 });
 
 test("MCP detection, titles, details, and custom tools use the global wrapper", async () => {
+	const previousOutputLines = config.expandedOutputMaxLines;
+	config.expandedOutputMaxLines = 80;
 	assert.equal(isMcpToolDefinition({ label: "MCP: Files" }, "read_file"), true);
 	assert.equal(isMcpToolDefinition({}, "mcp__filesystem__read_file"), true);
 	assert.equal(isMcpToolDefinition({ description: "Model Context Protocol tool" }, "remote"), true);
@@ -346,6 +349,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		duplicate.setExpanded(true);
 		assert.doesNotMatch(duplicate.render(100).join("\n"), /Details:/);
 	} finally {
+		config.expandedOutputMaxLines = previousOutputLines;
 		await events.get("session_shutdown")?.({}, ctx);
 	}
 });

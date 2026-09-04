@@ -182,6 +182,12 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).inputClip, 100);
 	assert.equal(normalizeConfig({ inputClip: 40 }).inputClip, 40);
 	assert.match(formatConfigStatus(normalizeConfig({})), /inputClip=100/);
+	assert.equal(normalizeConfig({}).expandedInputMaxLines, 5);
+	assert.equal(normalizeConfig({}).expandedOutputMaxLines, 10);
+	assert.equal(normalizeConfig({ expandedInputMaxLines: 20 }).expandedInputMaxLines, 20);
+	assert.equal(normalizeConfig({ expandedOutputMaxLines: 40 }).expandedOutputMaxLines, 40);
+	assert.match(formatConfigStatus(normalizeConfig({})), /expandedInput=5/);
+	assert.match(formatConfigStatus(normalizeConfig({})), /expandedOutput=10/);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {

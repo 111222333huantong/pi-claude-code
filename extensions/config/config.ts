@@ -49,6 +49,8 @@ export type Config = {
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
+	expandedInputMaxLines: number;
+	expandedOutputMaxLines: number;
 	inputClip: number;
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
@@ -75,6 +77,10 @@ export const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"]
 export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
 export const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
+/** 展开工具卡 Input 可见行数预设。 */
+export const EXPANDED_INPUT_MAX_LINES_VALUES = ["5", "10", "20", "40", "80"];
+/** 展开工具卡 Output 可见行数预设。 */
+export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 /** 工具摘要里 path/command 等输入的折叠字符数。 */
 export const INPUT_CLIP_VALUES = ["40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
@@ -104,6 +110,8 @@ export const DEFAULT_CONFIG: Config = {
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
+	expandedInputMaxLines: 5,
+	expandedOutputMaxLines: 10,
 	inputClip: 100,
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
@@ -182,6 +190,18 @@ export function normalizeConfig(input: unknown): Config {
 			10,
 			50_000,
 		),
+		expandedInputMaxLines: pickPositiveInt(
+			source.expandedInputMaxLines,
+			DEFAULT_CONFIG.expandedInputMaxLines,
+			1,
+			5_000,
+		),
+		expandedOutputMaxLines: pickPositiveInt(
+			source.expandedOutputMaxLines,
+			DEFAULT_CONFIG.expandedOutputMaxLines,
+			1,
+			5_000,
+		),
 		inputClip: pickPositiveInt(source.inputClip, DEFAULT_CONFIG.inputClip, 8, 500),
 		useSummaryTitlesAsThinkingTitle: source.useSummaryTitlesAsThinkingTitle !== false,
 		previewLines: pickPositiveInt(
@@ -241,6 +261,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`writeCollapsed=${source.writeDiffCollapsedLines}`,
 		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
 		`expandedMax=${source.expandedPreviewMaxLines}`,
+		`expandedInput=${source.expandedInputMaxLines}`,
+		`expandedOutput=${source.expandedOutputMaxLines}`,
 		`inputClip=${source.inputClip}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,

@@ -79,6 +79,11 @@ export function fullscreenLazyTui(tui: any): boolean {
 	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
 }
 
+/** 关掉 pi 0.85 Jump to latest overlay，避免和本仓库 dock 按钮叠两层。 */
+export function disableOfficialScrollToEnd(tui: any): void {
+	if (typeof tui?.scrollToEndIndicator === "function") tui.scrollToEndIndicator = undefined;
+}
+
 /** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
 export function isFullscreenAtBottom(tui: any): boolean {
 	const following = tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true;

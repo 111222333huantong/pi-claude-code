@@ -53,6 +53,12 @@ export function isSgrLeftPress(packet: SgrMousePacket): boolean {
 	return packet.final === "M" && baseButton === 0 && (packet.code & 32) === 0;
 }
 
+/** 是否为左键松开。 */
+export function isSgrLeftRelease(packet: SgrMousePacket): boolean {
+	const baseButton = mouseBaseButton(packet.code);
+	return packet.final === "m" && baseButton === 0 && (packet.code & 32) === 0;
+}
+
 /** 剥离修饰键位（4/8/16/32：shift/meta/ctrl/motion），得到基础按键码。 */
 export function mouseBaseButton(code: number): number {
 	return code & ~(4 | 8 | 16 | 32);

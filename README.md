@@ -61,8 +61,6 @@ pi install git:github.com/minuque/pi-cc-extensions
   "editDiffCollapsedLines": 24,            // Edit 折叠行数，超出显示展开提示
   "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
   "diffWordWrap": true,                    // 长 diff 行换行
-  "expandedPreviewMaxLines": 40,           // 展开正文最大行数
-  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
@@ -71,6 +69,10 @@ pi install git:github.com/minuque/pi-cc-extensions
   "dimThinkingText": false,                // thinking 正文用 dim 色
 
   // ui
+  "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
+  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
+  "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
+  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "scrollStepLines": 3,                    // fullscreen 滚轮步进
 
@@ -84,7 +86,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
-> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要，双击展开面板收起。
+> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览。双击展开面板收起。
 >
 > **建议**：`markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
 

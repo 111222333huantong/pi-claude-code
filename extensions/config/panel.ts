@@ -17,6 +17,8 @@ import {
 	DIFF_SPLIT_MIN_WIDTH_VALUES,
 	DIFF_VIEW_MODES,
 	EXCLUDE_RENDERER_CANDIDATES,
+	EXPANDED_INPUT_MAX_LINES_VALUES,
+	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
@@ -327,11 +329,31 @@ export async function showCcstylePanel(
 			currentValue: config.diffWordWrap ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const expandedInputSetting = {
+			id: "expandedInputMaxLines",
+			label: "Expanded input lines",
+			description:
+				"Max Input section lines in an expanded tool card. Overflow shows click to show more. Default 5.",
+			currentValue: String(config.expandedInputMaxLines),
+			values: [...EXPANDED_INPUT_MAX_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, expandedInputSetting, closeSubmenu),
+		};
+		const expandedOutputSetting = {
+			id: "expandedOutputMaxLines",
+			label: "Expanded output lines",
+			description:
+				"Max Output section lines in an expanded tool card. Overflow shows click to show more. Default 10.",
+			currentValue: String(config.expandedOutputMaxLines),
+			values: [...EXPANDED_OUTPUT_MAX_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, expandedOutputSetting, closeSubmenu),
+		};
 		const expandedMaxSetting = {
 			id: "expandedPreviewMaxLines",
 			label: "Expanded max lines",
 			description:
-				"Max Output/diff body lines when expanded. Default 40 keeps the TUI compact; raise for large dumps.",
+				"Max diff/TaskList body lines when expanded. Tool Input/Output use the two settings above.",
 			currentValue: String(config.expandedPreviewMaxLines),
 			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -512,6 +534,28 @@ export async function showCcstylePanel(
 						? "Long diff lines wrap within the panel width."
 						: "Long diff lines are truncated to the panel width.";
 					break;
+				case "expandedInputMaxLines":
+					updateConfig({
+						expandedInputMaxLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.expandedInputMaxLines,
+							1,
+							5_000,
+						),
+					});
+					expandedInputSetting.currentValue = String(config.expandedInputMaxLines);
+					break;
+				case "expandedOutputMaxLines":
+					updateConfig({
+						expandedOutputMaxLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.expandedOutputMaxLines,
+							1,
+							5_000,
+						),
+					});
+					expandedOutputSetting.currentValue = String(config.expandedOutputMaxLines);
+					break;
 				case "expandedPreviewMaxLines":
 					updateConfig({
 						expandedPreviewMaxLines: pickPositiveInt(
@@ -580,8 +624,6 @@ export async function showCcstylePanel(
 					diffCollapsedSetting,
 					writeDiffCollapsedSetting,
 					diffWordWrapSetting,
-					expandedMaxSetting,
-					inputClipSetting,
 				],
 			},
 			{
@@ -597,7 +639,14 @@ export async function showCcstylePanel(
 			{
 				id: "ui",
 				label: "UI",
-				items: [startupHeaderSetting, scrollStepSetting],
+				items: [
+					expandedInputSetting,
+					expandedOutputSetting,
+					expandedMaxSetting,
+					inputClipSetting,
+					startupHeaderSetting,
+					scrollStepSetting,
+				],
 			},
 			{
 				id: "feature",

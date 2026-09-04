@@ -204,7 +204,7 @@ export class ExpandedToolResultText {
 	}
 }
 
-/** Affordance next to truncated Input/Output headers — click opens full preview. */
+/** 截断体末行 `… +N more lines` 旁的展开提示，点击打开全量预览。 */
 export const SHOW_MORE_LABEL = "• click to show more";
 
 export type ToolIoSection = "input" | "output";
@@ -251,8 +251,8 @@ export class ExpandedToolIoView {
 		inputBody: string,
 		outputBody: string,
 		isError: boolean,
-		maxOutputLines = config.expandedPreviewMaxLines,
-		maxInputLines = config.expandedPreviewMaxLines,
+		maxOutputLines = config.expandedOutputMaxLines,
+		maxInputLines = config.expandedInputMaxLines,
 		flushLeft = false,
 	) {
 		this.theme = theme;
@@ -309,12 +309,12 @@ export class ExpandedToolIoView {
 		this.invalidate();
 	}
 
-	/** True when the plain header line is a truncated section with show-more. */
+	/** True when the plain truncation footer carries show-more. Input 续行带 │，Output 不带。 */
 	matchShowMoreLine(plainLine: string): ToolIoSection | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
-		if (!line.includes(` • ${showMoreHintText()}`)) return null;
-		if (/\bInput\b/.test(line) && this.truncated.input) return "input";
-		if (/\bOutput\b/.test(line) && this.truncated.output) return "output";
+		if (!line.includes(` • ${showMoreHintText()}`) || !/\+\d+ more lines/.test(line)) return null;
+		if (this.truncated.input && line.includes("│")) return "input";
+		if (this.truncated.output) return "output";
 		return null;
 	}
 
@@ -360,24 +360,13 @@ export class ExpandedToolIoView {
 		this.truncated = { input: false, output: false };
 		this.showMoreHeaderRows = {};
 
-		const pushHeader = (
-			corner: "├" | "└",
-			label: string,
-			section: ToolIoSection,
-			showMore: boolean,
-		) => {
+		const pushHeader = (corner: "├" | "└", label: string) => {
 			const mark = theme.fg("dim", `${lead}${corner} `);
 			const title = theme.fg(
 				"accent",
 				typeof theme.bold === "function" ? theme.bold(label) : label,
 			);
-			// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
-			const more = showMore
-				? theme.fg("dim", " •") +
-					theme.fg(this.hoveredSection === section ? "text" : "dim", ` ${showMoreHintText()}`)
-				: "";
-			if (showMore) this.showMoreHeaderRows[section] = lines.length;
-			lines.push(truncateToWidth(mark + title + more, safeWidth, ""));
+			lines.push(truncateToWidth(mark + title, safeWidth, ""));
 		};
 
 		const pushRailLine = (styledContent: string, continued = true) => {
@@ -400,7 +389,7 @@ export class ExpandedToolIoView {
 
 		const pushBody = (
 			body: string,
-			opts: { input?: boolean; limit: number; continued?: boolean },
+			opts: { input?: boolean; limit: number; continued?: boolean; section: ToolIoSection },
 		): boolean /* truncated */ => {
 			const raw = body.replace(/\t/g, "   ").replace(/\n+$/, "");
 			if (!raw.trim()) {
@@ -423,7 +412,15 @@ export class ExpandedToolIoView {
 			if (truncated) {
 				const hidden = Math.max(0, wrapped.length - visible.length);
 				if (hidden > 0) {
-					pushRailLine(theme.fg("dim", `… +${hidden} more lines`), opts.continued);
+					// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
+					const more =
+						theme.fg("dim", " •") +
+						theme.fg(
+							this.hoveredSection === opts.section ? "text" : "dim",
+							` ${showMoreHintText()}`,
+						);
+					pushRailLine(theme.fg("dim", `… +${hidden} more lines`) + more, opts.continued);
+					this.showMoreHeaderRows[opts.section] = lines.length - 1;
 				}
 			}
 			return truncated;
@@ -447,20 +444,29 @@ export class ExpandedToolIoView {
 
 		if (hasInput) {
 			this.truncated.input = inputWouldTruncate;
-			pushHeader("├", "Input", "input", inputWouldTruncate);
+			pushHeader("├", "Input");
 			pushBody(this.inputBody, {
 				input: true,
 				limit: this.maxInputLines,
 				continued: true,
+				section: "input",
 			});
 			pushBlankRail();
 			this.truncated.output = outputWouldTruncate;
-			pushHeader("└", "Output", "output", outputWouldTruncate);
-			pushBody(outputText, { limit: this.maxOutputLines, continued: false });
+			pushHeader("└", "Output");
+			pushBody(outputText, {
+				limit: this.maxOutputLines,
+				continued: false,
+				section: "output",
+			});
 		} else {
 			this.truncated.output = outputWouldTruncate;
-			pushHeader("└", "Output", "output", outputWouldTruncate);
-			pushBody(outputText, { limit: this.maxOutputLines, continued: false });
+			pushHeader("└", "Output");
+			pushBody(outputText, {
+				limit: this.maxOutputLines,
+				continued: false,
+				section: "output",
+			});
 		}
 
 		this.cachedWidth = width;
@@ -663,13 +669,21 @@ export function renderExpandedToolResult(
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
 	const inputBody = formatToolInputArgs(args);
 	const outputBody = body;
-	const maxLines = config.expandedPreviewMaxLines;
+	const maxOutputLines = config.expandedOutputMaxLines;
+	const maxInputLines = config.expandedInputMaxLines;
 
 	// Prefer structured Input/Output when we have args or non-empty output.
 	if (inputBody.trim() || outputBody.trim()) {
 		let view: ExpandedToolIoView;
 		if (isExpandedToolIoView(lastComponent)) {
-			lastComponent.setContent(inputBody, outputBody, isError, maxLines, maxLines, flushLeft);
+			lastComponent.setContent(
+				inputBody,
+				outputBody,
+				isError,
+				maxOutputLines,
+				maxInputLines,
+				flushLeft,
+			);
 			view = lastComponent;
 		} else {
 			view = new ExpandedToolIoView(
@@ -677,8 +691,8 @@ export function renderExpandedToolResult(
 				inputBody,
 				outputBody,
 				isError,
-				maxLines,
-				maxLines,
+				maxOutputLines,
+				maxInputLines,
 				flushLeft,
 			);
 		}

@@ -61,8 +61,6 @@ Run `/reload` after installation.
   "editDiffCollapsedLines": 24,            // Edit collapse lines; beyond that shows the expand hint
   "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = creation summary only
   "diffWordWrap": true,                    // wrap long diff lines
-  "expandedPreviewMaxLines": 40,           // max lines for expanded bodies
-  "inputClip": 100,                        // tool summary path/command clip length
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
@@ -71,6 +69,10 @@ Run `/reload` after installation.
   "dimThinkingText": false,                // dim thinking body text
 
   // ui
+  "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
+  "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
+  "expandedPreviewMaxLines": 40,           // max lines for expanded diff/TaskList bodies
+  "inputClip": 100,                        // tool summary path/command clip length
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "scrollStepLines": 3,                    // fullscreen wheel scroll step
 
@@ -84,7 +86,7 @@ Run `/reload` after installation.
 }
 ```
 
-> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. Double-click an expanded panel to collapse it.
+> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. When expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Double-click an expanded panel to collapse it.
 >
 > **Tip**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
 

@@ -2,13 +2,13 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.66 · mode=`on`。
+> 当前版本：ccstyle 0.8.68 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠇ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠼ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
@@ -172,9 +172,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠏ Read extensions/index.ts
- ├ ⠏ Bash npm test
- └ ⠏ Ffgrep extensions/
+ ├ ⠴ Read extensions/index.ts
+ ├ ⠴ Bash npm test
+ └ ⠴ Ffgrep extensions/
 ```
 
 ### 收起：完成/失败
@@ -205,36 +205,7 @@ write 新建 / 覆盖：
  │   L7
  │   L8
  │   L9
- │   L10
- │   L11
- │   L12
- │   L13
- │   L14
- │   L15
- │   L16
- │   L17
- │   L18
- │   L19
- │   L20
- │   L21
- │   L22
- │   L23
- │   L24
- │   L25
- │   L26
- │   L27
- │   L28
- │   L29
- │   L30
- │   L31
- │   L32
- │   L33
- │   L34
- │   L35
- │   L36
- │   L37
- │   L38
- │   L39
+ │   … +30 more lines • click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test

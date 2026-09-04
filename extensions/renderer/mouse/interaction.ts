@@ -19,6 +19,7 @@ import {
 	collectToolComponents,
 	extractToolFramePlacements,
 	isSgrLeftPress,
+	isSgrLeftRelease,
 	isToolExecutionComponent,
 	parseSgrMousePackets,
 	stripTerminalSequences,
@@ -36,6 +37,7 @@ import {
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
+	disableOfficialScrollToEnd,
 	fullscreenLazyTui,
 	hideScrollButton,
 	isScrollBottomInput,
@@ -156,7 +158,11 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 }
 
 const EXPAND_PANEL_DOUBLE_CLICK_MS = 400;
-let lastExpandPanelClick: { id: unknown; at: number } | null = null;
+/** 松开后短时间内的重复按下视为同一次单击（终端会在 mouseup 后再打一次 press）。 */
+const EXPAND_PANEL_CLICK_ARM_MS = 50;
+let pendingExpandPress: { id: unknown } | null = null;
+let lastExpandClick: { id: unknown; at: number } | null = null;
+let armExpandClickTimer: ReturnType<typeof setTimeout> | null = null;
 
 function expandPanelIdentity(card: any): unknown {
 	return card instanceof ThinkingPreviewBlock
@@ -167,17 +173,48 @@ function expandPanelIdentity(card: any): unknown {
 function isExpandPanelDoubleClick(card: any): boolean {
 	const now = Date.now();
 	const id = expandPanelIdentity(card);
-	const prev = lastExpandPanelClick;
-	lastExpandPanelClick = { id, at: now };
-	return Boolean(prev && prev.id === id && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS);
+	const prev = lastExpandClick;
+	pendingExpandPress = { id };
+	if (prev && prev.id === id && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS) {
+		pendingExpandPress = null;
+		lastExpandClick = null;
+		return true;
+	}
+	return false;
+}
+
+function completeExpandPanelClick(): void {
+	if (!pendingExpandPress) return;
+	const click = { id: pendingExpandPress.id, at: Date.now() };
+	pendingExpandPress = null;
+	if (armExpandClickTimer) clearTimeout(armExpandClickTimer);
+	armExpandClickTimer = setTimeout(() => {
+		armExpandClickTimer = null;
+		// 50ms 内又按下：仍是同一次单击，不能武装成双击。
+		if (pendingExpandPress) return;
+		lastExpandClick = click;
+	}, EXPAND_PANEL_CLICK_ARM_MS);
+	if (
+		typeof armExpandClickTimer === "object" &&
+		armExpandClickTimer &&
+		"unref" in armExpandClickTimer
+	) {
+		armExpandClickTimer.unref();
+	}
 }
 
 function clearExpandPanelDoubleClick(): void {
-	lastExpandPanelClick = null;
+	pendingExpandPress = null;
+	lastExpandClick = null;
+	if (armExpandClickTimer) {
+		clearTimeout(armExpandClickTimer);
+		armExpandClickTimer = null;
+	}
 }
 
 function collapseExpandedCard(tui: any, card: any): boolean {
-	if (!isExpandPanelDoubleClick(card)) return false;
+	// 单击也 consume，避免官方链再合成一次 press 把单击当成双击。
+	if (!isExpandPanelDoubleClick(card)) return true;
 	card.setExpanded(false);
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
@@ -333,18 +370,17 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 			const plain = stripTerminalSequencesPreservingLayout(line);
 			const section = view.matchShowMoreLine(plain);
 			if (section) {
+				clearExpandPanelDoubleClick();
 				const box = view.showMoreHitbox(plain);
-				if (box && x + 1 >= box.startCol && x + 1 <= box.endCol) {
-					return tryOpenToolIoShowMore({
-						kind: "show-more",
-						row: 0,
-						startCol: box.startCol,
-						endCol: box.endCol,
-						component,
-						view,
-						section,
-					});
-				}
+				return tryOpenToolIoShowMore({
+					kind: "show-more",
+					row: 0,
+					startCol: box?.startCol ?? 1,
+					endCol: box?.endCol ?? 1,
+					component,
+					view,
+					section,
+				});
 			}
 		}
 		// 双击收起：内部工具仍归所属 group。单击放行官方（选择/链接）。
@@ -461,6 +497,7 @@ function patchFullscreenViewportInput(tui: any): void {
 			if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
 			if (packets && !tui.hasOverlay?.()) {
 				for (const packet of packets) {
+					if (isSgrLeftRelease(packet)) completeExpandPanelClick();
 					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
 						return { consume: true };
 					}
@@ -797,6 +834,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	let consumed = false;
 	for (const packet of packets) {
 		updateToolSummaryHover(getToolMouseTui(), packet);
+		if (isSgrLeftRelease(packet)) completeExpandPanelClick();
 		if (!isSgrLeftPress(packet)) continue;
 		if (toggleToolAtMouseClick(getToolMouseTui(), packet)) {
 			consumed = true;
@@ -879,10 +917,12 @@ export function installToolMouseInteraction(
 		if (isLazyProxyTui(tui)) {
 			patchFullscreenViewportInput(tui);
 			ensureFullscreenToolMouseMotion(tui);
+			disableOfficialScrollToEnd(tui);
 			setScrollButtonWidget({
 				render: (width: number) => {
 					patchFullscreenViewportInput(tui);
 					ensureFullscreenToolMouseMotion(tui);
+					disableOfficialScrollToEnd(tui);
 					return renderScrollButton(width, theme);
 				},
 				invalidate() {},

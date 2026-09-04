@@ -184,6 +184,7 @@ export async function showTextPreview(
 							else if (button === 65) scrollTo(scrollOffset + 3);
 						}
 					},
+
 					render(width: number) {
 						const inner = Math.max(1, width - 2);
 						const escWidth = visibleWidth("[esc]");

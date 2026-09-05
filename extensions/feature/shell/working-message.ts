@@ -282,14 +282,6 @@ const MIN_THINKING_SHOW_MS = 100;
 const TURN_COMPLETION_MS = 2_500;
 
 /**
- * Widget channel (Pi 0.85+): render the spinner as a borderless widget row
- * above the editor instead of Pi core's bordered working row. The core row
- * is hidden while the widget owns the display; environments without widget
- * support (tests, RPC, older Pi) keep the `setWorkingMessage` path below.
- */
-const SPINNER_WIDGET_ID = "pi-cc-extensions:spinner-row";
-
-/**
  * Claude-style working row with verb shimmer. Replaces Pi's default
  * `Working...` while a turn runs; gated by `enableWorkingMessage` in config.
  */
@@ -312,10 +304,6 @@ export default function (pi: ExtensionAPI): void {
 	let activeCtx: { ui: WorkingUi & { theme?: unknown }; hasUI: boolean } | null = null;
 	const activeTools = new Map<string, string>();
 	let startupProgress = false;
-	// Widget channel state — when set, the spinner row renders here and the
-	// core bordered working row stays hidden.
-	let widgetTui: { requestRender?: (hard?: boolean) => void } | null = null;
-	let widgetInstalled = false;
 
 	function tokenCount(): number {
 		return providerOutputTokens || Math.max(0, Math.round(responseLength / 4));
@@ -403,8 +391,6 @@ export default function (pi: ExtensionAPI): void {
 			visibleWidth(rawMessage) > cols ? truncateToWidth(rawMessage, cols, "") : rawMessage;
 		if (!force && nextMessage === lastWorkingMessage) return;
 		lastWorkingMessage = nextMessage;
-		paintSpinnerWidget();
-		if (widgetInstalled) return;
 		try {
 			activeCtx.ui.setWorkingMessage(nextMessage);
 		} catch {
@@ -414,65 +400,11 @@ export default function (pi: ExtensionAPI): void {
 
 	function restoreDefaultWorkingMessage(): void {
 		lastWorkingMessage = null;
-		paintSpinnerWidget();
 		if (!activeCtx?.hasUI) return;
-		if (widgetInstalled) return;
 		try {
 			activeCtx.ui.setWorkingMessage();
 		} catch {
 			/* noop */
-		}
-	}
-
-	/** Push the current row to the widget channel, if installed. */
-	function paintSpinnerWidget(): void {
-		if (!widgetInstalled || !widgetTui) return;
-		try {
-			widgetTui.requestRender?.();
-		} catch {
-			/* noop */
-		}
-	}
-
-	function installSpinnerWidget(ctx: any): void {
-		const ui = ctx?.ui;
-		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		if (typeof ui?.setWidget !== "function") return;
-		try {
-			ui.setWidget(
-				SPINNER_WIDGET_ID,
-				(tui: { requestRender?: (hard?: boolean) => void }) => {
-					widgetTui = tui;
-					return {
-						render: () => (lastWorkingMessage ? [lastWorkingMessage] : []),
-						invalidate() {},
-					};
-				},
-				{ placement: "aboveEditor" },
-			);
-			widgetInstalled = true;
-			if (typeof ui.setWorkingVisible === "function") ui.setWorkingVisible(false);
-		} catch {
-			widgetInstalled = false;
-			widgetTui = null;
-		}
-	}
-
-	function clearSpinnerWidget(ctx: any, restoreCoreRow: boolean): void {
-		widgetInstalled = false;
-		widgetTui = null;
-		const ui = ctx?.ui ?? activeCtx?.ui;
-		try {
-			if (typeof ui?.setWidget === "function") ui.setWidget(SPINNER_WIDGET_ID, undefined);
-		} catch {
-			/* noop */
-		}
-		if (restoreCoreRow) {
-			try {
-				if (typeof ui?.setWorkingVisible === "function") ui.setWorkingVisible(true);
-			} catch {
-				/* noop */
-			}
 		}
 	}
 
@@ -586,18 +518,13 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
 		startupProgress = true;
-		installSpinnerWidget(ctx);
 		if (ctx.hasUI) {
-			const loading = `${CLAUDE_ORANGE}Loading…${RESET}${statusText(" (Reading 1 file, Loading context)")}`;
-			if (widgetInstalled) {
-				lastWorkingMessage = loading;
-				paintSpinnerWidget();
-			} else {
-				try {
-					ctx.ui.setWorkingMessage(loading);
-				} catch {
-					/* noop */
-				}
+			try {
+				ctx.ui.setWorkingMessage(
+					`${CLAUDE_ORANGE}Loading…${RESET}${statusText(" (Reading 1 file, Loading context)")}`,
+				);
+			} catch {
+				/* noop */
 			}
 		}
 	});
@@ -736,13 +663,10 @@ export default function (pi: ExtensionAPI): void {
 		if (activeCtx?.hasUI) {
 			const message = `${STATUS_DIM}✻ Turn took ${formatDuration(elapsed)}${RESET}`;
 			lastWorkingMessage = message;
-			paintSpinnerWidget();
-			if (!widgetInstalled) {
-				try {
-					activeCtx.ui.setWorkingMessage(message);
-				} catch {
-					/* noop */
-				}
+			try {
+				activeCtx.ui.setWorkingMessage(message);
+			} catch {
+				/* noop */
 			}
 			completionTimer = setTimeout(() => {
 				completionTimer = null;
@@ -768,10 +692,9 @@ export default function (pi: ExtensionAPI): void {
 		clearDisplay();
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", async () => {
 		turnActive = false;
 		clearDisplay();
-		clearSpinnerWidget(ctx, true);
 		activeCtx = null;
 	});
 }

@@ -166,3 +166,43 @@ test("圈数字转半角括号（Nerd Font 字形缺陷规避）", () => {
 	assert.strictEqual(run("方案②引入，共⑩项"), "方案(2)引入，共(10)项");
 	assert.ok(run("① ② ⑳").includes("(1) (2) (20)"));
 });
+
+const userCtx = { messageType: "user", isStreaming: false, availableWidth: 100 };
+
+test("用户行内公式转 Unicode（与助手原生同形）", () => {
+	assert.ok(run("inline $\\alpha + \\beta$ end", userCtx).includes("α + β"));
+	assert.ok(!run("inline $\\alpha + \\beta$ end", userCtx).includes("$"));
+	assert.ok(run("so \\(\\alpha\\) works", userCtx).includes("α"));
+});
+
+test("用户块级公式去定界符", () => {
+	const out = run("$$\n\\frac{a}{b} + x^{2}\n$$", userCtx);
+	assert.ok(out.includes("(a)/(b)"), JSON.stringify(out));
+	assert.ok(out.includes("x^2"), JSON.stringify(out));
+	assert.ok(!out.includes("$$"), JSON.stringify(out));
+});
+
+test("用户 \\[\\] 块与紧凑单段转换", () => {
+	assert.ok(run("\\[ x^{2} + \\sqrt{2} \\]", userCtx).includes("x^2 + √(2)"));
+	assert.ok(run("\\frac{1}{2}", userCtx).includes("(1)/(2)"));
+});
+
+test("价格与路径放过", () => {
+	assert.strictEqual(run("价格 $5 和 $10 不动", userCtx), "价格 $5 和 $10 不动");
+	assert.ok(run("看 C:\\opencode 路径", userCtx).includes("\\opencode"));
+});
+
+test("围栏与行内代码中的公式不动", () => {
+	const out = run("```tex\n$\\alpha$\n```\n外边 $\\beta$ 好", userCtx);
+	assert.ok(out.includes("$\\alpha$"), JSON.stringify(out));
+	assert.ok(out.includes("β"), JSON.stringify(out));
+	assert.ok(run("行内 `$\\alpha$` 不动", userCtx).includes("$\\alpha$"));
+});
+
+test("助手消息不走用户数学链（留给原生）", () => {
+	assert.ok(run("inline $\\alpha + \\beta$ end").includes("$\\alpha"));
+});
+
+test("未闭合定界符保留原文", () => {
+	assert.ok(run("等式 $$\\alpha + 1", userCtx).includes("$$"));
+});

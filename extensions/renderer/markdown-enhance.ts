@@ -150,6 +150,291 @@ function deCircled(markdown: string): string {
 }
 
 // ============================================================================
+// 用户消息数学公式保护（仅 messageType === "user"）
+// ----------------------------------------------------------------------------
+// 助手侧有 Pi 原生 LaTeX 渲染，用户侧没有：$ 定界符会被 markdown 吞掉、
+// 反斜杠消失。这里把数学片段转成裸 Unicode 文本（与助手侧原生输出同形），
+// 再交给后续 markdown 链。判断条件移植自 cc-my-pi 的 math-render.ts
+// （MIT, Tim van den Hoorn）；块级渲染（需宽度/主题）不需要——用户输入
+// 注释是原文转述，不做排版。
+// 生效范围：行内 \(…\) / $…$、块级 $$…$$ / \[…\] / equation-align 环境、
+// 紧凑单段表达式；围栏代码块与行内代码一律跳过；$5 价格、\opencode 路径
+// 等非数学形状一律放过。
+// ============================================================================
+
+const MATH_COMMANDS: Record<string, string> = {
+	alpha: "α",
+	beta: "β",
+	gamma: "γ",
+	Gamma: "Γ",
+	delta: "δ",
+	Delta: "Δ",
+	epsilon: "ε",
+	varepsilon: "ε",
+	zeta: "ζ",
+	eta: "η",
+	theta: "θ",
+	Theta: "Θ",
+	vartheta: "ϑ",
+	iota: "ι",
+	kappa: "κ",
+	lambda: "λ",
+	Lambda: "Λ",
+	mu: "μ",
+	nu: "ν",
+	xi: "ξ",
+	Xi: "Ξ",
+	pi: "π",
+	Pi: "Π",
+	rho: "ρ",
+	varrho: "ϱ",
+	sigma: "σ",
+	Sigma: "Σ",
+	tau: "τ",
+	upsilon: "υ",
+	Upsilon: "Υ",
+	phi: "φ",
+	varphi: "φ",
+	Phi: "Φ",
+	chi: "χ",
+	psi: "ψ",
+	Psi: "Ψ",
+	omega: "ω",
+	Omega: "Ω",
+	pm: "±",
+	mp: "∓",
+	times: "×",
+	cdot: "·",
+	div: "÷",
+	ast: "*",
+	le: "≤",
+	leq: "≤",
+	ge: "≥",
+	geq: "≥",
+	neq: "≠",
+	ne: "≠",
+	approx: "≈",
+	sim: "∼",
+	propto: "∝",
+	infty: "∞",
+	partial: "∂",
+	nabla: "∇",
+	sum: "Σ",
+	prod: "Π",
+	int: "∫",
+	sqrt: "√",
+	to: "→",
+	rightarrow: "→",
+	leftarrow: "←",
+	leftrightarrow: "↔",
+	in: "∈",
+	notin: "∉",
+	cup: "∪",
+	cap: "∩",
+	subset: "⊂",
+	subseteq: "⊆",
+	superset: "⊃",
+	superseteq: "⊇",
+	wedge: "∧",
+	vee: "∨",
+	forall: "∀",
+	exists: "∃",
+	emptyset: "∅",
+	degree: "°",
+};
+
+/** 有数学命令或上下标运算符、且含字母数字/右花括号才像公式。 */
+function mathLooksLikeInlineMath(text: string): boolean {
+	return /\\[A-Za-z]+|[_^=<>+*/-]/.test(text) && /[A-Za-z0-9}]/.test(text);
+}
+
+function replaceMathGroups(text: string): string {
+	return text
+		.replace(
+			/\\(?:text|mathrm|operatorname|mathbf|boldsymbol|bm|mathit|mathsf|mathtt)\{([^{}]*)\}/g,
+			"$1",
+		)
+		.replace(/\\mathbb\{R\}/g, "ℝ")
+		.replace(/\\mathbb\{N\}/g, "ℕ")
+		.replace(/\\mathbb\{Z\}/g, "ℤ")
+		.replace(/\\mathbb\{Q\}/g, "ℚ")
+		.replace(/\\mathbb\{C\}/g, "ℂ");
+}
+
+function readMathGroup(text: string, start: number): { content: string; end: number } | undefined {
+	let open = start;
+	while (open < text.length && /\s/.test(text[open])) open++;
+	if (text[open] !== "{") return undefined;
+	let depth = 1;
+	for (let index = open + 1; index < text.length; index++) {
+		const char = text[index];
+		if (char === "{") depth++;
+		else if (char === "}") {
+			depth--;
+			if (depth === 0) return { content: text.slice(open + 1, index), end: index + 1 };
+		}
+	}
+	return undefined;
+}
+
+function replaceMathFractions(text: string): string {
+	let output = "";
+	let index = 0;
+	while (index < text.length) {
+		const command = ["\\frac", "\\dfrac", "\\tfrac"].find((candidate) =>
+			text.startsWith(candidate, index),
+		);
+		if (!command) {
+			output += text[index];
+			index++;
+			continue;
+		}
+		const numerator = readMathGroup(text, index + command.length);
+		const denominator = numerator ? readMathGroup(text, numerator.end) : undefined;
+		if (!numerator || !denominator) {
+			output += text[index];
+			index++;
+			continue;
+		}
+		output += `(${replaceMathFractions(numerator.content)})/(${replaceMathFractions(denominator.content)})`;
+		index = denominator.end;
+	}
+	return output;
+}
+
+/** LaTeX 片段 → 单行 Unicode 文本（multiline=false）或多行（true）。 */
+function formatMathForDisplay(raw: string, multiline = true): string {
+	let text = raw.replace(/\\\\/g, "\n");
+	text = text.replace(/\\(?:begin|end)\{[^{}]+\}/g, "").replace(/&/g, "");
+	text = replaceMathGroups(text);
+	text = replaceMathFractions(text);
+	text = text.replace(/\\sqrt\s*\{([^{}]+)\}/g, "√($1)");
+	text = text.replace(/\\([A-Za-z]+)/g, (match, name: string) => MATH_COMMANDS[name] ?? match);
+	text = text.replace(/\\(?:left|right|big|Big|bigg|Bigg)/g, "");
+	text = text.replace(/_\{([^{}]+)\}/g, "_$1").replace(/\^\{([^{}]+)\}/g, "^$1");
+	text = text
+		.replace(/[{}]/g, "")
+		.replace(/\\[,;!]/g, " ")
+		.replace(/\\ /g, " ");
+	text = text.replace(/[ \t]+/g, " ").replace(/\s*([=+\-×·÷<>≤≥≈≠|])\s*/g, " $1 ");
+	const lines = text
+		.split(/\r?\n/)
+		.map((line) => line.replace(/[ \t]{2,}/g, " ").trim())
+		.filter(Boolean);
+	return multiline ? lines.join("\n") : lines.join(" ");
+}
+
+/** 行内 \(…\) 与 $…$ → 裸 Unicode（无代码段包裹，与助手原生同形）。 */
+function replaceUserInlineMath(text: string): string {
+	if (!text.includes("\\(") && !text.includes("$")) return text;
+	const withParens = text.replace(/\\\(([\s\S]*?)\\\)/g, (_match, body: string) =>
+		formatMathForDisplay(body, false),
+	);
+	return withParens.replace(
+		/(^|[^\\])\$([^\n$]{1,200})\$/g,
+		(match, prefix: string, body: string) => {
+			if (!mathLooksLikeInlineMath(body)) return match;
+			return `${prefix}${formatMathForDisplay(body, false)}`;
+		},
+	);
+}
+
+const USER_DISPLAY_DELIMITERS: Array<{ open: string; close: string }> = [
+	{ open: "$$", close: "$$" },
+	{ open: "\\[", close: "\\]" },
+	{ open: "\\begin{equation}", close: "\\end{equation}" },
+	{ open: "\\begin{equation*}", close: "\\end{equation*}" },
+	{ open: "\\begin{align}", close: "\\end{align}" },
+	{ open: "\\begin{align*}", close: "\\end{align*}" },
+	{ open: "\\begin{aligned}", close: "\\end{aligned}" },
+];
+
+/** 块级公式 → 去定界符的 Unicode 行（与助手原生同形）。未闭合原样保留。 */
+function replaceUserDisplayMath(text: string): string {
+	let output = text;
+	for (const { open, close } of USER_DISPLAY_DELIMITERS) {
+		let start = output.indexOf(open);
+		while (start !== -1) {
+			const contentStart = start + open.length;
+			const contentEnd = output.indexOf(close, contentStart);
+			if (contentEnd === -1) break;
+			const converted = formatMathForDisplay(output.slice(contentStart, contentEnd), true);
+			output = output.slice(0, start) + converted + output.slice(contentEnd + close.length);
+			start = output.indexOf(open, start + converted.length);
+		}
+	}
+	return output;
+}
+
+function userTextLooksLikeMarkdown(text: string): boolean {
+	if (/\r?\n\s*\r?\n/.test(text)) return true;
+	if (/^#{1,6}\s/m.test(text) || /```/.test(text)) return true;
+	if (/^\s*[-*+]\s/m.test(text) || /^\s*\d+\.\s/m.test(text)) return true;
+	if (/https?:\/\//.test(text)) return true;
+	return false;
+}
+
+/** 紧凑单段表达式（如整行只有一个 \frac）整体转换；文章/路径/标点句一律放过。 */
+function shouldFormatUserStandaloneMath(text: string): boolean {
+	const plain = text.trim();
+	if (!plain || !plain.includes("\\")) return false;
+	// $ 包裹的走行内路径，避免定界符残留。
+	if (/\$[^$\n]+\$/.test(plain)) return false;
+	if (userTextLooksLikeMarkdown(text)) return false;
+	if (plain.length > 600 || plain.split(/\r?\n/).length > 3) return false;
+	if (
+		/\\(?:frac|dfrac|tfrac|sqrt|left|right|begin|end|partial|boldsymbol|bm|mathrm|mathbf|mathit|mathsf|mathtt|mathbb|sigma|epsilon|delta|gamma|Gamma|Delta|theta|Theta|pi|Pi|rho|varrho|tau|phi|varphi|Psi|psi|omega|Omega|alpha|beta|mu|nu|xi|chi|sum|prod|int|to|rightarrow|leftarrow|leftrightarrow|infty)/.test(
+			plain,
+		)
+	) {
+		return true;
+	}
+	// \opencode 这类路径与带句号的散文：要求既有上下标又有命令才认。
+	if (!/[_^]/.test(plain) || !/\\[A-Za-z]+/.test(plain)) return false;
+	return !/[.!?]\s/.test(plain) && plain.length <= 240;
+}
+
+/**
+ * 用户消息数学保护：围栏代码块原样跳过；行内代码（`…`）外才转换。
+ * 行内 → Unicode；块级去定界符；紧凑单段整体转换。
+ */
+function renderUserMath(markdown: string): string {
+	if (!markdown.includes("$") && !markdown.includes("\\")) return markdown;
+	const lines = markdown.split("\n");
+	const out: string[] = [];
+	let inFence = false;
+	let prose: string[] = [];
+	const flushProse = () => {
+		if (prose.length === 0) return;
+		const block = prose.join("\n");
+		let converted = replaceUserDisplayMath(block);
+		// 行内代码片（奇数片）跳过，只转偶数片
+		converted = converted
+			.split("`")
+			.map((part, i) => (i % 2 === 0 ? replaceUserInlineMath(part) : part))
+			.join("`");
+		if (converted === block && shouldFormatUserStandaloneMath(block)) {
+			converted = formatMathForDisplay(block, true);
+		}
+		out.push(converted);
+		prose = [];
+	};
+	for (const line of lines) {
+		if (/^```/.test(line)) {
+			flushProse();
+			inFence = !inFence;
+			out.push(line);
+		} else if (inFence) {
+			out.push(line);
+		} else {
+			prose.push(line);
+		}
+	}
+	flushProse();
+	return out.join("\n");
+}
+
+// ============================================================================
 // 跨行链接规整
 // ============================================================================
 
@@ -200,6 +485,10 @@ export default function (pi: ExtensionAPI): void {
 		if (isStreaming) return markdown;
 		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
 		markdown = deCircled(markdown);
+		// 0.5 用户消息的数学公式保护：助手侧有原生 LaTeX 渲染，用户侧没有，
+		// 这里把 $…$ / \(…\) / $$…$$ 等转成裸 Unicode 文本再交给 markdown，
+		// 避免定界符被吞、反斜杠消失。仅 user 消息；assistant 留给原生。
+		if (messageType === "user") markdown = renderUserMath(markdown);
 		// 1. Mermaid 方言渲染
 		markdown = renderDiagrams(markdown, context);
 		// 2. GitHub 风格提示框

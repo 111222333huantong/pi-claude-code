@@ -8,7 +8,9 @@
  */
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { homedir } from "node:os";
+import { appendFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
@@ -74,6 +76,29 @@ export function resetHeaderAnimation(): void {
 	(globalThis as Record<symbol, unknown>)[HEADER_ANIMATED] = false;
 }
 
+/**
+ * 诊断日志：仅当 PI_CC_DEBUG_HEADER=1 时写临时文件。
+ * 记工厂创建/定时器滴答/完成/dispose/render 帧与 accent 码。
+ */
+function headerDebugLogPath(): string | undefined {
+	if (process.env.PI_CC_DEBUG_HEADER !== "1") return undefined;
+	try {
+		return join(tmpdir(), `pi-cc-header-debug-${process.pid}.log`);
+	} catch {
+		return undefined;
+	}
+}
+
+function headerDebug(message: string): void {
+	const path = headerDebugLogPath();
+	if (!path) return;
+	try {
+		appendFileSync(path, `${new Date().toISOString()} ${message}\n`);
+	} catch {
+		/* ignore */
+	}
+}
+
 function repaintHeaderSinks(): void {
 	for (const repaint of headerAnimState().sinks) {
 		try {
@@ -88,15 +113,18 @@ function repaintHeaderSinks(): void {
 export function ensureHeaderAnimTick(): void {
 	const state = headerAnimState();
 	if (state.done || state.timer) return;
+	headerDebug(`tick-start frame=${state.frame} sinks=${state.sinks.size}`);
 	state.timer = setInterval(() => {
 		if (state.frame < MASCOT_LAST_FRAME) {
 			state.frame++;
+			headerDebug(`tick frame=${state.frame} sinks=${state.sinks.size}`);
 			repaintHeaderSinks();
 		} else {
 			if (state.timer) clearInterval(state.timer);
 			state.timer = undefined;
 			state.done = true;
 			markHeaderAnimated();
+			headerDebug("tick-done");
 			repaintHeaderSinks();
 		}
 	}, MASCOT_ANIMATION_INTERVAL_MS);
@@ -360,6 +388,9 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 	}
 	const skipAnimation = !config.startupAnimation || headerAnimatedThisProcess();
 	const anim = headerAnimState();
+	headerDebug(
+		`apply skip=${skipAnimation} cfgAnim=${config.showStartupHeader}/${config.startupAnimation} frame=${anim.frame} done=${anim.done}`,
+	);
 	if (skipAnimation) {
 		// 关动画或已播过：直接末帧，不启动定时器。
 		anim.frame = MASCOT_LAST_FRAME;
@@ -369,7 +400,10 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 		ensureHeaderAnimTick();
 	}
 	disposeActiveHeader();
+	let factoryCalls = 0;
 	ctx.ui.setHeader((tui: any, _theme: unknown) => {
+		factoryCalls++;
+		headerDebug(`factory-call n=${factoryCalls} frame=${anim.frame}`);
 		const requestRender = () => {
 			try {
 				tui?.requestRender?.();
@@ -384,6 +418,7 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 		}
 		// 注册重绘槽：共享定时器每帧刷所有存活实例；render 读共享帧，天然续播。
 		anim.sinks.add(requestRender);
+		let renders = 0;
 		const component: HeaderComponent = {
 			render(width: number): string[] {
 				// 主题每次渲染现取，跟随 /theme 切换；ctx getter stale 则回退空信息。
@@ -398,10 +433,22 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 				} catch {
 					/* ignore stale ctx */
 				}
-				return renderHeaderLines(width, theme, anim.frame, cachedStats, meta);
+				const lines = renderHeaderLines(width, theme, anim.frame, cachedStats, meta);
+				renders++;
+				if (renders <= 3 || anim.done) {
+					const mascotLine = lines[1] ?? "";
+					const hasTruecolor = /\u001b\[38;2;/.test(mascotLine);
+					const accentSample =
+						typeof theme.fg === "function" ? String(theme.fg("accent", "X")) : "?";
+					headerDebug(
+						`render n=${renders} frame=${anim.frame} w=${width} truecolor=${hasTruecolor} accentSample=${JSON.stringify(accentSample)}`,
+					);
+				}
+				return lines;
 			},
 			invalidate() {},
 			dispose() {
+				headerDebug(`dispose renders=${renders}`);
 				anim.sinks.delete(requestRender);
 			},
 		};
@@ -413,7 +460,8 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 const quietStartupFile = createQuietStartupFile();
 
 export default function piStartupHeader(pi: ExtensionAPI) {
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
+		headerDebug(`session_start reason=${(event as { reason?: string })?.reason ?? "?"}`);
 		// quietStartup 只做单向确保（开则写入 Pi 配置）；关闭走面板显式写入，避免误清用户手写值。
 		if (config.showStartupHeader && config.quietStartup) {
 			try {

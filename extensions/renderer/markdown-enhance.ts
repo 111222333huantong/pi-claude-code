@@ -151,16 +151,17 @@ function deCircled(markdown: string): string {
 }
 
 // ============================================================================
-// 用户消息数学公式保护（仅 messageType === "user"）
+// 用户消息数学公式（native-first：定界符形式全部透传 Pi 原生 LaTeX）
 // ----------------------------------------------------------------------------
-// 助手侧有 Pi 原生 LaTeX 渲染，用户侧没有：$ 定界符会被 markdown 吞掉、
-// 反斜杠消失。这里把数学片段转成裸 Unicode 文本（与助手侧原生输出同形），
-// 再交给后续 markdown 链。判断条件移植自 cc-my-pi 的 math-render.ts
-// （MIT, Tim van den Hoorn）；块级渲染（需宽度/主题）不需要——用户输入
-// 注释是原文转述，不做排版。
-// 生效范围：行内 \(…\) / $…$、块级 $$…$$ / \[…\] / equation-align 环境、
-// 紧凑单段表达式；围栏代码块与行内代码一律跳过；$5 价格、\opencode 路径
-// 等非数学形状一律放过。
+// Pi 原生（Markdown renderLatex，默认开启）对 `$…$` / `\(…\)` / `$$…$$` /
+// `\[…\]` 渲染更好（竖排分数、Σ 上下标排版），且 `$5` / 蛇形命名等 guard 齐全，
+// 因此定界符形式不再预转换（c7074c5 的压平逻辑已删除）。
+// 仅保留两样无原生兜底的东西：
+//  1. \begin{equation|align|aligned} 环境 → $$ 块改写（原生 block tokenizer
+//     只认 $$ 与 \[，独立环境块会原文泄漏）；
+//  2. 无定界符紧凑单段（如整行只有一个 \frac）的旧 Unicode 转换（回归保护）。
+// 生效范围：围栏代码块与行内代码一律跳过；`$$` / `\[…\]` 区域内的嵌套环境不动；
+// 未闭合环境不动；$5 价格、C:\opencode 路径等非数学形状一律放过。
 // ============================================================================
 
 const MATH_COMMANDS: Record<string, string> = {
@@ -244,11 +245,6 @@ const MATH_COMMANDS: Record<string, string> = {
 	degree: "°",
 };
 
-/** 有数学命令或上下标运算符、且含字母数字/右花括号才像公式。 */
-function mathLooksLikeInlineMath(text: string): boolean {
-	return /\\[A-Za-z]+|[_^=<>+*/-]/.test(text) && /[A-Za-z0-9}]/.test(text);
-}
-
 function replaceMathGroups(text: string): string {
 	return text
 		.replace(
@@ -325,46 +321,68 @@ function formatMathForDisplay(raw: string, multiline = true): string {
 	return multiline ? lines.join("\n") : lines.join(" ");
 }
 
-/** 行内 \(…\) 与 $…$ → 裸 Unicode（无代码段包裹，与助手原生同形）。 */
-function replaceUserInlineMath(text: string): string {
-	if (!text.includes("\\(") && !text.includes("$")) return text;
-	const withParens = text.replace(/\\\(([\s\S]*?)\\\)/g, (_match, body: string) =>
-		formatMathForDisplay(body, false),
-	);
-	return withParens.replace(
-		/(^|[^\\])\$([^\n$]{1,200})\$/g,
-		(match, prefix: string, body: string) => {
-			if (!mathLooksLikeInlineMath(body)) return match;
-			return `${prefix}${formatMathForDisplay(body, false)}`;
-		},
-	);
+/** 原生已能处理的定界符区域：改写环境前先掩码，避免破坏嵌套。 */
+const NATIVE_MATH_SPAN_RE = /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]/g;
+/** 行内代码段：掩码保护。 */
+const INLINE_CODE_SPAN_RE = /`[^`\n]*`/g;
+/** 可改写为 $$ 块的环境（旧 USER_DISPLAY_DELIMITERS 的环境子集）。 */
+const DISPLAY_ENV_RE = /\\begin\{(equation\*?|align\*?|aligned)\}([\s\S]*?)\\end\{\1\}/g;
+const MASK_TAG = "\uE000";
+
+function maskSpans(text: string, re: RegExp): { text: string; slots: string[] } {
+	const slots: string[] = [];
+	const masked = text.replace(re, (span) => {
+		slots.push(span);
+		return `${MASK_TAG}${slots.length - 1}${MASK_TAG}`;
+	});
+	return { text: masked, slots };
 }
 
-const USER_DISPLAY_DELIMITERS: Array<{ open: string; close: string }> = [
-	{ open: "$$", close: "$$" },
-	{ open: "\\[", close: "\\]" },
-	{ open: "\\begin{equation}", close: "\\end{equation}" },
-	{ open: "\\begin{equation*}", close: "\\end{equation*}" },
-	{ open: "\\begin{align}", close: "\\end{align}" },
-	{ open: "\\begin{align*}", close: "\\end{align*}" },
-	{ open: "\\begin{aligned}", close: "\\end{aligned}" },
-];
+function unmaskSpans(text: string, slots: string[]): string {
+	return text.replace(new RegExp(`${MASK_TAG}(\\d+)${MASK_TAG}`, "g"), (m, i: string) => {
+		const slot = slots[Number(i)];
+		return slot === undefined ? m : slot;
+	});
+}
 
-/** 块级公式 → 去定界符的 Unicode 行（与助手原生同形）。未闭合原样保留。 */
-function replaceUserDisplayMath(text: string): string {
-	let output = text;
-	for (const { open, close } of USER_DISPLAY_DELIMITERS) {
-		let start = output.indexOf(open);
-		while (start !== -1) {
-			const contentStart = start + open.length;
-			const contentEnd = output.indexOf(close, contentStart);
-			if (contentEnd === -1) break;
-			const converted = formatMathForDisplay(output.slice(contentStart, contentEnd), true);
-			output = output.slice(0, start) + converted + output.slice(contentEnd + close.length);
-			start = output.indexOf(open, start + converted.length);
+/**
+ * `\begin{equation|align|aligned}…\end{…}`（闭合对）→ `$$…$$`，交给原生竖排。
+ * 围栏代码块、掩码区（原生定界符区域、行内代码）与未闭合环境保持原文。
+ */
+export function rewriteDisplayEnvironments(markdown: string): string {
+	if (!markdown.includes("\\begin")) return markdown;
+	const lines = markdown.split("\n");
+	const out: string[] = [];
+	let inFence = false;
+	let prose: string[] = [];
+	const flushProse = () => {
+		if (prose.length === 0) return;
+		out.push(rewriteEnvInProse(prose.join("\n")));
+		prose = [];
+	};
+	for (const line of lines) {
+		if (/^```/.test(line)) {
+			flushProse();
+			inFence = !inFence;
+			out.push(line);
+		} else if (inFence) {
+			out.push(line);
+		} else {
+			prose.push(line);
 		}
 	}
-	return output;
+	flushProse();
+	return out.join("\n");
+}
+
+/** 单个散文块内的环境改写（调用方已保证不在围栏内）。 */
+function rewriteEnvInProse(block: string): string {
+	const native = maskSpans(block, NATIVE_MATH_SPAN_RE);
+	const masked = maskSpans(native.text, INLINE_CODE_SPAN_RE);
+	const rewritten = masked.text.replace(DISPLAY_ENV_RE, (match, _env: string, body: string) =>
+		body.trim() ? `$$\n${body.trim()}\n$$` : match,
+	);
+	return unmaskSpans(unmaskSpans(rewritten, masked.slots), native.slots);
 }
 
 function userTextLooksLikeMarkdown(text: string): boolean {
@@ -381,6 +399,8 @@ function shouldFormatUserStandaloneMath(text: string): boolean {
 	if (!plain || !plain.includes("\\")) return false;
 	// $ 包裹的走行内路径，避免定界符残留。
 	if (/\$[^$\n]+\$/.test(plain)) return false;
+	// \(…\) / \[…\] 定界的交给原生（旧行内/块级路径删除后，此处必须显式豁免）。
+	if (/\\\s*[([]/.test(plain)) return false;
 	if (userTextLooksLikeMarkdown(text)) return false;
 	if (plain.length > 600 || plain.split(/\r?\n/).length > 3) return false;
 	if (
@@ -396,11 +416,12 @@ function shouldFormatUserStandaloneMath(text: string): boolean {
 }
 
 /**
- * 用户消息数学保护：围栏代码块原样跳过；行内代码（`…`）外才转换。
- * 行内 → Unicode；块级去定界符；紧凑单段整体转换。
+ * 用户消息数学：定界符形式（$…$ / $$…$$ / \[…\] / \(…\)）全部透传 Pi 原生；
+ * 仅保留无定界符紧凑单段的旧 Unicode 转换（c7074c5 回归保护），且已定界
+ * （$$ / \[ 开头）的块直接跳过，避免二次改写。
  */
 function renderUserMath(markdown: string): string {
-	if (!markdown.includes("$") && !markdown.includes("\\")) return markdown;
+	if (!markdown.includes("\\")) return markdown;
 	const lines = markdown.split("\n");
 	const out: string[] = [];
 	let inFence = false;
@@ -408,13 +429,8 @@ function renderUserMath(markdown: string): string {
 	const flushProse = () => {
 		if (prose.length === 0) return;
 		const block = prose.join("\n");
-		let converted = replaceUserDisplayMath(block);
-		// 行内代码片（奇数片）跳过，只转偶数片
-		converted = converted
-			.split("`")
-			.map((part, i) => (i % 2 === 0 ? replaceUserInlineMath(part) : part))
-			.join("`");
-		if (converted === block && shouldFormatUserStandaloneMath(block)) {
+		let converted = block;
+		if (!/^\s*(\$\$|\\\[)/.test(block) && shouldFormatUserStandaloneMath(block)) {
 			converted = formatMathForDisplay(block, true);
 		}
 		out.push(converted);
@@ -488,9 +504,10 @@ export default function (pi: ExtensionAPI): void {
 		if (isStreaming) return markdown;
 		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
 		markdown = deCircled(markdown);
-		// 0.5 用户消息的数学公式保护：助手侧有原生 LaTeX 渲染，用户侧没有，
-		// 这里把 $…$ / \(…\) / $$…$$ 等转成裸 Unicode 文本再交给 markdown，
-		// 避免定界符被吞、反斜杠消失。仅 user 消息；assistant 留给原生。
+		// 0.5 数学环境补齐：\begin{equation|align|aligned} → $$ 块，user 与
+		// assistant 通用（原生 block tokenizer 的唯一缺口）；定界符形式其余
+		// 全部透传原生。仅 user 消息再走紧凑单段兜底（c7074c5 回归保护）。
+		markdown = rewriteDisplayEnvironments(markdown);
 		if (messageType === "user") markdown = renderUserMath(markdown);
 		// 1. Mermaid 方言渲染
 		markdown = renderDiagrams(markdown, context);

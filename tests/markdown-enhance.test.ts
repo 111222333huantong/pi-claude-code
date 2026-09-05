@@ -169,22 +169,17 @@ test("圈数字转半角括号（Nerd Font 字形缺陷规避）", () => {
 
 const userCtx = { messageType: "user", isStreaming: false, availableWidth: 100 };
 
-test("用户行内公式转 Unicode（与助手原生同形）", () => {
-	assert.ok(run("inline $\\alpha + \\beta$ end", userCtx).includes("α + β"));
-	assert.ok(!run("inline $\\alpha + \\beta$ end", userCtx).includes("$"));
-	assert.ok(run("so \\(\\alpha\\) works", userCtx).includes("α"));
+test("用户定界符公式透传原生（不再压平）", () => {
+	const inline = run("inline $\\alpha + \\beta$ end", userCtx);
+	assert.ok(inline.includes("$\\alpha + \\beta$"), JSON.stringify(inline));
+	assert.ok(run("so \\(\\alpha\\) works", userCtx).includes("\\(\\alpha\\)"));
+	const block = run("$$\n\\frac{a}{b} + x^{2}\n$$", userCtx);
+	assert.ok(block.includes("$$") && block.includes("\\frac"), JSON.stringify(block));
 });
 
-test("用户块级公式去定界符", () => {
-	const out = run("$$\n\\frac{a}{b} + x^{2}\n$$", userCtx);
-	assert.ok(out.includes("(a)/(b)"), JSON.stringify(out));
-	assert.ok(out.includes("x^2"), JSON.stringify(out));
-	assert.ok(!out.includes("$$"), JSON.stringify(out));
-});
-
-test("用户 \\[\\] 块与紧凑单段转换", () => {
-	assert.ok(run("\\[ x^{2} + \\sqrt{2} \\]", userCtx).includes("x^2 + √(2)"));
+test("用户紧凑单段保留旧 Unicode 转换（回归保护）", () => {
 	assert.ok(run("\\frac{1}{2}", userCtx).includes("(1)/(2)"));
+	assert.ok(run("\\[ x^{2} + \\sqrt{2} \\]", userCtx).includes("\\["));
 });
 
 test("价格与路径放过", () => {
@@ -192,10 +187,14 @@ test("价格与路径放过", () => {
 	assert.ok(run("看 C:\\opencode 路径", userCtx).includes("\\opencode"));
 });
 
-test("围栏与行内代码中的公式不动", () => {
-	const out = run("```tex\n$\\alpha$\n```\n外边 $\\beta$ 好", userCtx);
+test("围栏与行内代码中的公式不动（含环境）", () => {
+	const out = run(
+		"```tex\n$\\alpha$\n\\begin{equation}\nx\n\\end{equation}\n```\n外边 $\\beta$ 好",
+		userCtx,
+	);
 	assert.ok(out.includes("$\\alpha$"), JSON.stringify(out));
-	assert.ok(out.includes("β"), JSON.stringify(out));
+	assert.ok(out.includes("\\begin{equation}"), JSON.stringify(out));
+	assert.ok(out.includes("$\\beta$"), JSON.stringify(out));
 	assert.ok(run("行内 `$\\alpha$` 不动", userCtx).includes("$\\alpha$"));
 });
 
@@ -205,4 +204,75 @@ test("助手消息不走用户数学链（留给原生）", () => {
 
 test("未闭合定界符保留原文", () => {
 	assert.ok(run("等式 $$\\alpha + 1", userCtx).includes("$$"));
+	// 未闭合环境走旧单段兜底压平（与 c7074c5 一致，非泄漏）
+	const env = run("\\begin{equation}\nx = 1", userCtx);
+	assert.ok(!env.includes("\\begin{equation}") && env.includes("x = 1"), JSON.stringify(env));
+});
+
+test("equation/align 环境改写为 $$ 块（user 与 assistant）", () => {
+	for (const ctx of [userCtx, { ...userCtx, messageType: "assistant" }]) {
+		const eq = run("\\begin{equation}\nx = 1\n\\end{equation}", ctx);
+		assert.ok(!eq.includes("\\begin"), JSON.stringify(eq));
+		assert.ok(eq.includes("$$"), JSON.stringify(eq));
+		const align = run("\\begin{align*}\na &= 1 \\\\\nb &= 2\n\\end{align*}", ctx);
+		assert.ok(align.includes("$$") && align.includes("&="), JSON.stringify(align));
+	}
+});
+
+test("$$ 区域内的嵌套环境不动", () => {
+	const out = run("$$\n\\begin{matrix}\na & b\n\\end{matrix}\n$$", userCtx);
+	assert.ok(out.includes("\\begin{matrix}"), JSON.stringify(out));
+});
+
+test("thinking 与流式跳过环境改写", () => {
+	const src = "\\begin{equation}\nx = 1\n\\end{equation}";
+	assert.ok(
+		run(src, {
+			messageType: "assistant-thinking",
+			isStreaming: false,
+			availableWidth: 100,
+		}).includes("\\begin"),
+	);
+	assert.ok(
+		run(src, { messageType: "assistant", isStreaming: true, availableWidth: 100 }).includes(
+			"\\begin",
+		),
+	);
+});
+
+test("端到端：改写后原生竖排、无定界符泄漏", async () => {
+	const { Markdown } = await import("@earendil-works/pi-tui");
+	const id = (s: string) => s;
+	const theme = {
+		heading: id,
+		link: id,
+		linkUrl: id,
+		code: id,
+		codeBlock: id,
+		codeBlockBorder: id,
+		quote: id,
+		quoteBorder: id,
+		hr: id,
+		listBullet: id,
+		bold: id,
+		italic: id,
+		strikethrough: id,
+		underline: id,
+	};
+	const render = (
+		md: string,
+		ctx: { messageType: string; isStreaming: boolean; availableWidth: number },
+	): string[] => new Markdown(run(md, ctx), 0, 0, theme).render(50).map((l) => l.trim());
+	// 用户 $$ 分数 → 原生堆叠三行
+	const frac = render("$$\n\\frac{a}{b}\n$$", userCtx);
+	assert.ok(frac.some((l) => l === "a") && frac.some((l) => l === "b"), JSON.stringify(frac));
+	// 用户行内 → 原生上标
+	assert.ok(render("值 $x^2$ 好", userCtx).some((l) => l.includes("x²")));
+	// 环境改写后无泄漏
+	const env = render("\\begin{equation}\nx = 1\n\\end{equation}", userCtx);
+	assert.ok(!env.some((l) => l.includes("begin")), JSON.stringify(env));
+	assert.ok(
+		env.some((l) => l.includes("x = 1")),
+		JSON.stringify(env),
+	);
 });

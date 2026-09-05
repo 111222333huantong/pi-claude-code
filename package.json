@@ -56,9 +56,9 @@
 	},
 	"bundledDependencies": [],
 	"peerDependencies": {
-		"@earendil-works/pi-ai": "^0.84.0",
-		"@earendil-works/pi-coding-agent": "^0.84.0",
-		"@earendil-works/pi-tui": "^0.84.0"
+		"@earendil-works/pi-ai": ">=0.84.0",
+		"@earendil-works/pi-coding-agent": ">=0.84.0",
+		"@earendil-works/pi-tui": ">=0.84.0"
 	},
 	"engines": {
 		"node": ">=22.19.0"

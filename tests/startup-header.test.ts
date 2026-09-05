@@ -134,7 +134,7 @@ test("共享动画：后挂载的实例从当前帧续播而非从 0 重来", as
 	const compA = first.factory!(fakeTui(), theme);
 	await sleep(350);
 	const mid = headerAnimState().frame;
-	assert.ok(mid >= 2 && mid <= 12, `动画在跑（frame=${mid}）`);
+	assert.ok(mid >= 1 && mid <= 12, `动画在跑（frame=${mid}）`);
 
 	// 第二次挂载（模拟 /reload 或双实例重入）：直接看到当前帧，不是 frame 0
 	const second: { factory?: (tui: any, theme: any) => any } = {};

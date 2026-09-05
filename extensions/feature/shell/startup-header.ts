@@ -295,9 +295,8 @@ export function renderHeaderLines(
 
 	const lines = [borderLine("╭", `${paint("Pi")} v${VERSION}`, "╮", width, paint)];
 	if (!useRight) {
-		// 单栏：左栏内容占满内宽
-		for (const line of leftLines)
-			lines.push(boxedLine(center(stripAnsi(line), innerWidth), width, paint));
+		// 单栏：左栏内容占满内宽（center 是 ANSI 感知的，保留小人配色）
+		for (const line of leftLines) lines.push(boxedLine(center(line, innerWidth), width, paint));
 		lines.push(boxedLine(center(`Loaded: ${stripAnsi(loaded.counts)}`, innerWidth), width, paint));
 		if (loaded.aggregate)
 			lines.push(boxedLine(center(stripAnsi(loaded.aggregate), innerWidth), width, paint));
@@ -305,7 +304,7 @@ export function renderHeaderLines(
 		const rowCount = Math.max(leftLines.length, rightLines.length);
 		for (let i = 0; i < rowCount; i++) {
 			const content = twoColumn(
-				center(stripAnsi(leftLines[i] ?? ""), leftWidth),
+				center(leftLines[i] ?? "", leftWidth),
 				rightLines[i] ?? "",
 				leftWidth,
 				rightWidth,
@@ -436,12 +435,16 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 				const lines = renderHeaderLines(width, theme, anim.frame, cachedStats, meta);
 				renders++;
 				if (renders <= 3 || anim.done) {
-					const mascotLine = lines[1] ?? "";
-					const hasTruecolor = /\u001b\[38;2;/.test(mascotLine);
+					// 只探小人本身的行，避免右栏蓝色字污染结论
+					const probe = piMascotFrame(anim.frame, {
+						accent: (s: string) => theme.fg("accent", s),
+						muted: (s: string) => theme.fg("muted", s),
+					}).join("\n");
+					const mascotPainted = /\u001b\[/.test(probe);
 					const accentSample =
 						typeof theme.fg === "function" ? String(theme.fg("accent", "X")) : "?";
 					headerDebug(
-						`render n=${renders} frame=${anim.frame} w=${width} truecolor=${hasTruecolor} accentSample=${JSON.stringify(accentSample)}`,
+						`render n=${renders} frame=${anim.frame} w=${width} mascotPainted=${mascotPainted} accentSample=${JSON.stringify(accentSample)}`,
 					);
 				}
 				return lines;

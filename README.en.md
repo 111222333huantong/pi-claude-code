@@ -43,6 +43,7 @@ Run `/reload` after installation.
 | Settings panel              | `Style / Diff / Thinking / UI / Feature` tabs                                             | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
+| Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 
 ## Configuration
@@ -73,7 +74,9 @@ Run `/reload` after installation.
   "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
   "expandedPreviewMaxLines": 40,           // max lines for expanded diff/TaskList bodies
   "inputClip": 100,                        // tool summary path/command clip length
-  "showStartupHeader": true,               // startup header (logo + tips) toggle
+  "showStartupHeader": true,               // startup header (mascot + tips + Loaded) toggle
+  "startupAnimation": true,                // play the mascot build-up once per process
+  "quietStartup": true,                    // hide Pi's native startup listing (takes effect next session)
   "scrollStepLines": 3,                    // fullscreen wheel scroll step
 
   // features
@@ -117,3 +120,4 @@ npm run typecheck
 ## Credits
 
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md).
+- The startup mascot and Loaded panel are ported from [`timvdhoorn/cc-my-pi`](https://github.com/timvdhoorn/cc-my-pi) (MIT), inspired by [`Phoobobo/pi-claude-code-tui`](https://github.com/Phoobobo/pi-claude-code-tui) (MIT).

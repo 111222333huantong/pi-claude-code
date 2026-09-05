@@ -5,6 +5,7 @@ import { config } from "./config/config.ts";
 import piAliases from "./feature/shell/aliases.ts";
 import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
 import piStartupHeader from "./feature/shell/startup-header.ts";
+import { registerLoadedCommand } from "./feature/shell/loaded-stats.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 import workingRow from "./feature/shell/working-row.ts";
 
@@ -24,6 +25,8 @@ export default function (pi: ExtensionAPI): void {
 	if (config.enableAliases) piAliases(pi);
 	installFlushDockedBash();
 	piStartupHeader(pi);
+	// /loaded 常驻（与 header 开关无关，resume 进来的旧会话也要能查）。
+	registerLoadedCommand(pi);
 	if (config.enableWorkingMessage) {
 		workingMessage(pi);
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。

@@ -8,6 +8,7 @@ import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
+import { createQuietStartupFile } from "../feature/shell/quiet-startup.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
 	config,
@@ -397,9 +398,27 @@ export async function showCcstylePanel(
 			id: "showStartupHeader",
 			label: "Startup header",
 			description: config.showStartupHeader
-				? "Show the custom startup header (logo + tips) on new sessions."
+				? "Show the custom startup header (mascot + tips + Loaded) on new sessions."
 				: "Use Pi's native startup header instead.",
 			currentValue: config.showStartupHeader ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const startupAnimationSetting = {
+			id: "startupAnimation",
+			label: "Header animation",
+			description: config.startupAnimation
+				? "Play the π mascot build-up once per process."
+				: "Always show the settled mascot frame (also skips replay on /reload).",
+			currentValue: config.startupAnimation ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const quietStartupSetting = {
+			id: "quietStartup",
+			label: "Quiet startup",
+			description: config.quietStartup
+				? "Hide Pi's native startup resource listing (header Loaded panel covers it). Next session applies."
+				: "Keep Pi's native startup resource listing.",
+			currentValue: config.quietStartup ? "on" : "off",
 			values: ["on", "off"],
 		};
 		const scrollStepSetting = {
@@ -589,11 +608,31 @@ export async function showCcstylePanel(
 				case "showStartupHeader":
 					updateConfig({ showStartupHeader: value === "on" });
 					startupHeaderSetting.description = config.showStartupHeader
-						? "Show the custom startup header (logo + tips) on new sessions."
+						? "Show the custom startup header (mascot + tips + Loaded) on new sessions."
 						: "Use Pi's native startup header instead.";
 					// 实时切换：on → 自定义 header；off → 官方默认 header。
 					applyStartupHeader(ctx);
 					break;
+				case "startupAnimation":
+					updateConfig({ startupAnimation: value === "on" });
+					startupAnimationSetting.description = config.startupAnimation
+						? "Play the π mascot build-up once per process."
+						: "Always show the settled mascot frame (also skips replay on /reload).";
+					break;
+				case "quietStartup": {
+					const on = value === "on";
+					updateConfig({ quietStartup: on });
+					quietStartupSetting.description = on
+						? "Hide Pi's native startup resource listing (header Loaded panel covers it). Next session applies."
+						: "Keep Pi's native startup resource listing.";
+					// 显式写入 Pi 自家配置（~/.pi/agent/settings.json），下会话生效。
+					try {
+						createQuietStartupFile().write(on);
+					} catch {
+						/* best effort */
+					}
+					break;
+				}
 				case "scrollStepLines":
 					updateConfig({
 						scrollStepLines: pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50),
@@ -645,6 +684,8 @@ export async function showCcstylePanel(
 					expandedMaxSetting,
 					inputClipSetting,
 					startupHeaderSetting,
+					startupAnimationSetting,
+					quietStartupSetting,
 					scrollStepSetting,
 				],
 			},

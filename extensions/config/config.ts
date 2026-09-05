@@ -57,6 +57,8 @@ export type Config = {
 	animationIntervalMs: number;
 	dimThinkingText: boolean;
 	showStartupHeader: boolean;
+	startupAnimation: boolean;
+	quietStartup: boolean;
 	scrollStepLines: number;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
@@ -118,6 +120,8 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	dimThinkingText: false,
 	showStartupHeader: true,
+	startupAnimation: true,
+	quietStartup: true,
 	scrollStepLines: 3,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
@@ -216,6 +220,8 @@ export function normalizeConfig(input: unknown): Config {
 		),
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
+		startupAnimation: source.startupAnimation !== false,
+		quietStartup: source.quietStartup !== false,
 		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
@@ -269,6 +275,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
+		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
+		`quietStartup=${source.quietStartup ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,

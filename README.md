@@ -43,6 +43,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 配置面板              | `Style / Diff / Thinking / UI / Feature` 五页签                                 | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
+| 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
 
 ## 配置
@@ -73,7 +74,9 @@ pi install git:github.com/minuque/pi-cc-extensions
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
   "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
   "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
-  "showStartupHeader": true,               // 启动头（logo + tips）开关
+  "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
+  "startupAnimation": true,                // 每进程播放一次 mascot 成长动画
+  "quietStartup": true,                    // 隐藏原生启动资源列表，下会话生效
   "scrollStepLines": 3,                    // fullscreen 滚轮步进
 
   // features
@@ -117,3 +120,4 @@ npm run typecheck
 ## 致谢
 
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md)。
+- 启动头 mascot 与 Loaded 盘点移植自 [`timvdhoorn/cc-my-pi`](https://github.com/timvdhoorn/cc-my-pi)（MIT），其灵感来自 [`Phoobobo/pi-claude-code-tui`](https://github.com/Phoobobo/pi-claude-code-tui)（MIT）。

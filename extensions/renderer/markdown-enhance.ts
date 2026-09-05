@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { render as renderMermaid, sourceBox } from "grok-mermaid";
+import { installCodeBlockBox } from "./tool/code-block.ts";
 
 // ============================================================================
 // Mermaid 方言渲染
@@ -475,6 +476,8 @@ function normalizeMultilineLinks(markdown: string): string {
 // ============================================================================
 
 export default function (pi: ExtensionAPI): void {
+	// 代码块套框（Markdown.render 后处理，与 transformer 槽位无关）。
+	installCodeBlockBox();
 	// 注意：pi 每个扩展只有一个 markdownTransformer 槽位，多次注册会互相覆盖，
 	// 所以三个转换合并为一次注册，内部按序链式执行。
 	pi.registerMarkdownTransformer((markdown, context) => {

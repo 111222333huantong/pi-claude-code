@@ -39,6 +39,7 @@ import {
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
+import { setCodeBlockTheme } from "./tool/code-block.ts";
 
 /**
  * Claude Code Style for pi — 装配入口。
@@ -210,6 +211,7 @@ export default function (
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
+		setCodeBlockTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
 		// 先收集 resume transcript，再同步 compact 补丁与全局展开状态。
 		syncCompactMode(ctx);
@@ -227,6 +229,7 @@ export default function (
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
+		setCodeBlockTheme(ctx.ui.theme);
 		syncCompactMode(ctx);
 		scheduleSessionRender(() => {
 			syncCompactMode(ctx);
@@ -243,6 +246,7 @@ export default function (
 
 	pi.on("tool_execution_start", async (_event, ctx) => {
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
+		setCodeBlockTheme(ctx.ui.theme);
 	});
 
 	pi.on("session_shutdown", async () => {

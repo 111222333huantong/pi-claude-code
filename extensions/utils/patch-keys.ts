@@ -33,6 +33,9 @@ export const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for(
 // ── 消息组件补丁 ──
 export const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
 
+// ── Markdown 代码块套框 ──
+export const CODE_BLOCK_PATCH = Symbol.for("pi.ccstyle.code-block-patch");
+
 // ── 工具分组 ──
 export const TOOL_GROUPING_PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
 export const TOOL_GROUPING_PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");

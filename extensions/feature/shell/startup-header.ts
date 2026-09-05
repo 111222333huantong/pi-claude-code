@@ -1,248 +1,224 @@
-import { VERSION, type AppKeybinding } from "@earendil-works/pi-coding-agent";
-import { getKeybindings } from "@earendil-works/pi-tui";
+/**
+ * Custom startup header: animated π mascot + model/cwd + Loaded resource panel.
+ *
+ * Mascot + Loaded counting ported from cc-my-pi's `extensions/claude-header/`
+ * (MIT, Tim van den Hoorn); mascot concept inspired by
+ * Phoobobo/pi-claude-code-tui (MIT, Phoobobo). Layout, gradient removal and
+ * the native-hints right column are original to this package.
+ */
+import { VERSION } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
-import { ansi16ToRgb, ansi256ToRgb } from "../../utils/ansi-color.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
-type Rgb = [number, number, number];
-type StyledPart = {
-	raw: string;
-	styled: string;
+import { PI_MASCOT_FRAME_COUNT, PI_MASCOT_WIDTH, piMascotFrame } from "./mascot.ts";
+import { collectLoadedStats, resolveAgentDir, type LoadedStats } from "./loaded-stats.ts";
+import { createQuietStartupFile } from "./quiet-startup.ts";
+
+// 左右双栏布局：左侧 mascot + 模型/目录，右侧 Getting started + Loaded
+const TWO_COL_GAP = 3; // ` │ `
+// 左栏 ≈ 30% 内宽，收敛到 [24, 44]；右栏拿剩余，恒更宽
+const MIN_LEFT_WIDTH = 24;
+const MAX_LEFT_WIDTH = 44;
+const MIN_RIGHT_WIDTH = 24;
+
+/** mascot 动画间隔：13 帧 ≈ 1.5 秒播完。 */
+const MASCOT_ANIMATION_INTERVAL_MS = 120;
+const MASCOT_LAST_FRAME = PI_MASCOT_FRAME_COUNT - 1;
+
+/** 进程内动画标记：reload/resume 同进程重挂时跳过重播，直接末帧。 */
+const HEADER_ANIMATED = Symbol.for("pi-cc-extensions:header-animated");
+
+function headerAnimatedThisProcess(): boolean {
+	return (globalThis as Record<symbol, unknown>)[HEADER_ANIMATED] === true;
+}
+
+function markHeaderAnimated(): void {
+	(globalThis as Record<symbol, unknown>)[HEADER_ANIMATED] = true;
+}
+
+/**
+ * 进程共享的动画控制器（globalThis）。header 工厂可能被重建多次
+ * （/reload、双实例、Pi 内部重挂），所有实例共用同一帧计数 + 同一
+ * 定时器：后来者从当前帧续播而不是从 0 重来，保证 wall-clock 1.5 秒
+ * 内必收敛到末帧（accent 定格），不受重建打断。
+ */
+type HeaderAnimShared = {
+	frame: number;
+	done: boolean;
+	timer: ReturnType<typeof setInterval> | undefined;
+	sinks: Set<() => void>;
 };
 
-const ANSI_RESET = "\x1b[0m";
+const HEADER_ANIM = Symbol.for("pi-cc-extensions:header-anim");
 
-// 官方 install.sh 静态 logo（4 行原样，短行补尾随空格统一到 8 列）+ 底部空行补到 5 行，
-// 与右侧 tips 行数等高；着色保持现状（accent 渐变）
-const LOGO_LINES = ["██████  ", "██  ██  ", "████  ██", "██    ██", "        "];
-
-// hero 文案（单行，替换原生 header 的 "Pi can explain..." 默认位置）
-const HERO_PREFIX = "There are many agent harnesses, but this one is ";
-const HERO_HIGHLIGHT = "yours";
-const HERO_SUFFIX = ".";
-
-// 左右双栏布局：左侧 logo(5 行)，右侧原生提示(5 行)
-const TWO_COL_GAP = 2;
-// 窄于该宽度回退为垂直堆叠（logo + hero）
-const TWO_COL_MIN_WIDTH = 48;
-
-const FALLBACK_ACCENT_RGB: Rgb = [80, 160, 255];
-const LOGO_BLOCK_WIDTH = Math.max(...LOGO_LINES.map((line) => [...line].length));
-// 左栏宽度 = logo 宽，右侧栏从该宽度后开始
-const LEFT_COLUMN_WIDTH = LOGO_BLOCK_WIDTH;
-
-const PALETTE_STEPS = 24;
-const PALETTE_MAX_DARKEN = 0.18;
-const PALETTE_MAX_LIGHTEN = 0.18;
-// 行内渐变波长：1/4 全波长（暗→亮单调，避免小字符数行内来回跳变）
-const PALETTE_SPAN = 0.25;
-// 行间相位偏移：小步累加 → 整体左上暗→右下亮的对角渐变
-const LOGO_ROW_PHASE_STEP = 0.08;
-
-function getVisibleLength(text: string): number {
-	return [...stripAnsi(text)].length;
-}
-
-function clampByte(value: number): number {
-	return Math.max(0, Math.min(255, Math.round(value)));
-}
-
-function interpolateChannel(start: number, end: number, factor: number): number {
-	return Math.round(start + (end - start) * factor);
-}
-
-function interpolateRgb(start: Rgb, end: Rgb, factor: number): Rgb {
-	return [
-		interpolateChannel(start[0], end[0], factor),
-		interpolateChannel(start[1], end[1], factor),
-		interpolateChannel(start[2], end[2], factor),
-	];
-}
-
-function darkenRgb(rgb: Rgb, amount: number): Rgb {
-	return [
-		clampByte(rgb[0] * (1 - amount)),
-		clampByte(rgb[1] * (1 - amount)),
-		clampByte(rgb[2] * (1 - amount)),
-	];
-}
-
-function lightenRgb(rgb: Rgb, amount: number): Rgb {
-	return [
-		clampByte(rgb[0] + (255 - rgb[0]) * amount),
-		clampByte(rgb[1] + (255 - rgb[1]) * amount),
-		clampByte(rgb[2] + (255 - rgb[2]) * amount),
-	];
-}
-
-function applyTruecolor(rgb: Rgb, text: string): string {
-	const [red, green, blue] = rgb;
-	return `\x1b[38;2;${red};${green};${blue}m${text}${ANSI_RESET}`;
-}
-
-function parseTruecolorAnsi(ansi: string): Rgb | undefined {
-	const match = ansi.match(/38;2;(\d+);(\d+);(\d+)/);
-	if (!match) return undefined;
-
-	return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function parseAnsi256Foreground(ansi: string): Rgb | undefined {
-	const match = ansi.match(/38;5;(\d+)/);
-	if (!match) return undefined;
-
-	return ansi256ToRgb(Number(match[1]));
-}
-
-function parseAnsi16Foreground(ansi: string): Rgb | undefined {
-	const normalMatch = ansi.match(/(?:\[|;)(3[0-7])(?:;|m)/);
-	if (normalMatch) {
-		return ansi16ToRgb(Number(normalMatch[1]) - 30);
+export function headerAnimState(): HeaderAnimShared {
+	const g = globalThis as Record<symbol, unknown>;
+	let state = g[HEADER_ANIM] as HeaderAnimShared | undefined;
+	if (!state) {
+		state = { frame: 0, done: false, timer: undefined, sinks: new Set() };
+		g[HEADER_ANIM] = state;
 	}
-
-	const brightMatch = ansi.match(/(?:\[|;)(9[0-7])(?:;|m)/);
-	if (brightMatch) {
-		return ansi16ToRgb(Number(brightMatch[1]) - 90 + 8);
-	}
-
-	return undefined;
+	return state;
 }
 
-function parseForegroundRgbFromAnsi(ansi: string): Rgb | undefined {
-	return parseTruecolorAnsi(ansi) ?? parseAnsi256Foreground(ansi) ?? parseAnsi16Foreground(ansi);
+/** 测试/调试用：重置共享动画状态。 */
+export function resetHeaderAnimation(): void {
+	const state = headerAnimState();
+	if (state.timer) clearInterval(state.timer);
+	state.frame = 0;
+	state.done = false;
+	state.timer = undefined;
+	state.sinks.clear();
+	(globalThis as Record<symbol, unknown>)[HEADER_ANIMATED] = false;
 }
 
-function resolveAccentRgb(theme: { getFgAnsi(name: string): string }): Rgb {
-	return parseForegroundRgbFromAnsi(theme.getFgAnsi("accent")) ?? FALLBACK_ACCENT_RGB;
-}
-
-function buildAccentPalette(accent: Rgb): Rgb[] {
-	return Array.from({ length: PALETTE_STEPS }, (_, index) => {
-		const progress = index / PALETTE_STEPS;
-		const wave = -Math.cos(progress * Math.PI * 2);
-
-		if (wave < 0) {
-			return darkenRgb(accent, PALETTE_MAX_DARKEN * -wave);
+function repaintHeaderSinks(): void {
+	for (const repaint of headerAnimState().sinks) {
+		try {
+			repaint();
+		} catch {
+			/* ignore dead tui */
 		}
-
-		return lightenRgb(accent, PALETTE_MAX_LIGHTEN * wave);
-	});
-}
-
-function sampleGradientColor(palette: Rgb[], position: number): Rgb {
-	const wrappedPosition = ((position % 1) + 1) % 1;
-	const scaledPosition = wrappedPosition * palette.length;
-	const baseIndex = Math.floor(scaledPosition) % palette.length;
-	const nextIndex = (baseIndex + 1) % palette.length;
-	const factor = scaledPosition - Math.floor(scaledPosition);
-
-	return interpolateRgb(palette[baseIndex]!, palette[nextIndex]!, factor);
-}
-
-function renderGradientText(text: string, palette: Rgb[], phase: number): string {
-	const characters = [...text];
-	const span = Math.max(characters.length - 1, 1);
-
-	return characters
-		.map((character, index) => {
-			if (character === " ") return character;
-			// 行内单调暗→亮（1/4 波长），行间相位偏移 → 对角渐变
-			const color = sampleGradientColor(palette, (index / span) * PALETTE_SPAN + phase);
-			return applyTruecolor(color, character);
-		})
-		.join("");
-}
-
-function createCenteredBlockLine(text: string, width: number, blockWidth: number): string {
-	const leftPadding = Math.max(0, Math.floor((width - blockWidth) / 2));
-	return `${" ".repeat(leftPadding)}${text}`;
-}
-
-function createCenteredStyledLine(parts: StyledPart[], width: number): string {
-	const rawText = parts.map((part) => part.raw).join("");
-	const leftPadding = Math.max(0, Math.floor((width - [...rawText].length) / 2));
-	const styledText = parts.map((part) => part.styled).join("");
-	return `${" ".repeat(leftPadding)}${styledText}`;
-}
-
-function fitLineToWidth(line: string, width: number): string {
-	if (getVisibleLength(line) <= width) {
-		return line;
 	}
-
-	return stripAnsi(line).slice(0, width);
 }
 
-function renderLogoLines(width: number, palette: Rgb[]): string[] {
-	return LOGO_LINES.map((line, rowIndex) => {
-		const phasedLine = renderGradientText(line, palette, rowIndex * LOGO_ROW_PHASE_STEP);
-		return createCenteredBlockLine(phasedLine, width, LOGO_BLOCK_WIDTH);
-	});
+/** 确保唯一的滴答定时器在跑；到末帧自停并标记完成。导出供测试。 */
+export function ensureHeaderAnimTick(): void {
+	const state = headerAnimState();
+	if (state.done || state.timer) return;
+	state.timer = setInterval(() => {
+		if (state.frame < MASCOT_LAST_FRAME) {
+			state.frame++;
+			repaintHeaderSinks();
+		} else {
+			if (state.timer) clearInterval(state.timer);
+			state.timer = undefined;
+			state.done = true;
+			markHeaderAnimated();
+			repaintHeaderSinks();
+		}
+	}, MASCOT_ANIMATION_INTERVAL_MS);
+	(state.timer as unknown as { unref?: () => void }).unref?.();
 }
 
-// ---- 右侧：原生默认 header 文本（对齐 pi 内置 startup header，按键文本随用户 keybindings 动态渲染） ----
-
-function formatKeyPart(part: string): string {
-	// 与 pi 内置 keybinding-hints 一致：macOS 上 alt 显示为 option
-	return process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+function renderMascotLines(
+	palette: { accent: (s: string) => string; muted: (s: string) => string },
+	frame: number,
+): string[] {
+	return piMascotFrame(frame, palette);
 }
 
-function formatKeyText(key: string): string {
-	return key
-		.split("/")
-		.map((part) => part.split("+").map(formatKeyPart).join("+"))
-		.join("/");
+// ---- 布局 helpers（盒线骨架沿用 cc-my-pi/pi-claude-code-tui 的做法，MIT） ----
+
+function center(text: string, width: number): string {
+	if (width <= 0) return "";
+	const w = visibleWidth(text);
+	if (w >= width) return truncateToWidth(text, width, "…");
+	return `${" ".repeat(Math.floor((width - w) / 2))}${text}`;
 }
 
-function keyText(keybinding: AppKeybinding): string {
-	const keys = getKeybindings().getKeys(keybinding);
-	return keys.length === 0 ? "" : formatKeyText(keys.join("/"));
+function padRight(text: string, width: number, ellipsis = ""): string {
+	const clipped = truncateToWidth(text, width, ellipsis);
+	return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
-function renderNativeLines(theme: {
-	fg(name: string, text: string): string;
-	bold(text: string): string;
-}): string[] {
-	// 颜色方案照抄 pi 内置 header：按键 dim、描述 muted、分隔符 muted、版本 dim
-	const hint = (keybinding: AppKeybinding, description: string) =>
-		theme.fg("dim", keyText(keybinding)) + theme.fg("muted", ` ${description}`);
-	const rawHint = (key: string, description: string) =>
-		theme.fg("dim", formatKeyText(key)) + theme.fg("muted", ` ${description}`);
+function headerColumnWidths(innerWidth: number): {
+	leftWidth: number;
+	rightWidth: number;
+	useRight: boolean;
+} {
+	const single = { leftWidth: innerWidth, rightWidth: 0, useRight: false };
+	if (innerWidth <= 0) return { leftWidth: 0, rightWidth: 0, useRight: false };
+	if (innerWidth < MIN_LEFT_WIDTH + TWO_COL_GAP + MIN_RIGHT_WIDTH) return single;
+	const leftWidth = Math.min(
+		MAX_LEFT_WIDTH,
+		Math.max(MIN_LEFT_WIDTH, Math.round(innerWidth * 0.3)),
+	);
+	const rightWidth = innerWidth - TWO_COL_GAP - leftWidth;
+	if (rightWidth < MIN_RIGHT_WIDTH || rightWidth <= leftWidth) return single;
+	return { leftWidth, rightWidth, useRight: true };
+}
 
-	const logo = theme.bold(theme.fg("accent", "pi")) + theme.fg("dim", ` v${VERSION}`);
-	const compact = [
-		hint("app.interrupt", "interrupt"),
-		rawHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
-		rawHint("/", "commands"),
-		rawHint("!", "bash"),
-		hint("app.tools.expand", "more"),
-	].join(theme.fg("muted", " · "));
+function borderLine(
+	left: string,
+	label: string,
+	right: string,
+	width: number,
+	paint: (text: string) => string,
+): string {
+	if (width <= 1) return "";
+	if (width < 8 || label.length === 0) {
+		return paint(truncateToWidth(left + "─".repeat(Math.max(0, width - 2)) + right, width, ""));
+	}
+	const before = "─── ";
+	const after = " ─────";
+	const fixedWidth = visibleWidth(before) + visibleWidth(label) + visibleWidth(after);
+	const fill = Math.max(0, width - 2 - fixedWidth);
+	return `${paint(left)}${paint(before)}${label}${paint(after)}${paint("─".repeat(fill))}${paint(right)}`;
+}
 
-	return [
-		logo,
-		compact,
-		theme.fg(
-			"dim",
-			`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
-		),
-		"",
-		// hero 文案替换原生 "Pi can explain..." 行位置
-		renderHeroParts(theme)
-			.map((part) => part.styled)
-			.join(""),
+function boxedLine(content: string, width: number, paint: (text: string) => string): string {
+	if (width <= 2) return truncateToWidth(content, width, "");
+	return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
+}
+
+function twoColumn(
+	left: string,
+	right: string,
+	leftWidth: number,
+	rightWidth: number,
+	paint: (text: string) => string,
+): string {
+	// 右栏超宽截断省略号；左栏已居中不再截。
+	return `${padRight(left, leftWidth)} ${paint("│")} ${padRight(right, rightWidth, "…")}`;
+}
+
+// ---- 文本格式化（pi-claude-code-tui 原体，MIT） ----
+
+function formatCwd(cwd: string, home: string = homedir()): string {
+	return home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
+}
+
+function formatModelLabel(model: { provider?: string; id?: string } | null | undefined): string {
+	if (!model?.id) return "Default model";
+	return model.provider ? `${model.provider}/${model.id}` : model.id;
+}
+
+function formatThinkingLabel(level: string): string {
+	return level === "off" ? "off" : level;
+}
+
+// ---- 右侧文案 ----
+
+/** Loaded 盘点行；扫描中显示省略号。返回裸计数，由调用方加标题。 */
+function renderLoadedLines(
+	stats: LoadedStats | undefined,
+	theme: { fg(name: string, text: string): string },
+): { counts: string; aggregate: string } {
+	if (!stats) {
+		return { counts: theme.fg("muted", "…"), aggregate: "" };
+	}
+	const parts = [
+		`${stats.skills.user + stats.skills.project} skills`,
+		`${stats.prompts.user + stats.prompts.project} prompts`,
+		`${stats.extensions.user + stats.extensions.project} extensions`,
 	];
+	if (stats.mcpServers > 0) parts.push(`${stats.mcpServers} mcp servers`);
+	const global = stats.skills.user + stats.prompts.user + stats.extensions.user;
+	const project = stats.skills.project + stats.prompts.project + stats.extensions.project;
+	return {
+		counts: theme.fg("muted", parts.join(" · ")),
+		aggregate: theme.fg("muted", `${global} global · ${project} project`),
+	};
 }
 
-function renderHeroParts(theme: {
-	fg(name: string, text: string): string;
-	bold(text: string): string;
-}): StyledPart[] {
-	return [
-		{ raw: HERO_PREFIX, styled: theme.fg("accent", HERO_PREFIX) },
-		{ raw: HERO_HIGHLIGHT, styled: theme.bold(theme.fg("mdLink", HERO_HIGHLIGHT)) },
-		{ raw: HERO_SUFFIX, styled: theme.fg("accent", HERO_SUFFIX) },
-	];
-}
+export type HeaderMeta = {
+	model?: { provider?: string; id?: string } | null;
+	thinkingLevel?: string;
+	cwd?: string;
+};
 
 export function renderHeaderLines(
 	width: number,
@@ -251,61 +227,208 @@ export function renderHeaderLines(
 		fg(name: string, text: string): string;
 		bold(text: string): string;
 	},
+	frame: number = MASCOT_LAST_FRAME,
+	stats?: LoadedStats,
+	meta: HeaderMeta = {},
 ): string[] {
-	const accentRgb = resolveAccentRgb(theme);
-	const palette = buildAccentPalette(accentRgb);
+	const paint = (s: string) => theme.fg("accent", s);
+	const muted = (s: string) => theme.fg("muted", s);
+	const dim = (s: string) => theme.fg("dim", s);
+	const bold = (s: string) => theme.bold(s);
+	const loaded = renderLoadedLines(stats, theme);
 
-	if (width < TWO_COL_MIN_WIDTH) {
-		// 窄屏回退：logo + hero 单行垂直堆叠居中
-		const logoLines = renderLogoLines(width, palette);
-		const heroLine = createCenteredStyledLine(renderHeroParts(theme), width);
-		return ["", ...logoLines, "", heroLine, ""].map((line) => fitLineToWidth(line, width));
-	}
+	if (width < 24) return [paint(`Pi v${VERSION}`)];
 
-	// 双栏：左官方 logo(5 行) 右原生提示(5 行)，同高并排，gap 分隔不交叉
-	const leftLines = renderLogoLines(LEFT_COLUMN_WIDTH, palette);
-	const rightLines = renderNativeLines(theme);
-	const rightWidth = width - LEFT_COLUMN_WIDTH - TWO_COL_GAP;
-	const padTop = Math.floor((rightLines.length - leftLines.length) / 2);
-	const paddedLeft = [
-		...Array.from({ length: padTop }, () => ""),
-		...leftLines,
-		...Array.from({ length: rightLines.length - leftLines.length - padTop }, () => ""),
+	const model = formatModelLabel(meta.model);
+	const effort = formatThinkingLabel(meta.thinkingLevel ?? "off");
+	const cwd = formatCwd(meta.cwd ?? "");
+
+	const innerWidth = width - 2;
+	const { leftWidth, rightWidth, useRight } = headerColumnWidths(innerWidth);
+
+	// 左栏：标题 → mascot → 模型·档位 → 目录；右栏：Getting started + Loaded
+	// 左栏行保持原始宽度，布局时再按实际 leftWidth 居中，避免预居中被截断。
+	const leftLines = [
+		bold("pi-cc"),
+		...renderMascotLines({ accent: paint, muted }, frame),
+		muted(`${model} · ${effort} effort`),
+		dim(cwd),
+	];
+	const divider = paint("─".repeat(Math.max(8, Math.min(rightWidth || 16, 16))));
+	const rightLines = [
+		paint(bold("Getting started")),
+		muted("Run /ccstyle to configure the look"),
+		divider,
+		paint(bold("Loaded")),
+		loaded.counts,
+		loaded.aggregate,
+		dim("/loaded for details"),
 	];
 
-	return paddedLeft.map(
-		(line, index) =>
-			`${line}${" ".repeat(TWO_COL_GAP)}${fitLineToWidth(rightLines[index] ?? "", rightWidth)}`,
+	const lines = [borderLine("╭", `${paint("Pi")} v${VERSION}`, "╮", width, paint)];
+	if (!useRight) {
+		// 单栏：左栏内容占满内宽
+		for (const line of leftLines)
+			lines.push(boxedLine(center(stripAnsi(line), innerWidth), width, paint));
+		lines.push(boxedLine(center(`Loaded: ${stripAnsi(loaded.counts)}`, innerWidth), width, paint));
+		if (loaded.aggregate)
+			lines.push(boxedLine(center(stripAnsi(loaded.aggregate), innerWidth), width, paint));
+	} else {
+		const rowCount = Math.max(leftLines.length, rightLines.length);
+		for (let i = 0; i < rowCount; i++) {
+			const content = twoColumn(
+				center(stripAnsi(leftLines[i] ?? ""), leftWidth),
+				rightLines[i] ?? "",
+				leftWidth,
+				rightWidth,
+				paint,
+			);
+			lines.push(boxedLine(content, width, paint));
+		}
+	}
+	lines.push(borderLine("╰", "", "╯", width, paint));
+	return lines.map((line) => truncateToWidth(line, width, ""));
+}
+
+/** 当前会话已缓存的盘点（扫描中为 undefined）。 */
+let cachedStats: LoadedStats | undefined;
+
+function safeHasCommand(pi: unknown, name: string): boolean {
+	try {
+		const commands = (pi as { getCommands?: () => Array<{ name?: string }> }).getCommands?.();
+		return Array.isArray(commands) && commands.some((c) => c?.name === name);
+	} catch {
+		return false;
+	}
+}
+
+/** 当前 thinking 档位；拿不到则回退 off。 */
+function safeThinkingLevel(pi: unknown): string {
+	try {
+		const level = (pi as { getThinkingLevel?: () => string }).getThinkingLevel?.();
+		return typeof level === "string" && level ? level : "off";
+	} catch {
+		return "off";
+	}
+}
+
+/** 启动资源扫描（进程内共享 promise）； resolve 后请求重绘。 */
+function ensureStats(pi: unknown, cwd: string, requestRender: () => void): void {
+	if (cachedStats) {
+		requestRender();
+		return;
+	}
+	collectLoadedStats(cwd, resolveAgentDir(), safeHasCommand(pi, "mcp")).then(
+		(stats) => {
+			cachedStats = stats;
+			requestRender();
+		},
+		() => {
+			/* 失败则省略盘点行 */
+		},
 	);
+}
+
+type HeaderComponent = {
+	render(width: number): string[];
+	invalidate(): void;
+	dispose(): void;
+};
+
+let activeHeader: HeaderComponent | undefined;
+
+function disposeActiveHeader(): void {
+	try {
+		activeHeader?.dispose();
+	} catch {
+		/* ignore */
+	}
+	activeHeader = undefined;
 }
 
 /**
  * 按配置应用启动头：on → 自定义 header；off → 恢复官方默认 header。
  * 导出供 /ccstyle 面板在切换开关时实时重应用。
  */
-export function applyStartupHeader(ctx: any): void {
+export function applyStartupHeader(ctx: any, pi?: unknown): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
 	if (!config.showStartupHeader) {
 		// 恢复官方内置 header（logo + 快捷键提示 + onboarding）。
+		disposeActiveHeader();
 		ctx.ui.setHeader(undefined);
 		return;
 	}
-	ctx.ui.setHeader((_tui: unknown, theme: any) => ({
-		render(width: number): string[] {
-			return renderHeaderLines(width, theme);
-		},
-		invalidate() {},
-	}));
+	const skipAnimation = !config.startupAnimation || headerAnimatedThisProcess();
+	const anim = headerAnimState();
+	if (skipAnimation) {
+		// 关动画或已播过：直接末帧，不启动定时器。
+		anim.frame = MASCOT_LAST_FRAME;
+		anim.done = true;
+		markHeaderAnimated();
+	} else {
+		ensureHeaderAnimTick();
+	}
+	disposeActiveHeader();
+	ctx.ui.setHeader((tui: any, _theme: unknown) => {
+		const requestRender = () => {
+			try {
+				tui?.requestRender?.();
+			} catch {
+				/* ignore */
+			}
+		};
+		try {
+			ensureStats(pi, ctx.cwd, requestRender);
+		} catch {
+			/* ignore stale ctx */
+		}
+		// 注册重绘槽：共享定时器每帧刷所有存活实例；render 读共享帧，天然续播。
+		anim.sinks.add(requestRender);
+		const component: HeaderComponent = {
+			render(width: number): string[] {
+				// 主题每次渲染现取，跟随 /theme 切换；ctx getter stale 则回退空信息。
+				const theme = ctx.ui.theme;
+				let meta: HeaderMeta = {};
+				try {
+					meta = {
+						model: ctx.model ?? null,
+						thinkingLevel: safeThinkingLevel(pi),
+						cwd: typeof ctx.cwd === "string" ? ctx.cwd : "",
+					};
+				} catch {
+					/* ignore stale ctx */
+				}
+				return renderHeaderLines(width, theme, anim.frame, cachedStats, meta);
+			},
+			invalidate() {},
+			dispose() {
+				anim.sinks.delete(requestRender);
+			},
+		};
+		activeHeader = component;
+		return component;
+	});
 }
+
+const quietStartupFile = createQuietStartupFile();
 
 export default function piStartupHeader(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
-		applyStartupHeader(ctx);
+		// quietStartup 只做单向确保（开则写入 Pi 配置）；关闭走面板显式写入，避免误清用户手写值。
+		if (config.showStartupHeader && config.quietStartup) {
+			try {
+				quietStartupFile.write(true);
+			} catch {
+				/* best effort */
+			}
+		}
+		applyStartupHeader(ctx, pi);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
 
+		disposeActiveHeader();
 		ctx.ui.setHeader(undefined);
 	});
 }

@@ -52,7 +52,8 @@
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
 		"grok-mermaid": "^0.2.2",
-		"jiti": "^2.7.0"
+		"jiti": "^2.7.0",
+		"pi-paster": "^0.2.3"
 	},
 	"bundledDependencies": [],
 	"peerDependencies": {

@@ -66,6 +66,8 @@ export type Config = {
 	enableAgentSummary: boolean;
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
+	enableImagePaster: boolean;
+	enableClipboardPaste: boolean;
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -129,6 +131,8 @@ export const DEFAULT_CONFIG: Config = {
 	enableAgentSummary: true,
 	enableWorkingMessage: true,
 	enableAliases: true,
+	enableImagePaster: true,
+	enableClipboardPaste: true,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -229,6 +233,8 @@ export function normalizeConfig(input: unknown): Config {
 		enableAgentSummary: source.enableAgentSummary !== false,
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
+		enableImagePaster: source.enableImagePaster !== false,
+		enableClipboardPaste: source.enableClipboardPaste !== false,
 	};
 }
 
@@ -284,6 +290,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
+		`imagePaster=${source.enableImagePaster ? "on" : "off"}`,
+		`clipboardPaste=${source.enableClipboardPaste ? "on" : "off"}`,
 	].join(" · ");
 }
 

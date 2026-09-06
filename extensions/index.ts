@@ -12,7 +12,9 @@ import workingRow from "./feature/shell/working-row.ts";
 // feature
 import agentAutocomplete from "./feature/reference/subagent.ts";
 import agentSummary from "./feature/agent-summary/index.ts";
+import clipboardPaste from "./feature/clipboard-paste.ts";
 import context from "./feature/context.ts";
+import imagePaster from "./feature/image-paster.ts";
 import sessionReference from "./feature/reference/index.ts";
 import { installCompactThinking } from "./feature/compact-thinking.ts";
 
@@ -27,6 +29,11 @@ export default function (pi: ExtensionAPI): void {
 	piStartupHeader(pi);
 	// /loaded 常驻（与 header 开关无关，resume 进来的旧会话也要能查）。
 	registerLoadedCommand(pi);
+	// 图片粘贴先于 working-row 注册：paster 在 session_start 整体替换 editor
+	// 工厂，working-row 是链式包裹，后注册才能包在外层（见 working-row.ts）。
+	imagePaster(pi);
+	// Windows Ctrl+V 双通道：无 editor 工厂操作，注册顺序无关。
+	clipboardPaste(pi);
 	if (config.enableWorkingMessage) {
 		workingMessage(pi);
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。

@@ -44,6 +44,8 @@ Run `/reload` after installation.
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
 | Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
+| Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |
+| Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 
 ## Configuration
@@ -85,7 +87,9 @@ Run `/reload` after installation.
   "enableContextCommand": true,            // /context usage check
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
-  "enableAliases": true                    // /clear, /exit aliases
+  "enableAliases": true,                   // /clear, /exit aliases
+  "enableImagePaster": true,               // image paster: clipboard/dropped images as attachments
+  "enableClipboardPaste": true             // Ctrl+V clipboard paste (Windows only)
 }
 ```
 

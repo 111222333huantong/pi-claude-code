@@ -474,6 +474,20 @@ export async function showCcstylePanel(
 			"Aliases disabled.",
 			config.enableAliases,
 		);
+		const imagePasterToggle = featureToggleSetting(
+			"enableImagePaster",
+			"Image paster",
+			"Pasted/dropped image paths become first-class attachments. Next restart applies.",
+			"Image paster disabled.",
+			config.enableImagePaster,
+		);
+		const clipboardPasteToggle = featureToggleSetting(
+			"enableClipboardPaste",
+			"Clipboard paste",
+			"Ctrl+V pastes clipboard images or text on Windows. Next restart applies.",
+			"Clipboard paste disabled.",
+			config.enableClipboardPaste,
+		);
 		const featureToggles: Record<string, { apply: (on: boolean) => void }> = {
 			enableSessionReference: sessionReferenceToggle,
 			enableSubagentAutocomplete: subagentAutocompleteToggle,
@@ -481,6 +495,8 @@ export async function showCcstylePanel(
 			enableAgentSummary: agentSummaryToggle,
 			enableWorkingMessage: workingMessageToggle,
 			enableAliases: aliasesToggle,
+			enableImagePaster: imagePasterToggle,
+			enableClipboardPaste: clipboardPasteToggle,
 		};
 
 		const onSettingChange = (id: string, value: string) => {
@@ -699,6 +715,8 @@ export async function showCcstylePanel(
 					agentSummaryToggle.setting,
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
+					imagePasterToggle.setting,
+					clipboardPasteToggle.setting,
 				],
 			},
 		];

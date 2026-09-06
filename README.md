@@ -44,6 +44,8 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
+| 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
+| 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
 
 ## 配置
@@ -85,7 +87,9 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableContextCommand": true,            // /context 上下文检查
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
-  "enableAliases": true                    // /clear、/exit 别名
+  "enableAliases": true,                   // /clear、/exit 别名
+  "enableImagePaster": true,               // 图片粘贴：剪贴板/拖拽图片转附件
+  "enableClipboardPaste": true             // Ctrl+V 剪贴板粘贴（仅 Windows）
 }
 ```
 

@@ -15,6 +15,7 @@ import agentSummary from "./feature/agent-summary/index.ts";
 import clipboardPaste from "./feature/clipboard-paste.ts";
 import context from "./feature/context.ts";
 import imagePaster from "./feature/image-paster.ts";
+import registerStatusline from "./feature/statusline/index.ts";
 import sessionReference from "./feature/reference/index.ts";
 import { installCompactThinking } from "./feature/compact-thinking.ts";
 
@@ -34,6 +35,7 @@ export default function (pi: ExtensionAPI): void {
 	imagePaster(pi);
 	// Windows Ctrl+V 双通道：无 editor 工厂操作，注册顺序无关。
 	clipboardPaste(pi);
+	registerStatusline(pi);
 	if (config.enableWorkingMessage) {
 		workingMessage(pi);
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。

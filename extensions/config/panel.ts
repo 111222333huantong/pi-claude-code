@@ -9,6 +9,7 @@ import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-work
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import { createQuietStartupFile } from "../feature/shell/quiet-startup.ts";
+import { readStatuslineConfig, writeStatuslineConfig } from "../feature/statusline/config.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
 	config,
@@ -499,6 +500,13 @@ export async function showCcstylePanel(
 			"Clipboard paste disabled.",
 			config.enableClipboardPaste,
 		);
+		const statuslineToggle = featureToggleSetting(
+			"enableStatusline",
+			"Statusline",
+			"Two-line footer: model/ctx/cost/mcp/ext + cwd/git. Own statusline.json. Next restart applies.",
+			"Statusline disabled, Pi native footer only.",
+			readStatuslineConfig().enabled,
+		);
 		const featureToggles: Record<string, { apply: (on: boolean) => void }> = {
 			enableSessionReference: sessionReferenceToggle,
 			enableSubagentAutocomplete: subagentAutocompleteToggle,
@@ -511,6 +519,13 @@ export async function showCcstylePanel(
 		};
 
 		const onSettingChange = (id: string, value: string) => {
+			// 状态栏走独立 statusline.json，不进主配置。
+			if (id === "enableStatusline") {
+				writeStatuslineConfig({ enabled: value === "on" });
+				statuslineToggle.apply(value === "on");
+				ctx.ui.notify(`Updated enableStatusline: ${value} (next restart)`, "info");
+				return;
+			}
 			// 额外功能开关：字段名与配置布尔字段一一对应，切换后重启生效。
 			const featureToggle = featureToggles[id];
 			if (featureToggle) {
@@ -740,6 +755,7 @@ export async function showCcstylePanel(
 					aliasesToggle.setting,
 					imagePasterToggle.setting,
 					clipboardPasteToggle.setting,
+					statuslineToggle.setting,
 				],
 			},
 		];

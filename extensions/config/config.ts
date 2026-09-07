@@ -87,7 +87,7 @@ export const EXPANDED_INPUT_MAX_LINES_VALUES = ["5", "10", "20", "40", "80"];
 export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 /** 工具摘要里 path/command 等输入的折叠字符数。 */
 export const INPUT_CLIP_VALUES = ["40", "60", "80", "100", "120", "160"];
-export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
+export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "2", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];

@@ -20,7 +20,6 @@ import {
 import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
 import {
-	animateCompactThinkingText,
 	formatThoughtDuration,
 	styleCompactThinkingText,
 } from "../renderer/compact-mode.ts";
@@ -170,8 +169,8 @@ function thinkingExpandAction(): string | undefined {
 	return isToolTuiFullscreen() ? "click to show more" : getThinkingToggleHint();
 }
 
-// 只 wrap 尾部窗口；缓存未着色折行，着色放到取出时做，避免主题切换命中旧 ANSI。
-type PreviewCacheEntry = { lines: string[]; hiddenBefore: number };
+// 只 wrap 头部窗口；缓存未着色折行，着色放到取出时做，避免主题切换命中旧 ANSI。
+type PreviewCacheEntry = { lines: string[]; hiddenOutside: number };
 const previewCache = new Map<string, PreviewCacheEntry>();
 export const THINKING_PREVIEW_CACHE_MAX = 2_048;
 const PREVIEW_BUDGET_MIN_CHARS = 2_000;
@@ -272,6 +271,8 @@ function layoutThinkingPreview(
 	text: string,
 	width: number,
 	padding: number,
+	/** true=取尾部窗口（流式追随最新，视觉上随内容滚动），false=取头部窗口（完成后停在起点）。 */
+	followTail = false,
 ): { visible: string[]; hiddenLines: number } {
 	if (!text || config.previewLines <= 0) return { visible: [], hiddenLines: 0 };
 	const contentWidth = Math.max(1, width - padding * 2);
@@ -280,25 +281,41 @@ function layoutThinkingPreview(
 		PREVIEW_BUDGET_MIN_CHARS,
 	);
 	let source = text;
-	let cut = 0;
+	let cut = followTail ? 0 : text.length;
 	if (source.length > budget) {
-		const start = source.length - budget;
-		const newline = source.indexOf("\n", start);
-		cut = newline === -1 ? start : newline + 1;
-		if (cut < source.length) source = source.slice(cut);
-		else cut = 0;
+		if (followTail) {
+			const start = source.length - budget;
+			const newline = source.indexOf("\n", start);
+			cut = newline === -1 ? start : newline + 1;
+			if (cut < source.length) source = source.slice(cut);
+			else cut = 0;
+		} else {
+			const newline = source.lastIndexOf("\n", budget);
+			cut = newline === -1 ? budget : newline;
+			source = source.slice(0, cut);
+		}
 	}
-	const cacheKey = `${width}:${padding}:${cut}:${source}`;
+	const cacheKey = `${followTail ? "tail" : "head"}:${width}:${padding}:${cut}:${source}`;
 	let entry = getCachedPreview(cacheKey);
 	if (!entry) {
 		entry = {
 			lines: wrapTextWithAnsi(source.replace(/\t/g, "   "), contentWidth),
-			hiddenBefore: cut > 0 ? countWrappedLines(text.slice(0, cut), contentWidth) : 0,
+			hiddenOutside: followTail
+				? cut > 0
+					? countWrappedLines(text.slice(0, cut), contentWidth)
+					: 0
+				: cut < text.length
+					? countWrappedLines(text.slice(cut), contentWidth)
+					: 0,
 		};
 		cachePreview(cacheKey, entry);
 	}
-	const hiddenLines = entry.hiddenBefore + Math.max(0, entry.lines.length - config.previewLines);
-	const visible = hiddenLines > 0 ? entry.lines.slice(-config.previewLines) : entry.lines;
+	const hiddenLines = entry.hiddenOutside + Math.max(0, entry.lines.length - config.previewLines);
+	const visible = hiddenLines > 0
+		? followTail
+			? entry.lines.slice(-config.previewLines)
+			: entry.lines.slice(0, config.previewLines)
+		: entry.lines;
 	return { visible, hiddenLines };
 }
 
@@ -334,12 +351,15 @@ export class ThinkingPreviewBlock implements Component {
 	private theme: Theme | undefined;
 	private _expanded: boolean;
 	private hintHovered = false;
+	/** 流式活动态是否追随尾部（视觉滚动）；完成后固定头部。每次 updateContent 重建，状态不跨帧残留。 */
+	private followTail: boolean;
 	private collapsedMemo:
 		| {
 				width: number;
 				previewLines: number;
 				hintHovered: boolean;
 				expandAction: string | undefined;
+				followTail: boolean;
 				lines: string[];
 		  }
 		| undefined;
@@ -352,12 +372,14 @@ export class ThinkingPreviewBlock implements Component {
 		style: (text: string) => string,
 		theme?: Theme,
 		runStartIndex = 0,
+		followTail = false,
 	) {
 		this.heading = heading;
 		this.text = text;
 		this.padding = padding;
 		this.messageTimestamp = messageTimestamp;
 		this.runStartIndex = runStartIndex;
+		this.followTail = followTail;
 		this.style = style;
 		this.theme = theme;
 		this._expanded = expandedThinking.has(messageTimestamp);
@@ -418,7 +440,7 @@ export class ThinkingPreviewBlock implements Component {
 				hiddenLines: 0,
 			};
 		}
-		const preview = layoutThinkingPreview(this.text, width, padding);
+		const preview = layoutThinkingPreview(this.text, width, padding, this.followTail);
 		return { lines: preview.visible, hiddenLines: preview.hiddenLines };
 	}
 
@@ -447,7 +469,8 @@ export class ThinkingPreviewBlock implements Component {
 			this.collapsedMemo?.width === width &&
 			this.collapsedMemo.previewLines === config.previewLines &&
 			this.collapsedMemo.hintHovered === this.hintHovered &&
-			this.collapsedMemo.expandAction === expandAction
+			this.collapsedMemo.expandAction === expandAction &&
+			this.collapsedMemo.followTail === this.followTail
 		) {
 			return this.collapsedMemo.lines;
 		}
@@ -465,6 +488,7 @@ export class ThinkingPreviewBlock implements Component {
 			previewLines: config.previewLines,
 			hintHovered: this.hintHovered,
 			expandAction,
+			followTail: this.followTail,
 			lines,
 		};
 		return lines;
@@ -532,6 +556,9 @@ function getLatestOpenAiSummary(thinkingSignature: string | undefined): SummaryP
 
 const WIDGET_ID = "compact-thinking-render-loop";
 
+/** Thinking 标题徽标：与 spinner 字形帧 / `✻ Turn took` 行同字（U+273B），项目内保持一致。 */
+const THINKING_BADGE = "✻ ";
+
 // 上游 index.ts 内联（含 subagent fork patch）。
 function createTransform(
 	messageType: "assistant" | "assistant-thinking",
@@ -590,20 +617,6 @@ function compactThinking(pi: ExtensionAPI) {
 
 	function thinkingStyle(text: string) {
 		return styleCompactThinkingText(text, activeTheme);
-	}
-
-	function summaryTitleStyle(text: string) {
-		return styleCompactThinkingText(text, activeTheme, true);
-	}
-
-	function animatedText(text: string, baseStyle: (value: string) => string, animate: boolean) {
-		if (!animate) return baseStyle(text);
-		return animateCompactThinkingText(
-			text,
-			activeTheme,
-			animationFrame,
-			baseStyle === summaryTitleStyle,
-		);
 	}
 
 	function getCompletedDuration(messageTimestamp: number, startIndex: number, endIndex: number) {
@@ -729,24 +742,29 @@ function compactThinking(pi: ExtensionAPI) {
 			const durationMs = active ? elapsedMs : completedMs;
 			const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
 
-			let heading: string;
-			if (active && latestSummary) {
-				heading =
-					animatedText(latestSummary.title, summaryTitleStyle, true) +
-					(durationText ? thinkingStyle(` · ${durationText}`) : "");
-			} else if (active) {
-				const label = self.hiddenThinkingLabel || "Thinking...";
-				heading =
-					animatedText(label, thinkingStyle, true) +
-					(durationText ? thinkingStyle(` · ${durationText}`) : "");
-			} else {
-				// Completed compact blocks use one provider-independent status line.
-				// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
-				// "Thinking..."：改用摘要标题或中性 "Thought"。
-				heading = thinkingStyle(
-					durationText ? `Thought for ${durationText}` : (latestSummary?.title ?? "Thought"),
-				);
-			}
+		let heading: string;
+		// 方向 B（Kimi 式降噪）：标题一律静态 dim，不做扫光/加粗。
+		// 流式与完成只靠文案区分（Thinking… · Xs 随计时器跳动 vs Thought for Xs），
+		// 计时器保留：时长跳动与 compact 摘要行动画仍需它驱动重绘。
+		if (active && latestSummary) {
+			heading =
+				thinkingStyle(`${THINKING_BADGE}${latestSummary.title}`) +
+				(durationText ? thinkingStyle(` · ${durationText}`) : "");
+		} else if (active) {
+			const label = self.hiddenThinkingLabel || "Thinking...";
+			// 默认文案用 CC 式单字符省略号；自定义 hiddenThinkingLabel 原样保留只加徽标。
+			const displayLabel = label === "Thinking..." ? "Thinking…" : label;
+			heading =
+				thinkingStyle(`${THINKING_BADGE}${displayLabel}`) +
+				(durationText ? thinkingStyle(` · ${durationText}`) : "");
+		} else {
+			// Completed compact blocks use one provider-independent status line.
+			// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
+			// "Thinking..."：改用摘要标题或中性 "Thought"。
+			heading = thinkingStyle(
+				`${THINKING_BADGE}${durationText ? `Thought for ${durationText}` : (latestSummary?.title ?? "Thought")}`,
+			);
+		}
 			const previewSource = (latestSummary?.body ?? thinkingBlocks.join("\n\n")).trim();
 			self.contentContainer.addChild(
 				new ThinkingPreviewBlock(
@@ -757,6 +775,8 @@ function compactThinking(pi: ExtensionAPI) {
 					thinkingStyle,
 					activeTheme,
 					runStartIndex,
+					// 活动态追随尾部（随新内容滚动），收尾后固定头部。
+					active,
 				),
 			);
 

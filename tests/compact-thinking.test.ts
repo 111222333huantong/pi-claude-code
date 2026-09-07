@@ -279,7 +279,7 @@ test("session tree restores durations from all entries so old messages keep Thou
 		old.updateContent(msg);
 		const lines = renderText(old);
 		assert.ok(
-			lines.some((line) => line.startsWith("Thought for")),
+			lines.some((line) => line.startsWith("✻ Thought for")),
 			`old message keeps its duration after compaction, got: ${lines[0]}`,
 		);
 		assert.ok(!lines.some((line) => line.includes("Thinking...")), "no bare Thinking... fallback");
@@ -399,7 +399,7 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 		after.updateContent(msg);
 		const afterLines = renderText(after);
 		assert.ok(
-			afterLines.some((line) => line.startsWith("Thought for")),
+			afterLines.some((line) => line.startsWith("✻ Thought for")),
 			`finalized once the subagent ends, got: ${afterLines[0]}`,
 		);
 
@@ -476,7 +476,7 @@ test("reload/resume rebuild: mounted-tree scan re-renders rebuilt components", a
 		second.emit("session_start", { reason: "reload" }, ctx);
 		const lines = renderText(rebuilt);
 		assert.ok(
-			lines.some((line) => line.startsWith("Thought for")),
+			lines.some((line) => line.startsWith("✻ Thought for")),
 			`rebuilt component recovers its duration, got: ${JSON.stringify(lines)}`,
 		);
 		assert.ok(
@@ -760,6 +760,94 @@ test("thinking preview expands the full body and keeps that state across updateC
 		const recollapsed = renderText(component);
 		assert.ok(recollapsed.some((line) => /more lines.*click to show more/.test(line)));
 		assert.equal(recollapsed.filter((line) => /^line-\d+$/.test(line)).length, previewLines);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("thinking preview shows the head window, not the tail", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-head-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const previewLines = 2;
+	const body = Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = renderText(component);
+		assert.ok(
+			collapsed.some((line) => /more lines.*click to show more/.test(line)),
+			`expected hidden-line hint, got: ${JSON.stringify(collapsed)}`,
+		);
+		const shown = collapsed.filter((line) => /^line-\d+$/.test(line));
+		assert.deepEqual(
+			shown,
+			["line-0", "line-1"],
+			`collapsed preview shows the head window, got: ${JSON.stringify(shown)}`,
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("streaming preview follows the tail, finalized preview rests on the head", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-scroll-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const previewLines = 3;
+	const body = Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+		});
+		const live = new AssistantMessageComponent(msg, true) as any;
+		live.updateContent(msg);
+		const liveShown = renderText(live).filter((line: string) => /^line-\d+$/.test(line));
+		assert.deepEqual(
+			liveShown,
+			["line-5", "line-6", "line-7"],
+			`streaming preview follows the tail, got: ${JSON.stringify(liveShown)}`,
+		);
+
+		emit("message_end", { message: msg }, ctx);
+		const done = new AssistantMessageComponent(msg, true) as any;
+		done.updateContent(msg);
+		const doneShown = renderText(done).filter((line: string) => /^line-\d+$/.test(line));
+		assert.deepEqual(
+			doneShown,
+			["line-0", "line-1", "line-2"],
+			`finalized preview rests on the head, got: ${JSON.stringify(doneShown)}`,
+		);
 	} finally {
 		emit("session_shutdown", {}, ctx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

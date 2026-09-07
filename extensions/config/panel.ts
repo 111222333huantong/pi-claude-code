@@ -370,7 +370,7 @@ export async function showCcstylePanel(
 		const thinkingPreviewSetting = {
 			id: "previewLines",
 			label: "Preview lines",
-			description: "Thinking preview lines; 0 hides the preview body.",
+			description: "Preview lines (latest while streaming, head when done); 0 hides the body.",
 			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>

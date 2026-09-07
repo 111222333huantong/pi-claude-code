@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="./assets/readme/hero.en.svg" width="100%" alt="pi-cc-extensions: a productivity extension suite for Pi">
+  <img src="./assets/readme/hero.en.svg" width="100%" alt="pi-claude-code: a productivity extension suite for Pi">
 </p>
 
 <p align="center">
-  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
+  <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
   <a href="#compatibility"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
 </p>
 
@@ -25,10 +25,10 @@ https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
 ## Quick start
 
 ```bash
-pi install npm:pi-cc-extensions
+pi install npm:pi-claude-code
 
 # GitHub
-pi install git:github.com/minuque/pi-cc-extensions
+pi install git:github.com/111222333huantong/pi-claude-code
 ```
 
 Run `/reload` after installation.
@@ -46,7 +46,10 @@ Run `/reload` after installation.
 | Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
 | Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |
 | Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
+| Statusline                | Two-line footer: model/ctx/cost/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
+
+> Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
 
 ## Configuration
 
@@ -91,6 +94,15 @@ Run `/reload` after installation.
   "enableAliases": true,                   // /clear, /exit aliases
   "enableImagePaster": true,               // image paster: clipboard/dropped images as attachments
   "enableClipboardPaste": true             // Ctrl+V clipboard paste (Windows only)
+}
+```
+
+The statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Feature tab in `/ccstyle`):
+
+```js
+{
+  "enabled": true,       // master switch; false restores Pi's native footer
+  "showWorktree": true   // show wt <name> on line 2
 }
 ```
 

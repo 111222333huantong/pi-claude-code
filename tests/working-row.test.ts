@@ -72,7 +72,7 @@ test("session_start is idempotent and headless-safe", async () => {
 	// Second start sees... (fresh get returns undefined in this stub, so it
 	// would reinstall; emulate Pi returning our factory instead.)
 	const marked = () => ({});
-	(marked as any)[Symbol.for("pi-cc-extensions:working-row-factory")] = true;
+	(marked as any)[Symbol.for("pi-claude-code:working-row-factory")] = true;
 	const ui2 = {
 		getEditorComponent: () => marked,
 		setEditorComponent: () => {

@@ -18,7 +18,7 @@ type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: unknown) => Edi
  */
 
 /** 标记已包装过的工厂，session_start 重复触发时保持幂等。 */
-const WORKING_ROW_FACTORY = Symbol.for("pi-cc-extensions:working-row-factory");
+const WORKING_ROW_FACTORY = Symbol.for("pi-claude-code:working-row-factory");
 
 /** 解析版本号，判断是否为带内嵌 working 行的 Pi（>= 0.85）。导出供测试。 */
 export function piSupportsEmbeddedWorking(version = VERSION): boolean {

@@ -1,6 +1,6 @@
 {
-	"name": "pi-cc-extensions",
-	"version": "0.8.69",
+	"name": "pi-claude-code",
+	"version": "0.9.0",
 	"license": "MIT",
 	"description": "A Pi productivity suite with Claude Code-style UI, context inspection, and agent/session references",
 	"type": "module",
@@ -10,13 +10,13 @@
 		"pi-coding-agent",
 		"claude-code"
 	],
-	"homepage": "https://github.com/minuque/pi-cc-extensions#readme",
+	"homepage": "https://github.com/111222333huantong/pi-claude-code#readme",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/minuque/pi-cc-extensions.git"
+		"url": "git+https://github.com/111222333huantong/pi-claude-code.git"
 	},
 	"bugs": {
-		"url": "https://github.com/minuque/pi-cc-extensions/issues"
+		"url": "https://github.com/111222333huantong/pi-claude-code/issues"
 	},
 	"files": [
 		"extensions",
@@ -34,7 +34,7 @@
 			"./themes/cc-dark.json",
 			"./themes/cc-light.json"
 		],
-		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.png",
+		"image": "https://raw.githubusercontent.com/111222333huantong/pi-claude-code/main/assets/readme/preview.png",
 		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"
 	},
 	"scripts": {

@@ -17,7 +17,7 @@ const identity = (_color: string, text: string) => text;
 const base: StatusSnapshot = {
 	model: "opus-4-6",
 	thinking: "high",
-	cwd: "~/pi-cc-extensions",
+	cwd: "~/pi-claude-code",
 	ctxPct: 23.4,
 	ctxTokens: 46000,
 	ctxWindow: 200000,
@@ -93,7 +93,7 @@ test("buildLine1: 窄屏按优先级砍 ext→mcp→cost，ctx 永存", () => {
 test("buildLine2: 脏仓库 !! + diffstat", () => {
 	assert.equal(
 		buildLine2(base, 120, identity),
-		"~/pi-cc-extensions │ feat/statusline !! ↑2 +18 -5",
+		"~/pi-claude-code │ feat/statusline !! ↑2 +18 -5",
 	);
 });
 
@@ -103,12 +103,12 @@ test("buildLine2: 干净仓库 ok", () => {
 		120,
 		identity,
 	);
-	assert.equal(line, "~/pi-cc-extensions │ feat/statusline ok");
+	assert.equal(line, "~/pi-claude-code │ feat/statusline ok");
 });
 
 test("buildLine2: 非仓库只有 cwd", () => {
 	const line = buildLine2({ ...base, branch: null }, 120, identity);
-	assert.equal(line, "~/pi-cc-extensions");
+	assert.equal(line, "~/pi-claude-code");
 });
 
 test("buildLine2: worktree 段与开关", () => {

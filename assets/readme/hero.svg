@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
-  <title id="title">pi-cc-extensions
+  <title id="title">pi-claude-code
   </title>
   <desc id="desc">Claude 与 Pi 品牌图标组合连接三项扩展能力：Claude Code 风格界面、上下文洞察和历史 Session 引用。
   </desc>
@@ -16,7 +16,7 @@
       <text x="0" y="0" fill="#66E3C4">PI EXTENSION
       </text>
     </g>
-    <text x="0" y="82" fill="#F4F7FA" font-size="54" font-weight="750" letter-spacing="-1.5">pi-cc-extensions
+    <text x="0" y="82" fill="#F4F7FA" font-size="54" font-weight="750" letter-spacing="-1.5">pi-claude-code
     </text>
     <text x="0" y="130" fill="#B8C3CF" font-size="23">让 Pi 工作时表现像 Claude code 🙃
     </text>

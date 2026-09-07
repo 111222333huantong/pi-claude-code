@@ -28,7 +28,7 @@ const MASCOT_ANIMATION_INTERVAL_MS = 120;
 const MASCOT_LAST_FRAME = PI_MASCOT_FRAME_COUNT - 1;
 
 /** 进程内动画标记：reload/resume 同进程重挂时跳过重播，直接末帧。 */
-const HEADER_ANIMATED = Symbol.for("pi-cc-extensions:header-animated");
+const HEADER_ANIMATED = Symbol.for("pi-claude-code:header-animated");
 
 function headerAnimatedThisProcess(): boolean {
 	return (globalThis as Record<symbol, unknown>)[HEADER_ANIMATED] === true;
@@ -51,7 +51,7 @@ type HeaderAnimShared = {
 	sinks: Set<() => void>;
 };
 
-const HEADER_ANIM = Symbol.for("pi-cc-extensions:header-anim");
+const HEADER_ANIM = Symbol.for("pi-claude-code:header-anim");
 
 export function headerAnimState(): HeaderAnimShared {
 	const g = globalThis as Record<symbol, unknown>;

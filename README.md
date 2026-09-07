@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
+  <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
   <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
 </p>
 
@@ -25,10 +25,10 @@ https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
 ## 快速开始
 
 ```bash
-pi install npm:pi-cc-extensions
+pi install npm:pi-claude-code
 
 # GitHub
-pi install git:github.com/minuque/pi-cc-extensions
+pi install git:github.com/111222333huantong/pi-claude-code
 ```
 
 安装后执行 `/reload`
@@ -46,7 +46,10 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
 | 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
+| 状态栏                  | 两行 footer：model/ctx/cost/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
+
+> 本包 fork 自 [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions)（MIT），状态栏及后续改动由本 fork 维护。
 
 ## 配置
 
@@ -91,6 +94,15 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableAliases": true,                   // /clear、/exit 别名
   "enableImagePaster": true,               // 图片粘贴：剪贴板/拖拽图片转附件
   "enableClipboardPaste": true             // Ctrl+V 剪贴板粘贴（仅 Windows）
+}
+```
+
+状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Feature 页亦可切）：
+
+```js
+{
+  "enabled": true,       // 总闸；false 恢复 Pi 原生 footer
+  "showWorktree": true   // L2 是否显示 wt <name>
 }
 ```
 

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
-  <title id="title">pi-cc-extensions
+  <title id="title">pi-claude-code
   </title>
   <desc id="desc">The Claude and Pi brand marks together connect three extension capabilities: Claude Code-style output, context inspection, and historical Session references.
   </desc>
@@ -16,7 +16,7 @@
       <text x="0" y="0" fill="#66E3C4">PI EXTENSION
       </text>
     </g>
-    <text x="0" y="82" fill="#F4F7FA" font-size="54" font-weight="750" letter-spacing="-1.5">pi-cc-extensions
+    <text x="0" y="82" fill="#F4F7FA" font-size="54" font-weight="750" letter-spacing="-1.5">pi-claude-code
     </text>
     <text x="0" y="130" fill="#B8C3CF" font-size="23">Make Pi work like Claude Code 🙃
     </text>

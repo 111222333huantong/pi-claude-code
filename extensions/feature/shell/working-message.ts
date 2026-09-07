@@ -136,10 +136,10 @@ function applyThemeColors(theme: any): void {
 // verb shimmer. Per-Loader generation counters retire stale ticks.
 // ---------------------------------------------------------------------------
 
-const LOADER_LAST_TEXT = Symbol.for("pi-cc-extensions:spinner-loader-last-text");
-const LOADER_ACTIVE = Symbol.for("pi-cc-extensions:spinner-loader-active");
-const LOADER_GENERATION = Symbol.for("pi-cc-extensions:spinner-loader-generation");
-const ACTIVE_UI_SYMBOL = Symbol.for("pi-cc-extensions:spinner-active-ui");
+const LOADER_LAST_TEXT = Symbol.for("pi-claude-code:spinner-loader-last-text");
+const LOADER_ACTIVE = Symbol.for("pi-claude-code:spinner-loader-active");
+const LOADER_GENERATION = Symbol.for("pi-claude-code:spinner-loader-generation");
+const ACTIVE_UI_SYMBOL = Symbol.for("pi-claude-code:spinner-active-ui");
 
 const RAW_ANSI_RE = /\u001B\[[0-9;]*m/;
 

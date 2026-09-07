@@ -11,6 +11,7 @@ import {
 	clearThinkingPreviewCache,
 	installCompactThinking,
 	ThinkingPreviewBlock,
+	thinkingExpandedMarkdownCacheSize,
 } from "../extensions/feature/compact-thinking.ts";
 import { animateCompactThinkingText } from "../extensions/renderer/compact-mode.ts";
 
@@ -18,6 +19,7 @@ const config = {
 	useSummaryTitlesAsThinkingTitle: false,
 	previewLines: 0,
 	animationIntervalMs: 30,
+	thinkingExpandedMaxLines: 200,
 };
 
 test("collapsed thinking previews memoize complete output until invalidated", () => {
@@ -399,9 +401,10 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 		after.updateContent(msg);
 		const afterLines = renderText(after);
 		assert.ok(
-			afterLines.some((line) => line.startsWith("✻ Thought for")),
+			afterLines.some((line) => line.startsWith("✻ Thought")),
 			`finalized once the subagent ends, got: ${afterLines[0]}`,
 		);
+		assert.ok(!afterLines.some((line) => line.includes("Thinking")), "no loading label after finalize");
 
 		nested.emit("session_shutdown", {}, headlessCtx);
 	} finally {
@@ -458,6 +461,14 @@ test("reload/resume rebuild: mounted-tree scan re-renders rebuilt components", a
 			{ message: msg, assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 } },
 			ctx,
 		);
+		// Promote the recorded duration above the display threshold deterministically
+		// (sub-second runs show no duration suffix by design).
+		entries.push({
+			type: "custom",
+			customType: "compact-thinking-duration",
+			data: { messageTimestamp: ts, contentIndex: 0, durationMs: 5000 },
+		});
+		first.emit("session_tree", {}, ctx);
 
 		first.emit("session_shutdown", { reason: "reload" }, ctx);
 
@@ -595,6 +606,7 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
 			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
 		});
 		emit("session_start", {}, ctx);
 
@@ -669,6 +681,7 @@ test("previewLines 0 still offers click to show more and expands the body", () =
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
 			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
 		});
 		emit("session_start", {}, ctx);
 		const msg = previewMessage(body);
@@ -719,6 +732,7 @@ test("thinking preview expands the full body and keeps that state across updateC
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
 			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
 		});
 		emit("session_start", {}, ctx);
 		const msg = previewMessage(body);
@@ -781,6 +795,7 @@ test("thinking preview shows the head window, not the tail", () => {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
 			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
 		});
 		emit("session_start", {}, ctx);
 		const msg = previewMessage(body);
@@ -818,6 +833,7 @@ test("streaming preview follows the tail, finalized preview rests on the head", 
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
 			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
 		});
 		emit("session_start", {}, ctx);
 		const msg = previewMessage(body);
@@ -854,4 +870,312 @@ test("streaming preview follows the tail, finalized preview rests on the head", 
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("thinking polish: sub-second hides duration, noise/redacted filtered, strict titles", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-polish-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const entries: any[] = [];
+	const sessionManager = { getBranch: () => entries, getEntries: () => entries };
+	const ctx = { ...themeCtx(), sessionManager } as any;
+	const show = (msg: any): string[] => {
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		return renderText(component);
+	};
+	const thinkingMsg = (timestamp: number, thinking: string) =>
+		({
+			role: "assistant",
+			timestamp,
+			content: [{ type: "thinking", thinking }],
+		}) as unknown as AssistantMessage;
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: true,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+		});
+		const base = Date.now();
+
+		// 1. sub-second duration → neutral heading without suffix.
+		entries.push({
+			type: "custom",
+			customType: "compact-thinking-duration",
+			data: { messageTimestamp: base, contentIndex: 0, durationMs: 500 },
+		});
+		emit("session_start", {}, ctx);
+		const subSecond = show(thinkingMsg(base, "plain thought"));
+		assert.ok(
+			subSecond.some((line) => line === "✻ Thought"),
+			`sub-second run shows a bare Thought heading, got: ${JSON.stringify(subSecond)}`,
+		);
+		assert.ok(
+			!subSecond.some((line) => line.includes("Thought for")),
+			"no duration suffix below one second",
+		);
+
+		// 2. ellipsis-only noise lines never occupy the preview window.
+		const denoised = show(thinkingMsg(base + 1, "line-a\n...\nline-b\n..\nline-c"));
+		assert.deepEqual(
+			denoised.filter((line) => line.startsWith("line-")),
+			["line-a", "line-b", "line-c"],
+			`noise lines filtered, got: ${JSON.stringify(denoised)}`,
+		);
+		assert.ok(
+			!denoised.some((line) => line.includes("more lines")),
+			"no hidden-line hint once noise is removed",
+		);
+
+		// 3. redacted shell → neutral heading, no body, no expand hint.
+		const redacted = show(thinkingMsg(base + 2, "[REDACTED]"));
+		assert.deepEqual(redacted, ["✻ Thought"], `redacted shell stays neutral, got: ${JSON.stringify(redacted)}`);
+
+		// 4. strict title: double newline accepted…
+		const strict = show(thinkingMsg(base + 3, "**Plan**\n\nFirst do A\nSecond line"));
+		assert.ok(
+			strict.some((line) => line === "✻ Plan"),
+			`strict title shown, got: ${JSON.stringify(strict)}`,
+		);
+		assert.ok(
+			!strict.some((line) => line.includes("**Plan**")),
+			"title line does not leak into the body",
+		);
+
+		// 5. …single newline rejected as body bold.
+		const loose = show(thinkingMsg(base + 4, "**Plan**\nFirst do A"));
+		assert.ok(
+			loose.some((line) => line === "✻ Thought"),
+			`loose title falls back to Thought, got: ${JSON.stringify(loose)}`,
+		);
+		assert.ok(
+			loose.some((line) => line.includes("**Plan**")),
+			"untitled body keeps its raw first line",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("expanded thinking uses a tail window before the full body", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-tail-window-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 5,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = renderText(component);
+		assert.deepEqual(
+			collapsed.filter((line) => /^line-\d+$/.test(line)),
+			["line-0", "line-1", "line-2"],
+			"collapsed shows the head window",
+		);
+
+		// First expand → tail window + top hint, not the full flood.
+		const block = thinkingBlockOf(component);
+		block.setExpanded(true);
+		const tail = renderText(component);
+		assert.ok(
+			tail.some((line) => line.includes("15 earlier lines hidden")),
+			`tail hint counts the hidden head, got: ${JSON.stringify(tail)}`,
+		);
+		assert.ok(tail.some((line) => line.includes("line-19")), "tail reaches the latest line");
+		assert.ok(
+			!tail.some((line) => /^line-0$/.test(line)),
+			"tail does not include the head",
+		);
+
+		// Expand again → full body.
+		block.setExpanded(true);
+		const full = renderText(component);
+		assert.ok(!full.some((line) => line.includes("earlier lines hidden")), "full view has no tail hint");
+		assert.ok(full.some((line) => line.includes("line-0")), "full view starts at the head");
+		assert.ok(full.some((line) => line.includes("line-19")), "full view reaches the tail");
+
+		// Collapse → head window again.
+		block.setExpanded(false);
+		const recollapsed = renderText(component);
+		assert.deepEqual(
+			recollapsed.filter((line) => /^line-\d+$/.test(line)),
+			["line-0", "line-1", "line-2"],
+			"collapse returns to the head window",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("preview skips blank lines and refills the window with content", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-dense-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = ["para-a", "", "para-b", "", "", "para-c", "", "para-d"].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = renderText(component);
+		assert.deepEqual(
+			collapsed.filter((line) => line.startsWith("para-")),
+			["para-a", "para-b", "para-c"],
+			`blank lines never occupy the window, got: ${JSON.stringify(collapsed)}`,
+		);
+		assert.ok(
+			collapsed.some((line) => /1 more line[^s]/.test(line)),
+			`hidden count covers the remaining content row, got: ${JSON.stringify(collapsed)}`,
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("expanded thinking renders markdown structure, not raw markers", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-expanded-md-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = [
+		"## Reasoning",
+		"",
+		"Key **insight** here",
+		"",
+		"- first point",
+		"- second point",
+		"",
+		"```js",
+		"const a = 1;",
+		"```",
+	].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: true,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		thinkingBlockOf(component).setExpanded(true);
+		const expanded = renderText(component);
+		assert.ok(
+			expanded.some((line) => line === "Reasoning"),
+			`heading normalized, got: ${JSON.stringify(expanded)}`,
+		);
+		assert.ok(
+			!expanded.some((line) => line.includes("**")),
+			`no raw bold markers, got: ${JSON.stringify(expanded)}`,
+		);
+		assert.ok(expanded.some((line) => line.includes("first point")));
+		assert.ok(expanded.some((line) => line.includes("second point")));
+		assert.ok(
+			expanded.some((line) => line.includes("const a = 1")),
+			`code content survives, got: ${JSON.stringify(expanded)}`,
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("expanded markdown render is cached across re-renders", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-expanded-md-cache-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = ["# Cached", "", "Some **bold** body text here"].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		thinkingBlockOf(component).setExpanded(true);
+		const before = thinkingExpandedMarkdownCacheSize();
+		const first = component.render(120) as string[];
+		assert.equal(
+			thinkingExpandedMarkdownCacheSize(),
+			before + 1,
+			"first expanded render populates the markdown cache",
+		);
+		const second = component.render(120) as string[];
+		assert.equal(
+			thinkingExpandedMarkdownCacheSize(),
+			before + 1,
+			"second render reuses the cached markdown",
+		);
+		assert.deepEqual(second, first, "cached re-render is stable");
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("expanded markdown failure falls back to plain wrap without throwing", () => {
+	const strip = (line: string): string =>
+		line
+			.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+			.replace(/\x1b\][^\x07]*\x07/g, "")
+			.trim();
+	// 空主题对象：Markdown 渲染必定抛错（theme.bold 不是函数），覆盖 render 内兜底。
+	const block = new ThinkingPreviewBlock(
+		"✻ Thought",
+		"line **bold** here",
+		0,
+		Date.now(),
+		(text) => text,
+		undefined,
+		0,
+		false,
+		{} as any,
+	);
+	block.setExpanded(true);
+	const lines = block.render(80).map(strip).filter(Boolean);
+	assert.ok(
+		lines.some((line) => line.includes("line **bold** here")),
+		`fallback keeps raw text, got: ${JSON.stringify(lines)}`,
+	);
 });

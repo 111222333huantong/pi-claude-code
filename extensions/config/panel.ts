@@ -27,6 +27,7 @@ import {
 	pickPositiveNumber,
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
+	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	INPUT_CLIP_VALUES,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
@@ -370,7 +371,7 @@ export async function showCcstylePanel(
 		const thinkingPreviewSetting = {
 			id: "previewLines",
 			label: "Preview lines",
-			description: "Preview lines (latest while streaming, head when done); 0 hides the body.",
+			description: "Preview content lines (blank lines skipped); 0 hides the body.",
 			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -379,11 +380,21 @@ export async function showCcstylePanel(
 		const thinkingAnimationSetting = {
 			id: "animationIntervalMs",
 			label: "Animation interval ms",
-			description: "Thinking title animation interval for the next thinking run.",
+			description: "Streaming refresh interval: duration tick and compact summary sweep.",
 			currentValue: String(config.animationIntervalMs),
 			values: [...THINKING_ANIMATION_INTERVAL_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingAnimationSetting, closeSubmenu),
+		};
+		const thinkingExpandedSetting = {
+			id: "thinkingExpandedMaxLines",
+			label: "Expanded max lines",
+			description:
+				"Expanded thinking shows this many tail lines first; expand again for the full body.",
+			currentValue: String(config.thinkingExpandedMaxLines),
+			values: [...THINKING_EXPANDED_MAX_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, thinkingExpandedSetting, closeSubmenu),
 		};
 		const thinkingDimSetting = {
 			id: "dimThinkingText",
@@ -615,6 +626,17 @@ export async function showCcstylePanel(
 					});
 					thinkingAnimationSetting.currentValue = String(config.animationIntervalMs);
 					break;
+				case "thinkingExpandedMaxLines":
+					updateConfig({
+						thinkingExpandedMaxLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.thinkingExpandedMaxLines,
+							10,
+							50_000,
+						),
+					});
+					thinkingExpandedSetting.currentValue = String(config.thinkingExpandedMaxLines);
+					break;
 				case "dimThinkingText":
 					updateConfig({ dimThinkingText: value === "on" });
 					thinkingDimSetting.description = config.dimThinkingText
@@ -688,6 +710,7 @@ export async function showCcstylePanel(
 					thinkingTitleSetting,
 					thinkingPreviewSetting,
 					thinkingAnimationSetting,
+					thinkingExpandedSetting,
 					thinkingDimSetting,
 				],
 			},

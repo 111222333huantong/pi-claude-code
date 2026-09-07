@@ -55,6 +55,8 @@ export type Config = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
+	/** 展开中间态 tail 窗口行数；再推进一次才全文。 */
+	thinkingExpandedMaxLines: number;
 	dimThinkingText: boolean;
 	showStartupHeader: boolean;
 	startupAnimation: boolean;
@@ -88,6 +90,7 @@ export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 /** 工具摘要里 path/command 等输入的折叠字符数。 */
 export const INPUT_CLIP_VALUES = ["40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "2", "3", "5", "10"];
+export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2000"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
@@ -120,6 +123,7 @@ export const DEFAULT_CONFIG: Config = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
+	thinkingExpandedMaxLines: 200,
 	dimThinkingText: false,
 	showStartupHeader: true,
 	startupAnimation: true,
@@ -222,6 +226,12 @@ export function normalizeConfig(input: unknown): Config {
 			source.animationIntervalMs,
 			DEFAULT_CONFIG.animationIntervalMs,
 		),
+		thinkingExpandedMaxLines: pickPositiveInt(
+			source.thinkingExpandedMaxLines,
+			DEFAULT_CONFIG.thinkingExpandedMaxLines,
+			10,
+			50_000,
+		),
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		startupAnimation: source.startupAnimation !== false,
@@ -243,6 +253,7 @@ export function getCompactThinkingConfig(source: Config = config): CompactThinki
 		useSummaryTitlesAsThinkingTitle: source.useSummaryTitlesAsThinkingTitle,
 		previewLines: source.previewLines,
 		animationIntervalMs: source.animationIntervalMs,
+		thinkingExpandedMaxLines: source.thinkingExpandedMaxLines,
 	};
 }
 
@@ -279,6 +290,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
+		`thinkingExpanded=${source.thinkingExpandedMaxLines}`,
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,

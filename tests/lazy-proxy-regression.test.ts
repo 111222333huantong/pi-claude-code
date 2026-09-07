@@ -681,6 +681,7 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 0,
 		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
 	});
 	emit("session_start", {}, thinkingCtx);
 	const compact = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
@@ -859,6 +860,7 @@ test("lazy-proxy tui: double-click collapses thinking after preview rebuild", as
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
 		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
 	});
 	emit("session_start", {}, thinkingCtx);
 	const timestamp = 42;
@@ -917,6 +919,7 @@ test("lazy-proxy tui: thinking double-click identity is per run", async () => {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
 		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
 	});
 	emit("session_start", {}, thinkingCtx);
 	const timestamp = 99;

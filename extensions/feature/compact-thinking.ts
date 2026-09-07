@@ -40,6 +40,8 @@ export type CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
+	/** 展开中间态 tail 窗口行数（Crush 式）；超长先给尾部，再推进全文。 */
+	thinkingExpandedMaxLines: number;
 };
 
 export type CompactThinkingController = {
@@ -111,6 +113,7 @@ const config: CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
+	thinkingExpandedMaxLines: 200,
 };
 
 const DURATION_ENTRY_TYPE = "compact-thinking-duration";
@@ -197,6 +200,7 @@ function cachePreview(key: string, entry: PreviewCacheEntry): void {
 export function clearThinkingPreviewCache(): void {
 	previewCache.clear();
 	expandedWrapCache.clear();
+	expandedMarkdownCache.clear();
 }
 
 type ExpandedWrapEntry = { text: string; lines: string[] };
@@ -238,6 +242,12 @@ function evictExpandedWraps(messageTimestamp: number, runStartIndex: number): vo
 			expandedWrapCache.delete(key);
 		}
 	}
+	for (const key of expandedMarkdownCache.keys()) {
+		const [ts, run] = key.split(":");
+		if (Number(ts) === messageTimestamp && Number(run) === runStartIndex) {
+			expandedMarkdownCache.delete(key);
+		}
+	}
 }
 
 export function thinkingPreviewCacheSize(): number {
@@ -246,6 +256,45 @@ export function thinkingPreviewCacheSize(): number {
 
 export function thinkingExpandedWrapCacheSize(): number {
 	return expandedWrapCache.size;
+}
+
+/**
+ * 展开态 Markdown 渲染缓存（完成态定稿才进，流式保持裸文本）。
+ * 与 expandedWrapCache 同键、独立表。Markdown 输出自带主题 ANSI，
+ * 因此条目绑定渲染用主题对象，主题切换即失效重渲。
+ */
+type ExpandedMarkdownEntry = { text: string; theme: unknown; lines: string[] };
+const expandedMarkdownCache = new Map<string, ExpandedMarkdownEntry>();
+export const THINKING_EXPANDED_MARKDOWN_CACHE_MAX = 32;
+
+function renderExpandedMarkdown(
+	messageTimestamp: number,
+	runStartIndex: number,
+	text: string,
+	width: number,
+	render: () => string[],
+	theme: unknown,
+): string[] {
+	const key = expandedWrapKey(messageTimestamp, runStartIndex, width);
+	const hit = expandedMarkdownCache.get(key);
+	if (hit && hit.text === text && hit.theme === theme) {
+		expandedMarkdownCache.delete(key);
+		expandedMarkdownCache.set(key, hit);
+		return hit.lines;
+	}
+	const lines = render();
+	expandedMarkdownCache.delete(key);
+	while (expandedMarkdownCache.size >= THINKING_EXPANDED_MARKDOWN_CACHE_MAX) {
+		const oldest = expandedMarkdownCache.keys().next().value;
+		if (oldest === undefined) break;
+		expandedMarkdownCache.delete(oldest);
+	}
+	expandedMarkdownCache.set(key, { text, theme, lines });
+	return lines;
+}
+
+export function thinkingExpandedMarkdownCacheSize(): number {
+	return expandedMarkdownCache.size;
 }
 
 /** 按可见宽度估算折行数，不走 Text 全量 wrap。无换行长段也能计到隐藏行。 */
@@ -275,13 +324,19 @@ function layoutThinkingPreview(
 	followTail = false,
 ): { visible: string[]; hiddenLines: number } {
 	if (!text || config.previewLines <= 0) return { visible: [], hiddenLines: 0 };
+	// 折叠预览丢弃空行：段落间隔不占窗口，窗口全给内容行（展开全文保留原样）。
+	const dense = text
+		.split(/\r\n|\r|\n/)
+		.filter((line) => line.trim() !== "")
+		.join("\n");
+	if (!dense) return { visible: [], hiddenLines: 0 };
 	const contentWidth = Math.max(1, width - padding * 2);
 	const budget = Math.max(
 		width * (config.previewLines + PREVIEW_BUDGET_SLACK_LINES),
 		PREVIEW_BUDGET_MIN_CHARS,
 	);
-	let source = text;
-	let cut = followTail ? 0 : text.length;
+	let source = dense;
+	let cut = followTail ? 0 : dense.length;
 	if (source.length > budget) {
 		if (followTail) {
 			const start = source.length - budget;
@@ -302,10 +357,10 @@ function layoutThinkingPreview(
 			lines: wrapTextWithAnsi(source.replace(/\t/g, "   "), contentWidth),
 			hiddenOutside: followTail
 				? cut > 0
-					? countWrappedLines(text.slice(0, cut), contentWidth)
+					? countWrappedLines(dense.slice(0, cut), contentWidth)
 					: 0
-				: cut < text.length
-					? countWrappedLines(text.slice(cut), contentWidth)
+				: cut < dense.length
+					? countWrappedLines(dense.slice(cut), contentWidth)
 					: 0,
 		};
 		cachePreview(cacheKey, entry);
@@ -339,6 +394,8 @@ function hiddenPreviewHint(
 }
 
 const expandedThinking = new Set<number>();
+/** 展开全文态（tail 之后的第二段推进；短块 tail 即全文，不经过此集合也能全显）。 */
+const fullExpandedThinking = new Set<number>();
 
 /** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、双击整块收起，对齐工具卡。 */
 export class ThinkingPreviewBlock implements Component {
@@ -349,6 +406,8 @@ export class ThinkingPreviewBlock implements Component {
 	readonly runStartIndex: number;
 	private style: (text: string) => string;
 	private theme: Theme | undefined;
+	private markdownTheme: ConstructorParameters<typeof Markdown>[3] | undefined;
+	private markdownTransform: ((markdown: string, availableWidth: number) => string) | undefined;
 	private _expanded: boolean;
 	private hintHovered = false;
 	/** 流式活动态是否追随尾部（视觉滚动）；完成后固定头部。每次 updateContent 重建，状态不跨帧残留。 */
@@ -373,6 +432,8 @@ export class ThinkingPreviewBlock implements Component {
 		theme?: Theme,
 		runStartIndex = 0,
 		followTail = false,
+		markdownTheme?: ConstructorParameters<typeof Markdown>[3],
+		markdownTransform?: (markdown: string, availableWidth: number) => string,
 	) {
 		this.heading = heading;
 		this.text = text;
@@ -382,6 +443,8 @@ export class ThinkingPreviewBlock implements Component {
 		this.followTail = followTail;
 		this.style = style;
 		this.theme = theme;
+		this.markdownTheme = markdownTheme;
+		this.markdownTransform = markdownTransform;
 		this._expanded = expandedThinking.has(messageTimestamp);
 	}
 
@@ -396,11 +459,20 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	setExpanded(expanded: boolean): void {
-		if (this._expanded !== expanded) this.collapsedMemo = undefined;
-		this._expanded = expanded;
-		if (expanded) expandedThinking.add(this.messageTimestamp);
-		else {
+		if (expanded) {
+			if (!this._expanded) {
+				this.collapsedMemo = undefined;
+				this._expanded = true;
+				expandedThinking.add(this.messageTimestamp);
+			} else {
+				// 间隔推进 tail → full（Crush 三态）；短块 tail 即全文，此步无视觉变化。
+				fullExpandedThinking.add(this.messageTimestamp);
+			}
+		} else if (this._expanded) {
+			this.collapsedMemo = undefined;
+			this._expanded = false;
 			expandedThinking.delete(this.messageTimestamp);
+			fullExpandedThinking.delete(this.messageTimestamp);
 			evictExpandedWraps(this.messageTimestamp, this.runStartIndex);
 		}
 	}
@@ -430,15 +502,64 @@ export class ThinkingPreviewBlock implements Component {
 		).render(width);
 	}
 
-	private bodyLines(width: number, padding: number): { lines: string[]; hiddenLines: number } {
+	private bodyLines(
+		width: number,
+		padding: number,
+	): { lines: string[]; hiddenLines: number; tailHint?: string; markdown?: boolean } {
 		if (!this.text || (config.previewLines <= 0 && !this._expanded)) {
 			return { lines: [], hiddenLines: 0 };
 		}
 		if (this._expanded) {
-			return {
-				lines: wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width),
-				hiddenLines: 0,
-			};
+			// 完成态定稿走 Markdown 结构化渲染（标题/列表/代码块成型，含代码块套框补丁）；
+			// 流式增量永不进 Markdown（opencode #36037 教训），折叠预览保持裸文本。
+			// messageType 用 assistant-thinking：仓库约定 thinking 保持原文，
+			// 只取 Pi 原生 Markdown 结构，不走 mermaid/提示框等扩展改写。
+			// defaultTextStyle 给正文 thinking 色 + 斜体（与折叠预览同观感，呼应原生）；
+			// 元素色（标题/代码/链接）保留 markdownTheme 定义。
+			// 主题未就绪等异常直接回退裸文本：render 内绝不抛错。
+			let full: string[];
+			if (this.markdownTheme !== undefined) {
+				try {
+					full = renderExpandedMarkdown(
+						this.messageTimestamp,
+						this.runStartIndex,
+						this.text,
+						width,
+						() =>
+							new Markdown(
+								this.text,
+								0,
+								0,
+								this.markdownTheme!,
+								{ color: (text) => this.style(text), italic: true },
+								this.markdownTransform !== undefined
+									? { transform: this.markdownTransform }
+									: undefined,
+							).render(Math.max(1, width)),
+						this.theme,
+					);
+				} catch {
+					full = wrapExpandedThinking(
+						this.messageTimestamp,
+						this.runStartIndex,
+						this.text,
+						width,
+					);
+				}
+			} else {
+				full = wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width);
+			}
+			const cap = Math.max(1, config.thinkingExpandedMaxLines);
+			// 超长先给尾部窗口 + 顶部 hint（Crush tail-window），再推进全文；短块直达全文。
+			if (full.length > cap && !fullExpandedThinking.has(this.messageTimestamp)) {
+				return {
+					lines: full.slice(-cap),
+					hiddenLines: 0,
+					tailHint: `… ${full.length - cap} earlier lines hidden`,
+					markdown: this.markdownTheme !== undefined,
+				};
+			}
+			return { lines: full, hiddenLines: 0, markdown: this.markdownTheme !== undefined };
 		}
 		const preview = layoutThinkingPreview(this.text, width, padding, this.followTail);
 		return { lines: preview.visible, hiddenLines: preview.hiddenLines };
@@ -449,9 +570,14 @@ export class ThinkingPreviewBlock implements Component {
 			const innerWidth = Math.max(1, width - 2);
 			const body = this.bodyLines(innerWidth, 0);
 			const heading = this.headingLines(innerWidth, 0, 0);
-			const inner = body.lines.length
-				? [...heading, ...body.lines.map((line) => this.style(line))]
-				: heading;
+			// Markdown 行自带主题样式（defaultTextStyle 已套 thinking 色），不再外套；
+			// 裸文本路径保持外套 thinking 样式。
+			const bodyStyled = body.markdown ? body.lines : body.lines.map((line) => this.style(line));
+			const inner = body.tailHint
+				? [...heading, this.paint("dim", body.tailHint), ...bodyStyled]
+				: bodyStyled.length
+					? [...heading, ...bodyStyled]
+					: heading;
 			const bgFn =
 				this.theme && typeof this.theme.bg === "function"
 					? (text: string) => this.theme!.bg("userMessageBg" as never, text)
@@ -503,6 +629,27 @@ function parseSummaryPart(text: string): SummaryPart | undefined {
 	const match = /^\s*\*\*([^\n]+?)\*\*[ \t]*(?:\r?\n(?:\r?\n)?([\s\S]*))?\s*$/.exec(text);
 	if (!match) return undefined;
 	return { title: match[1].trim(), body: (match[2] ?? "").trim() };
+}
+
+/**
+ * 完成态严格标题校验（opencode 式）：`**title**` 后须为双换行或结尾，
+ * 否则视为正文加粗误命中。流式启发式保持宽松以便即时换标题。
+ */
+function parseStrictSummaryPart(text: string): SummaryPart | undefined {
+	const match = /^\s*\*\*([^\n*]+?)\*\*[ \t]*(?:\r?\n\r?\n|\s*$)([\s\S]*?)\s*$/.exec(text);
+	if (!match) return undefined;
+	const title = match[1].trim();
+	if (!title) return undefined;
+	return { title, body: (match[2] ?? "").trim() };
+}
+
+/** 丢弃纯省略号噪音行（Gemini/Kimi 同款），避免占位预览窗口；保留空行分段。 */
+function stripNoiseLines(text: string): string {
+	return text
+		.split(/\r\n|\r|\n/)
+		.filter((line) => !/^\s*\.+\s*$/.test(line))
+		.join("\n")
+		.trim();
 }
 
 function parseLatestStreamingSummary(text: string): SummaryPart | undefined {
@@ -558,6 +705,10 @@ const WIDGET_ID = "compact-thinking-render-loop";
 
 /** Thinking 标题徽标：与 spinner 字形帧 / `✻ Turn took` 行同字（U+273B），项目内保持一致。 */
 const THINKING_BADGE = "✻ ";
+/** 时长展示下限：亚秒思考不缀时长（Crush 0s 抑制同理），只留中性标题。 */
+const THINKING_DURATION_MIN_MS = 1000;
+/** 脱敏占位：渲染前剥离；空壳回退中性标题且不给展开。 */
+const THINKING_REDACTED_RE = /\[REDACTED\]/g;
 
 // 上游 index.ts 内联（含 subagent fork patch）。
 function createTransform(
@@ -698,32 +849,47 @@ function compactThinking(pi: ExtensionAPI) {
 						(previous.type === "text" && previous.text.trim()) ||
 						(previous.type === "thinking" && previous.thinking.trim()),
 				);
-			const thinkingBlocks: string[] = [];
-			let latestSummary: SummaryPart | undefined;
-			for (; i < message.content.length; i++) {
-				const thinkingContent = message.content[i];
-				if (thinkingContent.type !== "thinking") break;
-				const thinking = thinkingContent.thinking.trim();
-				if (!thinking) continue;
-				thinkingBlocks.push(thinking);
+		const thinkingBlocks: string[] = [];
+		let latestSummary: SummaryPart | undefined;
+		let latestSummaryFromSignature = false;
+		for (; i < message.content.length; i++) {
+			const thinkingContent = message.content[i];
+			if (thinkingContent.type !== "thinking") break;
+			const thinking = thinkingContent.thinking.trim();
+			if (!thinking) continue;
+			thinkingBlocks.push(thinking);
 
-				if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
-					const contentIsActive =
-						activeThinking?.messageTimestamp === message.timestamp &&
-						activeThinking.contentIndex === i;
-					// During streaming, thinkingSignature may contain only the previously
-					// completed summary parts. Prefer the live text so a newly arriving
-					// title immediately replaces the old one instead of appearing in its
-					// preview body. Once complete, the structured signature is canonical.
-					latestSummary = contentIsActive
-						? (parseLatestStreamingSummary(thinking) ??
-							getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
-							latestSummary)
-						: (getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
-							parseLatestStreamingSummary(thinking) ??
-							latestSummary);
+			if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
+				const contentIsActive =
+					activeThinking?.messageTimestamp === message.timestamp &&
+					activeThinking.contentIndex === i;
+				// During streaming, thinkingSignature may contain only the previously
+				// completed summary parts. Prefer the live text so a newly arriving
+				// title immediately replaces the old one instead of appearing in its
+				// preview body. Once complete, the structured signature is canonical.
+				if (contentIsActive) {
+					const streamed = parseLatestStreamingSummary(thinking);
+					if (streamed !== undefined) {
+						latestSummary = streamed;
+					} else {
+						const structured = getLatestOpenAiSummary(thinkingContent.thinkingSignature);
+						if (structured !== undefined) {
+							latestSummary = structured;
+							latestSummaryFromSignature = true;
+						}
+					}
+				} else {
+					const structured = getLatestOpenAiSummary(thinkingContent.thinkingSignature);
+					if (structured !== undefined) {
+						latestSummary = structured;
+						latestSummaryFromSignature = true;
+					} else {
+						const streamed = parseLatestStreamingSummary(thinking);
+						if (streamed !== undefined) latestSummary = streamed;
+					}
 				}
 			}
+		}
 			const runEndIndex = i - 1;
 			i--;
 			const active = isActiveRun(message, runStartIndex, runEndIndex);
@@ -738,34 +904,56 @@ function compactThinking(pi: ExtensionAPI) {
 			const elapsedMs = activeThinking
 				? Math.max(1, Date.now() - activeThinking.startedAt)
 				: undefined;
-			const completedMs = getCompletedDuration(message.timestamp, runStartIndex, runEndIndex);
-			const durationMs = active ? elapsedMs : completedMs;
-			const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
+		const completedMs = getCompletedDuration(message.timestamp, runStartIndex, runEndIndex);
+		const durationMs = active ? elapsedMs : completedMs;
+		// P0-1：亚秒思考不缀时长，只留中性标题。
+		const durationText =
+			durationMs !== undefined && durationMs >= THINKING_DURATION_MIN_MS
+				? formatThoughtDuration(durationMs)
+				: undefined;
+		const fullText = thinkingBlocks.join("\n\n");
+		// 非签名标题走严格校验（P0-4）；同时给非 OpenAI 消息补标题能力。
+		// 开关关闭时不取标题（尊重 useSummaryTitlesAsThinkingTitle=false）。
+		// P0-2/P0-3：组装前剥离脱敏标记与噪音行。
+		const strictSummary =
+			latestSummaryFromSignature || !config.useSummaryTitlesAsThinkingTitle
+				? undefined
+				: parseStrictSummaryPart(fullText);
+		const rawBody = stripNoiseLines(
+			(latestSummary?.body ?? strictSummary?.body ?? fullText).replace(
+				THINKING_REDACTED_RE,
+				"",
+			),
+		);
 
-		let heading: string;
-		// 方向 B（Kimi 式降噪）：标题一律静态 dim，不做扫光/加粗。
-		// 流式与完成只靠文案区分（Thinking… · Xs 随计时器跳动 vs Thought for Xs），
-		// 计时器保留：时长跳动与 compact 摘要行动画仍需它驱动重绘。
-		if (active && latestSummary) {
-			heading =
-				thinkingStyle(`${THINKING_BADGE}${latestSummary.title}`) +
-				(durationText ? thinkingStyle(` · ${durationText}`) : "");
-		} else if (active) {
-			const label = self.hiddenThinkingLabel || "Thinking...";
-			// 默认文案用 CC 式单字符省略号；自定义 hiddenThinkingLabel 原样保留只加徽标。
-			const displayLabel = label === "Thinking..." ? "Thinking…" : label;
-			heading =
-				thinkingStyle(`${THINKING_BADGE}${displayLabel}`) +
-				(durationText ? thinkingStyle(` · ${durationText}`) : "");
-		} else {
-			// Completed compact blocks use one provider-independent status line.
-			// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
-			// "Thinking..."：改用摘要标题或中性 "Thought"。
-			heading = thinkingStyle(
-				`${THINKING_BADGE}${durationText ? `Thought for ${durationText}` : (latestSummary?.title ?? "Thought")}`,
-			);
-		}
-			const previewSource = (latestSummary?.body ?? thinkingBlocks.join("\n\n")).trim();
+	let heading: string;
+	// 方向 B（Kimi 式降噪）：标题一律静态 dim，不做扫光/加粗。
+	// 流式与完成只靠文案区分（Thinking… · Xs 随计时器跳动 vs Thought for Xs），
+	// 计时器保留：时长跳动与 compact 摘要行动画仍需它驱动重绘。
+	if (active && latestSummary) {
+		heading =
+			thinkingStyle(`${THINKING_BADGE}${latestSummary.title}`) +
+			(durationText ? thinkingStyle(` · ${durationText}`) : "");
+	} else if (active) {
+		const label = self.hiddenThinkingLabel || "Thinking...";
+		// 默认文案用 CC 式单字符省略号；自定义 hiddenThinkingLabel 原样保留只加徽标。
+		const displayLabel = label === "Thinking..." ? "Thinking…" : label;
+		heading =
+			thinkingStyle(`${THINKING_BADGE}${displayLabel}`) +
+			(durationText ? thinkingStyle(` · ${durationText}`) : "");
+	} else {
+		// Completed compact blocks use one provider-independent status line.
+		// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
+		// "Thinking..."：有确切时长用 Thought for Xs，否则用严格校验过的标题或中性 "Thought"。
+		const completedTitle =
+			durationText !== undefined
+				? `Thought for ${durationText}`
+				: ((latestSummaryFromSignature ? latestSummary?.title : undefined) ??
+					strictSummary?.title ??
+					"Thought");
+		heading = thinkingStyle(`${THINKING_BADGE}${completedTitle}`);
+	}
+		const previewSource = rawBody;
 			self.contentContainer.addChild(
 				new ThinkingPreviewBlock(
 					heading,
@@ -777,6 +965,8 @@ function compactThinking(pi: ExtensionAPI) {
 					runStartIndex,
 					// 活动态追随尾部（随新内容滚动），收尾后固定头部。
 					active,
+					self.markdownTheme,
+					createTransform("assistant-thinking", self),
 				),
 			);
 
@@ -1044,6 +1234,7 @@ function compactThinking(pi: ExtensionAPI) {
 		completedDurations.clear();
 		streamingComponents.clear();
 		expandedThinking.clear();
+		fullExpandedThinking.clear();
 		clearThinkingPreviewCache();
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 

@@ -67,8 +67,9 @@ Run `/reload` after installation.
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
-  "previewLines": 3,                       // preview lines (tail-follow while streaming, head when done); 0 hides
+  "previewLines": 3,                       // preview content lines (blanks skipped); 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
+  "thinkingExpandedMaxLines": 200,         // expanded tail lines first; expand again for full body
   "dimThinkingText": false,                // dim thinking body text
 
   // ui

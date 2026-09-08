@@ -1,126 +1,107 @@
 /**
- * 用户端朴素 ❯ 美化（移植自 cc-my-pi `user-message-render.ts`，MIT）。
+ * 用户端只加一个箭头（朴素 ❯），其余一律不动。
  *
- * 只做朴素版：蓝条 ▎ 变体、半块上下描边、拷贝分区一律不搬。
- *
- * A. 已提交消息：整宽 userMessageBg 底行，首行 `❯ `，续行 2 空格顶齐，
- *    去原生边框与上下留白；附件树收成单个 ⎿；pi-paster 图片路径块仅隐藏
- *    显示（模型照收原文）。
- * B. 输入框：实例级 factory 包裹给提示行加 `❯ `，续行对齐；bash `!` 开头
- *    不重复装饰。
+ * A. 已提交消息：首个有字行前插 dim 色 `❯ `，超宽截断保宽；
+ *    边框/留白/底色/附件树/图片块全部保持 Pi 原生。
+ * B. 输入框：提示行加 `❯ `；bash `!` 开头与已装饰行放过，续行不动。
  */
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../config/config.ts";
 import { PROMPT_GLYPH_FACTORY, USER_MESSAGE_PATCH, patchRegistry } from "../utils/patch-keys.ts";
-import { stripAnsi } from "../utils/ansi-text.ts";
+import { stripAnsi, stripTerminalSequencesPreservingLayout } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 
-export type UserMessagePaint = {
-	bg: (text: string) => string;
-	dim: (text: string) => string;
-};
-
-/** 首行 `❯ ` 占 2 列，续行补 2 空格顶齐。 */
+/** 箭头前缀 `❯ `。 */
 export const USER_PROMPT_PREFIX = "❯ ";
-export const USER_CONTINUATION_INDENT = "  ";
 
-/** 去行首尾空白（含 ANSI 后缀空格），保留行内样式。 */
-function trimLineEnds(line: string): string {
-	let out = line.replace(/^[ \t]+/, "");
-	out = out.replace(/[ \t]+((?:\x1b\[[0-9;]*m)*)$/g, "$1");
-	return out;
+const ESC_CODE = 27;
+const BEL_CODE = 7;
+
+/** 行是否有可见文本（ANSI/OSC 剥离后非空）。 */
+function hasVisibleText(line: string): boolean {
+	return stripTerminalSequencesPreservingLayout(line).trim() !== "";
 }
 
 /**
- * 去原生上下留白与孤立提示符行（❯/›/> 独占一行时是原生边框残留）。
- * 移植自 cc-my-pi `trimUserMessagePadding`。
+ * 切出行首不可见前缀（空格 + CSI/OSC 转义Run）：手工扫描，
+ * 不用含转义字面的正则。返回 [head, rest]。
  */
-export function trimUserMessagePadding(lines: string[]): string[] {
-	const blank = (line: string) => stripAnsi(line).trim() === "";
-	let start = 0;
-	let end = lines.length;
-	while (start < end && blank(lines[start] ?? "")) start += 1;
-	while (end > start && blank(lines[end - 1] ?? "")) end -= 1;
-	while (start < end && /^(?:❯|›|>)$/.test(stripAnsi(lines[start] ?? "").trim())) start += 1;
-	while (start < end && blank(lines[start] ?? "")) start += 1;
-	return lines.slice(start, end);
-}
-
-const CONTEXT_CONTINUATION_MARK = "\uE000";
-const CONTEXT_BRANCH =
-	/^((?:\x1b\[[0-?]*[ -/]*[@-~]|\s)*)([├└│⎿])(?:─)?((?:\x1b\[[0-?]*[ -/]*[@-~])*)(?:\s*)/;
-
-/**
- * Pi 附件/上下文树收成单个 Claude 式 ⎿：首个分支行换 ⎿，
- * 后续分支行标记续行（渲染时按续行缩进）。
- * 移植自 cc-my-pi `normalizeClaudeUserContextBranches`。
- */
-export function normalizeUserContextBranches(lines: string[]): string[] {
-	let armSeen = false;
-	return lines.map((line, index) => {
-		if (index === 0 || !CONTEXT_BRANCH.test(line)) return line;
-		if (armSeen) return line.replace(CONTEXT_BRANCH, `${CONTEXT_CONTINUATION_MARK}$1$3`);
-		armSeen = true;
-		return line.replace(CONTEXT_BRANCH, "$1⎿$3  ");
-	});
-}
-
-/**
- * 藏掉 pi-paster 追加的附件路径块（显示层 only）：
- *   Attached image paths:
- *   - [#image 1]: /path/to/img.png
- * 仅尾部完整块才剥；模型侧原文不受影响。
- * 移植自 cc-my-pi `stripAttachedImagePathsBlock`。
- */
-export function stripAttachedImagePathsBlock(lines: string[]): string[] {
-	const plain = lines.map((line) => stripAnsi(line).trim());
-	let header = -1;
-	for (let i = plain.length - 1; i >= 0; i--) {
-		if (plain[i] === "Attached image paths:") {
-			header = i;
-			break;
+function splitHeadRest(line: string): [string, string] {
+	let i = 0;
+	while (i < line.length) {
+		const code = line.charCodeAt(i);
+		if (code === 32 || code === 9) {
+			i += 1;
+			continue;
 		}
+		if (code !== ESC_CODE) break;
+		const next = line[i + 1];
+		if (next === "[") {
+			let j = i + 2;
+			while (j < line.length) {
+				const c = line.charCodeAt(j);
+				if (c >= 64 && c <= 126) {
+					j += 1;
+					break;
+				}
+				j += 1;
+			}
+			i = j;
+			continue;
+		}
+		if (next === "]") {
+			let j = i + 2;
+			while (j < line.length) {
+				if (line.charCodeAt(j) === BEL_CODE) {
+					j += 1;
+					break;
+				}
+				if (line.charCodeAt(j) === ESC_CODE && line[j + 1] === "\\") {
+					j += 2;
+					break;
+				}
+				j += 1;
+			}
+			i = j;
+			continue;
+		}
+		break;
 	}
-	if (header === -1) return lines;
-	for (let i = header + 1; i < plain.length; i++) {
-		if (plain[i] === "") continue;
-		if (!/^-\s*\[#image \d+\]:\s/.test(plain[i]!)) return lines;
-	}
-	let end = header;
-	while (end > 0 && plain[end - 1] === "") end -= 1;
-	return lines.slice(0, end);
+	return [line.slice(0, i), line.slice(i)];
 }
 
 /**
- * 单行渲染：首行 `❯ ` + 内容，续行 2 空格顶齐，整行铺底色垫满宽度。
- * 续行标记（CONTEXT_CONTINUATION_MARK）按普通续行缩进。
+ * 只加一个箭头：首个有字行前插 dim 色 `❯ `，超宽截断保宽，
+ * 其余行逐字节不动。行首已有 ❯/›/> 标记则替换（保持只一个箭头，
+ * 宽度不变）。
  */
-export function renderUserMessageLine(
-	line: string,
+export function addArrowToFirstLine(
+	lines: string[],
 	width: number,
-	first: boolean,
-	paint: UserMessagePaint,
-): string {
-	const cleaned = trimLineEnds(
-		line.startsWith(CONTEXT_CONTINUATION_MARK)
-			? line.slice(CONTEXT_CONTINUATION_MARK.length)
-			: line,
-	);
-	const prefix = first ? paint.dim(USER_PROMPT_PREFIX) : USER_CONTINUATION_INDENT;
-	// 前缀固定占 2 可见列（`❯ `/两空格）。
-	const innerWidth = Math.max(1, width - 2);
-	const content = truncateToWidth(cleaned, innerWidth, "");
-	const body = `${prefix}${content}`;
-	const padding = " ".repeat(Math.max(0, width - visibleWidth(stripAnsi(body))));
-	return paint.bg(`${body}${padding}`);
+	dim: (text: string) => string,
+): string[] {
+	const index = lines.findIndex((line) => hasVisibleText(line));
+	if (index === -1) return lines;
+	const next = lines.slice();
+	const line = next[index]!;
+	const [head, rest] = splitHeadRest(line);
+	let inserted: string;
+	if (/^[❯›>]/.test(rest)) {
+		inserted = `${head}${dim("❯")}${rest.slice(1)}`;
+	} else {
+		inserted = `${head}${dim(USER_PROMPT_PREFIX)}${rest.replace(/^ /, "")}`;
+	}
+	next[index] =
+		visibleWidth(stripAnsi(inserted)) > width ? truncateToWidth(inserted, width, "") : inserted;
+	return next;
 }
 
 /**
  * 输入框提示行：去 editor 左 padding，加朴素 `❯ `；bash `!` 开头与已装饰
- * 行原样放过。移植自 cc-my-pi `prefixEditorPromptLine`（去颜色参数）。
+ * 行原样放过。
  */
 export function prefixEditorPromptLine(line: string, paddingX: number, width: number): string {
 	const removablePadding = Math.min(Math.max(0, paddingX), line.match(/^ */)?.[0].length ?? 0);
@@ -130,29 +111,12 @@ export function prefixEditorPromptLine(line: string, paddingX: number, width: nu
 	return truncateToWidth(`${USER_PROMPT_PREFIX}${content}`, Math.max(0, width), "");
 }
 
-/** 输入框续行：去 padding 后补 2 空格顶齐。移植自 `indentEditorContinuationLine`。 */
-export function indentEditorContinuationLine(
-	line: string,
-	paddingX: number,
-	width: number,
-): string {
-	const removablePadding = Math.min(Math.max(0, paddingX), line.match(/^ */)?.[0].length ?? 0);
-	return truncateToWidth(
-		`${USER_CONTINUATION_INDENT}${line.slice(removablePadding)}`,
-		Math.max(0, width),
-		"",
-	);
-}
-
-function userMessagePaint(): UserMessagePaint | undefined {
+function dimPaint(): ((text: string) => string) | undefined {
 	const theme = getMessageDisplayTheme() as
-		| { bg?: (color: string, text: string) => string; fg?: (color: string, text: string) => string }
+		| { fg?: (color: string, text: string) => string }
 		| undefined;
-	if (typeof theme?.bg !== "function" || typeof theme?.fg !== "function") return undefined;
-	return {
-		bg: (text: string) => theme.bg!("userMessageBg", text),
-		dim: (text: string) => theme.fg!("dim", text),
-	};
+	if (typeof theme?.fg !== "function") return undefined;
+	return (text: string) => theme.fg!("dim", text);
 }
 
 /** patch 已提交消息 render；mode=off 回退原生。返回 dispose。 */
@@ -166,18 +130,11 @@ export function installUserMessageRender(): () => void {
 	const installed = function (this: any, width: number): string[] {
 		if (!patch.active || config.mode === "off") return original.call(this, width);
 		try {
-			const paint = userMessagePaint();
-			if (!paint) return original.call(this, width);
-			const messageWidth = Math.max(1, Math.floor(width) || 80);
-			const lines = trimUserMessagePadding(
-				normalizeUserContextBranches(
-					stripAttachedImagePathsBlock(original.call(this, Math.max(1, messageWidth - 2)) ?? []),
-				),
-			);
-			if (lines.length === 0) return original.call(this, width);
-			return lines.map((line, index) =>
-				renderUserMessageLine(line, messageWidth, index === 0, paint),
-			);
+			const dim = dimPaint();
+			if (!dim) return original.call(this, width);
+			const lines = original.call(this, width) ?? [];
+			if (!Array.isArray(lines) || lines.length === 0) return lines;
+			return addArrowToFirstLine(lines, Math.max(1, Math.floor(width) || 80), dim);
 		} catch {
 			return original.call(this, width);
 		}
@@ -206,7 +163,7 @@ export function refreshUserMessages(root: any): void {
 type EditorFactory = (tui: any, theme: any, keybindings: unknown) => any;
 
 /**
- * 输入框实例级 factory 包裹：提示行加 `❯ `，续行对齐。
+ * 输入框实例级 factory 包裹：只给提示行加 `❯ `，其余行不动。
  * 跨 CustomEditor 副本生效；与 image-paster/working-row 链式共存，
  * session_start 重复触发幂等。挂载顺序：后注册包外层（见 index.ts）。
  */
@@ -228,9 +185,6 @@ export function registerPromptGlyph(pi: ExtensionAPI): void {
 				try {
 					const paddingX = editor.getPaddingX?.() ?? 0;
 					lines[1] = prefixEditorPromptLine(lines[1] ?? "", paddingX, width);
-					for (let index = 2; index < lines.length - 1; index++) {
-						lines[index] = indentEditorContinuationLine(lines[index] ?? "", paddingX, width);
-					}
 				} catch {
 					// 装饰失败保留原生行
 				}

@@ -2,64 +2,42 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { UserMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import {
-	indentEditorContinuationLine,
-	normalizeUserContextBranches,
+	addArrowToFirstLine,
 	prefixEditorPromptLine,
-	renderUserMessageLine,
-	stripAttachedImagePathsBlock,
-	trimUserMessagePadding,
 } from "../extensions/renderer/user-message.ts";
-import { stripAnsi } from "../extensions/utils/ansi-text.ts";
+import {
+	stripAnsi,
+	stripTerminalSequencesPreservingLayout,
+} from "../extensions/utils/ansi-text.ts";
 
-const paint = {
-	bg: (t: string) => `[${t}]`,
-	dim: (t: string) => `<${t}>`,
-};
-// 布局断言用恒等 paint（无标记占位）；着色另测。
-const flat = {
-	bg: (t: string) => t,
-	dim: (t: string) => t,
-};
 initTheme("dark");
 
-test("首行❯续行顶齐", () => {
-	assert.equal(renderUserMessageLine("你好", 20, true, flat), "❯ 你好              ");
-	// dim 包住 ❯ 前缀（marker 占 2 可见列， pad 相应少 2）。
-	assert.equal(renderUserMessageLine("你好", 20, true, paint), "[<❯ >你好            ]");
-	assert.equal(renderUserMessageLine("续行", 20, false, flat), "  续行              ");
+const dim = (t: string) => `<${t}>`;
+
+test("首个有字行加❯，其余行逐字节不动", () => {
+	const lines = ["   ", "hello", "second"];
+	const out = addArrowToFirstLine(lines, 40, dim);
+	assert.equal(out[0], "   ");
+	assert.equal(out[1], "<❯ >hello");
+	assert.equal(out[2], "second");
+	assert.equal(lines[1], "hello");
 });
 
-test("整宽垫满，超宽截断", () => {
-	const line = renderUserMessageLine("hi", 10, true, flat);
-	assert.equal(line.length, 10);
-	const long = renderUserMessageLine(`x${"y".repeat(50)}`, 20, true, flat);
-	assert.equal(stripAnsi(long).length, 20);
+test("行首已有❯/›则替换，保持只一个箭头", () => {
+	assert.deepEqual(addArrowToFirstLine(["› hi"], 40, dim), ["<❯> hi"]);
+	assert.deepEqual(addArrowToFirstLine(["❯ hi"], 40, dim), ["<❯> hi"]);
 });
 
-test("去上下留白与孤立提示符行", () => {
-	assert.deepEqual(trimUserMessagePadding(["", "  ", "❯", "", "正文", ""]), ["正文"]);
-	assert.deepEqual(trimUserMessagePadding(["正文", "  "]), ["正文"]);
+test("空数组原样返回；超宽截断保宽", () => {
+	assert.deepEqual(addArrowToFirstLine([], 40, dim), []);
+	assert.deepEqual(addArrowToFirstLine(["   "], 40, dim), ["   "]);
+	const out = addArrowToFirstLine([`x${"y".repeat(50)}`], 20, (t) => t);
+	assert.equal(stripAnsi(out[0]!).length, 20);
+	assert.ok(out[0]!.startsWith("❯ "));
 });
 
-test("附件树收成单个⎿，后续变续行", () => {
-	const out = normalizeUserContextBranches(["正文", "├ file a", "└ file b"]);
-	assert.equal(out[0], "正文");
-	assert.ok(out[1]!.startsWith("⎿"));
-	assert.equal(out[2]!.charCodeAt(0), 0xe000);
-});
-
-test("图片块仅尾部完整才剥", () => {
-	const tail = ["正文", "Attached image paths:", "- [#image 1]: /a.png"];
-	assert.deepEqual(stripAttachedImagePathsBlock(tail), ["正文"]);
-	const nonTail = ["Attached image paths:", "- [#image 1]: /a.png", "后面还有正文"];
-	assert.deepEqual(stripAttachedImagePathsBlock(nonTail), nonTail);
-	const broken = ["正文", "Attached image paths:", "- 不是图片行"];
-	assert.deepEqual(stripAttachedImagePathsBlock(broken), broken);
-});
-
-test("输入框：提示行加❯，续行对齐，bash ! 与已装饰放过", () => {
+test("输入框：提示行加❯，bash ! 与已装饰放过", () => {
 	assert.equal(prefixEditorPromptLine("    hello", 4, 40), "❯ hello");
-	assert.equal(indentEditorContinuationLine("    second", 4, 40), "  second");
 	assert.equal(prefixEditorPromptLine("!ls", 0, 40), "!ls");
 	assert.equal(prefixEditorPromptLine("❯ hi", 0, 40), "❯ hi");
 });
@@ -73,7 +51,6 @@ test("原型补丁安装/卸载与off回退", async () => {
 	try {
 		const dispose = installUserMessageRender();
 		assert.notEqual(prototype.render, original);
-		// off 时直通原生：真实组件渲染不抛且无 ❯ 前缀。
 		config.mode = "off";
 		const native = new UserMessageComponent("hello") as any;
 		const lines = prototype.render.call(native, 40) as string[];
@@ -84,6 +61,40 @@ test("原型补丁安装/卸载与off回退", async () => {
 		assert.equal(prototype.render, original);
 	} finally {
 		config.mode = prevMode;
+		if (prototype.render !== original) prototype.render = original;
+	}
+});
+
+test("端到端：真实组件只多一个❯，其余行不动", async () => {
+	const { installUserMessageRender } = await import("../extensions/renderer/user-message.ts");
+	const { setMessageDisplayTheme } = await import("../extensions/renderer/tool/message-display.ts");
+	const { config } = await import("../extensions/config/config.ts");
+	setMessageDisplayTheme({
+		fg: (color: string, text: string) => `<${color}:${text}>`,
+		bg: (_color: string, text: string) => text,
+	});
+	const prototype = (UserMessageComponent as any).prototype;
+	const original = prototype.render;
+	const prevMode = config.mode;
+	try {
+		config.mode = "on";
+		const dispose = installUserMessageRender();
+		const component = new UserMessageComponent("你好\n第二行") as any;
+		const nativeLines = original.call(component, 60) as string[];
+		const out = prototype.render.call(component, 60) as string[];
+		assert.equal(out.length, nativeLines.length);
+		const first = out.findIndex(
+			(line) => stripTerminalSequencesPreservingLayout(line).trim() !== "",
+		);
+		assert.ok(first !== -1);
+		assert.ok(stripTerminalSequencesPreservingLayout(out[first]!).includes("❯"));
+		out.forEach((line, i) => {
+			if (i !== first) assert.equal(line, nativeLines[i]);
+		});
+		dispose();
+	} finally {
+		config.mode = prevMode;
+		setMessageDisplayTheme(undefined);
 		if (prototype.render !== original) prototype.render = original;
 	}
 });

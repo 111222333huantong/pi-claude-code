@@ -150,7 +150,7 @@ export function isDottedParagraph(value: any): value is DottedParagraph {
 function resyncAssistantComponent(component: any): void {
 	const container = component?.contentContainer;
 	if (!container || !Array.isArray(container.children)) return;
-	const mdTheme = component?.markdownTheme;
+	const hostTheme = component?.markdownTheme;
 	if (config.mode === "off") {
 		for (let i = 0; i < container.children.length; i++) {
 			const child = container.children[i];
@@ -164,7 +164,7 @@ function resyncAssistantComponent(component: any): void {
 		}
 		return;
 	}
-	if (!mdTheme) return;
+	if (!hostTheme) return;
 	for (let i = container.children.length - 1; i >= 0; i--) {
 		const child = container.children[i];
 		if (!(child instanceof Markdown) || isDottedParagraph(child)) {
@@ -176,6 +176,9 @@ function resyncAssistantComponent(component: any): void {
 		// 斜体 Markdown = thinking 块：保持 Pi 原生，不打点。
 		if ((child as any).defaultTextStyle?.italic) continue;
 		const transform = (child as any).options?.transform;
+		// 主题优先组件级，回退子节点自带（Pi 版本差异兜底）。
+		const mdTheme = hostTheme ?? (child as any).theme;
+		if (!mdTheme) continue;
 		try {
 			container.children[i] = new DottedParagraph(text, mdTheme, transform);
 		} catch {

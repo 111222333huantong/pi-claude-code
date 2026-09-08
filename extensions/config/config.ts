@@ -62,6 +62,8 @@ export type Config = {
 	startupAnimation: boolean;
 	quietStartup: boolean;
 	scrollStepLines: number;
+	/** 回合耗时超过 N 秒完成时响铃（BEL）；0 关闭。 */
+	completionBellAfterSec: number;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -94,6 +96,8 @@ export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
+/** 完成响铃阈值（秒）预设；0 关闭。 */
+export const COMPLETION_BELL_AFTER_SEC_VALUES = ["0", "10", "30", "60", "120"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",
@@ -129,6 +133,7 @@ export const DEFAULT_CONFIG: Config = {
 	startupAnimation: true,
 	quietStartup: true,
 	scrollStepLines: 3,
+	completionBellAfterSec: 0,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -237,6 +242,12 @@ export function normalizeConfig(input: unknown): Config {
 		startupAnimation: source.startupAnimation !== false,
 		quietStartup: source.quietStartup !== false,
 		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
+		completionBellAfterSec: pickPositiveInt(
+			source.completionBellAfterSec,
+			DEFAULT_CONFIG.completionBellAfterSec,
+			0,
+			3600,
+		),
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -296,6 +307,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
 		`quietStartup=${source.quietStartup ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
+		`bellAfter=${source.completionBellAfterSec}s`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,
@@ -310,12 +322,27 @@ export function formatConfigStatus(source: Config = config): string {
 /** 进程内唯一的活动配置对象。读取直接用 `config.xxx`；写入必须走 `updateConfig`。 */
 export const config: Config = loadConfig();
 
+/** 最近一次加载失败的原因（文件缺失不算）；供启动时 toast 一次，消费即清。 */
+let lastConfigLoadError: string | null = null;
+
+/** 取出并清空加载错误；无错误返回 null。 */
+export function consumeConfigLoadError(): string | null {
+	const error = lastConfigLoadError;
+	lastConfigLoadError = null;
+	return error;
+}
+
 function loadConfig(): Config {
 	try {
-		const source = existsSync(CONFIG_PATH)
-			? (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>)
-			: {};
-		return normalizeConfig(source);
+		if (!existsSync(CONFIG_PATH)) return normalizeConfig({});
+		try {
+			return normalizeConfig(
+				JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>,
+			);
+		} catch (error) {
+			lastConfigLoadError = `claude-code-style.json 无法解析，已用默认配置：${error instanceof Error ? error.message : String(error)}`;
+			return { ...DEFAULT_CONFIG };
+		}
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}

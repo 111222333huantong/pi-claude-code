@@ -289,8 +289,9 @@ export function renderHeaderLines(
 	return lines.map((line) => truncateToWidth(line, width, ""));
 }
 
-/** 当前会话已缓存的盘点（扫描中为 undefined）。 */
+/** 当前会话已缓存的盘点（扫描中为 undefined），附带所属 cwd，切目录即失效。 */
 let cachedStats: LoadedStats | undefined;
+let cachedStatsCwd: string | undefined;
 
 function safeHasCommand(pi: unknown, name: string): boolean {
 	try {
@@ -311,15 +312,18 @@ function safeThinkingLevel(pi: unknown): string {
 	}
 }
 
-/** 启动资源扫描（进程内共享 promise）； resolve 后请求重绘。 */
+/** 启动资源扫描（按 cwd 缓存）； resolve 后请求重绘。 */
 function ensureStats(pi: unknown, cwd: string, requestRender: () => void): void {
-	if (cachedStats) {
+	if (cachedStats && cachedStatsCwd === cwd) {
 		requestRender();
 		return;
 	}
+	cachedStats = undefined;
+	cachedStatsCwd = cwd;
 	collectLoadedStats(cwd, resolveAgentDir(), safeHasCommand(pi, "mcp")).then(
 		(stats) => {
 			cachedStats = stats;
+			cachedStatsCwd = cwd;
 			requestRender();
 		},
 		() => {

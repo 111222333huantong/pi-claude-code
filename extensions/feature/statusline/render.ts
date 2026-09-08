@@ -112,8 +112,15 @@ function fitSingle(text: string, width: number): string {
 	return truncateByWidth(text, width);
 }
 
-/** L1：`model (thinking) │ ctx pct · used/window │ $cost │ mcp │ ext`。 */
-export function buildLine1(snapshot: StatusSnapshot, width: number, paint: Paint): string {
+/** ctx 进度条（8 格 `█░`）；null 按空条。 */
+export function ctxBar(pct: number | null, cells = 8): string {
+	const ratio = pct === null ? 0 : Math.max(0, Math.min(1, pct / 100));
+	const filled = Math.round(ratio * cells);
+	return "█".repeat(filled) + "░".repeat(Math.max(0, cells - filled));
+}
+
+/** L1 段：`model (thinking) │ ctx bar pct · used/window │ $cost │ mcp │ ext`。 */
+function line1Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 	const segments: FitSegment[] = [];
 	const thinking = snapshot.thinking ? ` (${snapshot.thinking})` : "";
 	segments.push({
@@ -130,8 +137,8 @@ export function buildLine1(snapshot: StatusSnapshot, width: number, paint: Paint
 
 	const ctxText =
 		snapshot.ctxPct === null
-			? "ctx —"
-			: `ctx ${Math.round(snapshot.ctxPct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}`;
+			? `ctx ${ctxBar(null)} —`
+			: `ctx ${ctxBar(snapshot.ctxPct)} ${Math.round(snapshot.ctxPct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}`;
 	const danger = snapshot.ctxPct !== null && snapshot.ctxPct >= 90;
 	const ctxPainted = danger ? `!! ${ctxText} !!` : ctxText;
 	segments.push({
@@ -151,11 +158,16 @@ export function buildLine1(snapshot: StatusSnapshot, width: number, paint: Paint
 		const extText = `ext ${snapshot.extTotal} on`;
 		segments.push({ plain: extText, painted: paint("muted", extText), priority: 40 });
 	}
-	return fitSegments(segments, width);
+	return segments;
 }
 
-/** L2：`cwd │ branch ok|!! [↑a] [↓b] [+i -d] [wt name]`；非仓库时只有 cwd。 */
-export function buildLine2(snapshot: StatusSnapshot, width: number, paint: Paint): string {
+/** L1：`model (thinking) │ ctx bar pct · used/window │ $cost │ mcp │ ext`。 */
+export function buildLine1(snapshot: StatusSnapshot, width: number, paint: Paint): string {
+	return fitSegments(line1Segments(snapshot, paint), width);
+}
+
+/** L2 段：`cwd │ branch … │ wt name`。 */
+function line2Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 	const segments: FitSegment[] = [];
 	segments.push({ plain: snapshot.cwd, painted: paint("dim", snapshot.cwd), priority: 80 });
 
@@ -191,12 +203,27 @@ export function buildLine2(snapshot: StatusSnapshot, width: number, paint: Paint
 		const wtText = `wt ${snapshot.worktree}`;
 		segments.push({ plain: wtText, painted: paint("dim", wtText), priority: 30 });
 	}
-	const line = fitSegments(segments, width);
+	return segments;
+}
+
+/** L2：`cwd │ branch ok|!! [↑a] [↓b] [+i -d] [wt name]`；非仓库时只有 cwd。 */
+export function buildLine2(snapshot: StatusSnapshot, width: number, paint: Paint): string {
+	const line = fitSegments(line2Segments(snapshot, paint), width);
 	return line || fitSingle(snapshot.cwd, width);
 }
 
-/** 两行组装；空行由调用方过滤（至少保留一行避免 footer 空闪）。 */
+/** 窄屏塌单行的阈值列宽；低于此只拼一行（优先级合并，各段按原优先级取舍）。 */
+export const SINGLE_LINE_MAX_WIDTH = 60;
+
+/** 两行组装；窄屏塌单行；空行由调用方过滤（至少保留一行避免 footer 空闪）。 */
 export function buildLines(snapshot: StatusSnapshot, width: number, paint: Paint): string[] {
 	const safeWidth = Math.max(10, Math.floor(width) || 80);
+	if (safeWidth < SINGLE_LINE_MAX_WIDTH) {
+		const single = fitSegments(
+			[...line1Segments(snapshot, paint), ...line2Segments(snapshot, paint)],
+			safeWidth,
+		);
+		return [single || fitSingle(snapshot.cwd, safeWidth)];
+	}
 	return [buildLine1(snapshot, safeWidth, paint), buildLine2(snapshot, safeWidth, paint)];
 }

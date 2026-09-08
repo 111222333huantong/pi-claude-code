@@ -276,7 +276,10 @@ function extensionLabel(ext: {
 	return path ? basename(path) : "extension";
 }
 
-let statsPromise: Promise<LoadedStats> | undefined;
+let statsCache = new Map<string, Promise<LoadedStats>>();
+
+/** 不同 (cwd, agentDir) 各存一份（切目录不再读到旧盘点）；上限 8 组，最旧淘汰。 */
+const MAX_STATS_CACHE_KEYS = 8;
 
 async function doCollect(
 	cwd: string,
@@ -329,10 +332,11 @@ async function doCollect(
 }
 
 /**
- * Collect loaded-resource stats, shared process-wide. First caller starts the
- * scan; the header and `/loaded` reuse the same promise. A failed collection
- * clears the cache so a later call can retry. `hasMcpAdapter` gates MCP
- * counting entirely — pass `pi.getCommands().some((c) => c.name === "mcp")`.
+ * Collect loaded-resource stats, shared per (cwd, agentDir, hasMcpAdapter).
+ * Same key reuses the in-flight/completed promise (header + `/loaded` +
+ * statusline 共用一次扫描）; a failed collection clears its key so a later
+ * call can retry. `hasMcpAdapter` gates MCP counting entirely — pass
+ * `pi.getCommands().some((c) => c.name === "mcp")`.
  */
 export function collectLoadedStats(
 	cwd: string,
@@ -340,18 +344,26 @@ export function collectLoadedStats(
 	hasMcpAdapter: boolean,
 	options?: CollectOptions,
 ): Promise<LoadedStats> {
-	if (!statsPromise) {
-		statsPromise = doCollect(cwd, agentDir, hasMcpAdapter, options).catch((err) => {
-			statsPromise = undefined;
-			throw err;
-		});
+	if (!statsCache) statsCache = new Map();
+	const key = `${cwd} ${agentDir} ${hasMcpAdapter ? 1 : 0}`;
+	const cached = statsCache.get(key);
+	if (cached) return cached;
+	const promise = doCollect(cwd, agentDir, hasMcpAdapter, options).catch((err) => {
+		if (statsCache.get(key) === promise) statsCache.delete(key);
+		throw err;
+	});
+	statsCache.set(key, promise);
+	while (statsCache.size > MAX_STATS_CACHE_KEYS) {
+		const oldest = statsCache.keys().next().value;
+		if (oldest === undefined) break;
+		statsCache.delete(oldest);
 	}
-	return statsPromise;
+	return promise;
 }
 
 /** Drop the shared cache (tests only; `/reload` re-imports the module anyway). */
 export function resetLoadedStatsCache(): void {
-	statsPromise = undefined;
+	statsCache.clear();
 }
 
 function categoryLines(label: string, cat: CategoryDetail): string[] {

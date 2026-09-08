@@ -91,3 +91,18 @@ test("失败清缓存可重试", async () => {
 	assert.equal(stats.skills.user + stats.skills.project, 2);
 	resetLoadedStatsCache();
 });
+
+test("不同 cwd 分开缓存，切目录不读旧盘点", async () => {
+	resetLoadedStatsCache();
+	let calls = 0;
+	const counting = () => {
+		calls++;
+		return stubLoader();
+	};
+	await collectLoadedStats("/a", "/none", false, { loaderFactory: counting });
+	await collectLoadedStats("/a", "/none", false, { loaderFactory: counting });
+	assert.equal(calls, 1, "same cwd must reuse");
+	await collectLoadedStats("/b", "/none", false, { loaderFactory: counting });
+	assert.equal(calls, 2, "different cwd must recollect");
+	resetLoadedStatsCache();
+});

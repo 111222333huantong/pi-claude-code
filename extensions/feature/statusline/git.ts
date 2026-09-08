@@ -110,7 +110,9 @@ async function runGit(cwd: string, args: string[]): Promise<string | null> {
 /** 全量采集一次；任何失败返回空快照（非仓库），永不抛。 */
 export async function collectGitStatus(cwd: string): Promise<GitSnapshot> {
 	const [porcelain, shortstat, gitDir] = await Promise.all([
-		runGit(cwd, ["status", "--porcelain=v1", "--branch", "--untracked-files=all"]),
+		// `-uno`（normal）：未跟踪目录折叠为单行，比 `all` 递归扫描便宜一个量级；
+		// 状态栏只用脏否（changedFiles > 0），计数口径差异无影响。
+		runGit(cwd, ["status", "--porcelain=v1", "--branch", "--untracked-files=normal"]),
 		runGit(cwd, ["diff", "--shortstat"]),
 		runGit(cwd, ["rev-parse", "--git-dir"]),
 	]);
@@ -132,8 +134,13 @@ export async function collectGitStatus(cwd: string): Promise<GitSnapshot> {
 	};
 }
 
+/** 退避上限：连续无变化/失败时轮询间隔指数退避至此。 */
+export const MAX_GIT_POLL_INTERVAL_MS = 30_000;
+
 /**
- * 启动后台轮询：立即采一次 + 每 intervalMs 刷新（单飞行，忙则跳过）。
+ * 启动后台轮询：立即采一次 + 按需刷新（单飞行，忙则跳过）。
+ * 快照无变化或采集失败时指数退避（×2，上限 30s），有变化立即恢复基准；
+ * 无变化不调 onUpdate（省一次 footer 重绘）。
  * 返回停表函数；回调异常内部吞掉。
  */
 export function startGitPoller(
@@ -143,14 +150,33 @@ export function startGitPoller(
 ): () => void {
 	let stopped = false;
 	let inFlight = false;
-	let timer: ReturnType<typeof setInterval> | null = null;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let delay = intervalMs;
+	let lastKey = "";
 
-	const poll = async () => {
-		if (stopped || inFlight) return;
+	const schedule = () => {
+		if (stopped) return;
+		timer = setTimeout(() => void tick(), delay);
+		(timer as unknown as { unref?: () => void }).unref?.();
+	};
+
+	const tick = async () => {
+		timer = null;
+		if (stopped || inFlight) {
+			schedule();
+			return;
+		}
 		inFlight = true;
 		try {
 			const snapshot = await collectGitStatus(cwd);
-			if (!stopped) {
+			if (stopped) return;
+			const key = JSON.stringify(snapshot);
+			// 采集失败（空快照）或快照无变化：退避，不打扰渲染。
+			if (snapshot.branch === null || key === lastKey) {
+				delay = Math.min(MAX_GIT_POLL_INTERVAL_MS, Math.max(intervalMs, delay * 2));
+			} else {
+				delay = intervalMs;
+				lastKey = key;
 				try {
 					onUpdate(snapshot);
 				} catch {
@@ -160,14 +186,13 @@ export function startGitPoller(
 		} finally {
 			inFlight = false;
 		}
+		schedule();
 	};
 
-	void poll();
-	timer = setInterval(() => void poll(), intervalMs);
-	(timer as unknown as { unref?: () => void }).unref?.();
+	void tick();
 	return () => {
 		stopped = true;
-		if (timer) clearInterval(timer);
+		if (timer) clearTimeout(timer);
 		timer = null;
 	};
 }

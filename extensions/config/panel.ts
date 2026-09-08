@@ -13,6 +13,7 @@ import { readStatuslineConfig, writeStatuslineConfig } from "../feature/statusli
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
 	config,
+	COMPLETION_BELL_AFTER_SEC_VALUES,
 	DEFAULT_CONFIG,
 	DIFF_COLLAPSED_LINES_VALUES,
 	DIFF_INDICATOR_MODES,
@@ -442,6 +443,16 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, scrollStepSetting, closeSubmenu),
 		};
+		const completionBellSetting = {
+			id: "completionBellAfterSec",
+			label: "Completion bell",
+			description:
+				"Ring the terminal bell when a turn takes longer than N seconds. 0 disables. Enter to type a custom value.",
+			currentValue: String(config.completionBellAfterSec),
+			values: [...COMPLETION_BELL_AFTER_SEC_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, completionBellSetting, closeSubmenu),
+		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
 		const sessionReferenceToggle = featureToggleSetting(
@@ -692,6 +703,17 @@ export async function showCcstylePanel(
 					});
 					scrollStepSetting.currentValue = String(config.scrollStepLines);
 					break;
+				case "completionBellAfterSec":
+					updateConfig({
+						completionBellAfterSec: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.completionBellAfterSec,
+							0,
+							3600,
+						),
+					});
+					completionBellSetting.currentValue = String(config.completionBellAfterSec);
+					break;
 				default:
 					return;
 			}
@@ -741,6 +763,7 @@ export async function showCcstylePanel(
 					startupAnimationSetting,
 					quietStartupSetting,
 					scrollStepSetting,
+					completionBellSetting,
 				],
 			},
 			{

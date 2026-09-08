@@ -3,10 +3,13 @@ import test from "node:test";
 import {
 	buildLine1,
 	buildLine2,
+	buildLines,
+	ctxBar,
 	ctxColor,
 	fitSegments,
 	formatCost,
 	formatTokens,
+	SINGLE_LINE_MAX_WIDTH,
 	thinkingColor,
 	type StatusSnapshot,
 } from "../extensions/feature/statusline/render.ts";
@@ -62,8 +65,8 @@ test("thinkingColor: 未知等级回 dim", () => {
 
 test("buildLine1: 宽屏全段", () => {
 	assert.equal(
-		buildLine1(base, 120, identity),
-		"opus-4-6 (high) │ ctx 23% · 46k/200k │ $1.23 │ mcp 3 enabled │ ext 7 on",
+		buildLine1(base, 140, identity),
+		"opus-4-6 (high) │ ctx ██░░░░░░ 23% · 46k/200k │ $1.23 │ mcp 3 enabled │ ext 7 on",
 	);
 });
 
@@ -74,18 +77,18 @@ test("buildLine1: cost 为 0 整段隐藏", () => {
 });
 
 test("buildLine1: ctx 90+ 加 !! 标记", () => {
-	const line = buildLine1({ ...base, ctxPct: 91.2, ctxTokens: 182000 }, 120, identity);
-	assert.equal(line.includes("!! ctx 91% · 182k/200k !!"), true);
+	const line = buildLine1({ ...base, ctxPct: 91.2, ctxTokens: 182000 }, 140, identity);
+	assert.equal(line.includes("!! ctx ███████░ 91% · 182k/200k !!"), true);
 });
 
-test("buildLine1: ctx 未知显示 ctx —", () => {
+test("buildLine1: ctx 未知显示空条 + ctx —", () => {
 	const line = buildLine1({ ...base, ctxPct: null, ctxTokens: null }, 120, identity);
-	assert.equal(line.includes("ctx —"), true);
+	assert.equal(line.includes("ctx ░░░░░░░░ —"), true);
 });
 
 test("buildLine1: 窄屏按优先级砍 ext→mcp→cost，ctx 永存", () => {
 	const line = buildLine1(base, 40, identity);
-	assert.equal(line.includes("ctx 23%"), true);
+	assert.match(line, /ctx .*23%/);
 	assert.equal(line.includes("ext"), false);
 	assert.equal(line.includes("mcp"), false);
 });
@@ -107,7 +110,6 @@ test("buildLine2: 非仓库只有 cwd", () => {
 	const line = buildLine2({ ...base, branch: null }, 120, identity);
 	assert.equal(line, "~/pi-claude-code");
 });
-
 test("buildLine2: worktree 段与开关", () => {
 	const on = buildLine2({ ...base, worktree: "pi-cc-refs" }, 120, identity);
 	assert.equal(on.includes("wt pi-cc-refs"), true);
@@ -126,5 +128,27 @@ test("fitSegments: 空段过滤，超宽逐个剔最低", () => {
 			1,
 		),
 		"a",
+	);
+});
+
+test("ctxBar: 8 格填充，边界钳制", () => {
+	assert.equal(ctxBar(0), "░░░░░░░░");
+	assert.equal(ctxBar(100), "████████");
+	assert.equal(ctxBar(25), "██░░░░░░");
+	assert.equal(ctxBar(null), "░░░░░░░░");
+	assert.equal(ctxBar(150), "████████");
+	assert.equal(ctxBar(-5), "░░░░░░░░");
+});
+
+test("buildLines: 宽屏两行，窄屏塌单行", () => {
+	assert.equal(SINGLE_LINE_MAX_WIDTH, 60);
+	assert.equal(buildLines(base, 120, identity).length, 2);
+	const narrow = buildLines(base, 50, identity);
+	assert.equal(narrow.length, 1);
+	assert.ok(narrow[0]?.includes("opus-4-6"), `keep model, got: ${narrow[0]}`);
+	assert.ok(narrow[0]?.includes("ctx"), `keep ctx, got: ${narrow[0]}`);
+	assert.ok(
+		(narrow[0] ? [...narrow[0]].length : 0) <= 60,
+		`single line must fit, got ${narrow[0]?.length} cols`,
 	);
 });

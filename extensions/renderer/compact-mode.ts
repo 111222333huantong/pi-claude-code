@@ -39,6 +39,7 @@ import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./t
 import { oneLine } from "../utils/format.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
+import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import {
 	ASSISTANT_REENTRY_KEY,
@@ -840,7 +841,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	let roundByComponent = new WeakMap<object, CompactRound>();
 	const expandedRoundToolIds = new Set<string>();
 	let uiRef: { requestRender?: (force?: boolean) => void } | undefined;
-	let roundTickTimer: ReturnType<typeof setInterval> | undefined;
+	let roundTickUnsubscribe: (() => void) | null = null;
+	let lastRoundTickAt = 0;
+	/** round 摘要秒级时长 + Running 扫光节奏（250ms，自备 tick 改走共享时钟）。 */
+	const ROUND_TICK_INTERVAL_MS = 250;
 
 	const roundWallMs = (round: CompactRound): number => {
 		const end = round.active ? Date.now() : (round.endedAt ?? Date.now());
@@ -856,26 +860,30 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		);
 
 	const stopRoundTick = (): void => {
-		if (!roundTickTimer) return;
-		clearInterval(roundTickTimer);
-		roundTickTimer = undefined;
+		roundTickUnsubscribe?.();
+		roundTickUnsubscribe = null;
 	};
 
 	// 自备 tick：getter 在 render 重算挂钟；兼驱动 Running 扫光（setCompactSummaryActive）。
+	// 走 90ms 共享时钟（累计满 250ms 行动一次），不再自建定时器。
 	const ensureRoundTick = (): void => {
-		if (roundTickTimer) return;
-		roundTickTimer = setInterval(() => {
+		if (roundTickUnsubscribe) return;
+		lastRoundTickAt = Date.now();
+		roundTickUnsubscribe = subscribeTicker(() => {
 			if (!patch.active || !activeRound?.active) {
 				stopRoundTick();
 				return;
 			}
+			const now = Date.now();
+			if (now - lastRoundTickAt < ROUND_TICK_INTERVAL_MS) return;
+			lastRoundTickAt = now;
 			try {
 				// 非 force：保留 fullscreen 布局缓存和差分绘制。
 				uiRef?.requestRender?.();
 			} catch {
 				/* 无 UI */
 			}
-		}, 250);
+		});
 	};
 
 	/** 结束回合活动态；可选立即重绘。 */

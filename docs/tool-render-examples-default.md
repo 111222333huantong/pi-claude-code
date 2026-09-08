@@ -8,7 +8,7 @@
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠦ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠴ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more

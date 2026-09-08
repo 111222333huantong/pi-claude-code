@@ -1,6 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
 import { config } from "../../config/config.ts";
+import { subscribeTicker } from "../../feature/shell/spinner-ticker.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
@@ -67,16 +68,34 @@ function hasExpandableResult(text: string): boolean {
 }
 
 const activeAnimationContexts = new Set<any>();
-let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+let sharedTickerUnsubscribe: (() => void) | null = null;
+
+/**
+ * 工具 braille 动画统一走 90ms 共享 tick（spinner-ticker），不再自建定时器。
+ * 调用方每 render 按需 schedule，tick 到即 invalidate 全部 pending 上下文；
+ * 无订阅时共享表自动停表，空闲零开销。
+ */
+function ensureSharedAnimationTick(): void {
+	if (sharedTickerUnsubscribe) return;
+	sharedTickerUnsubscribe = subscribeTicker(() => {
+		if (activeAnimationContexts.size === 0) {
+			sharedTickerUnsubscribe?.();
+			sharedTickerUnsubscribe = null;
+			return;
+		}
+		const contexts = Array.from(activeAnimationContexts);
+		activeAnimationContexts.clear();
+		for (const ctx of contexts) {
+			ctx.state.ccstyleAnimationScheduled = false;
+			ctx.invalidate?.();
+		}
+	});
+}
 
 function clearAnimation(context: any) {
 	if (!context?.state?.ccstyleAnimationScheduled) return;
 	context.state.ccstyleAnimationScheduled = false;
 	activeAnimationContexts.delete(context);
-	if (activeAnimationContexts.size === 0 && sharedAnimationTimer) {
-		clearTimeout(sharedAnimationTimer);
-		sharedAnimationTimer = null;
-	}
 }
 
 export function clearAllAnimations() {
@@ -84,28 +103,16 @@ export function clearAllAnimations() {
 		ctx.state.ccstyleAnimationScheduled = false;
 	}
 	activeAnimationContexts.clear();
-	if (sharedAnimationTimer) {
-		clearTimeout(sharedAnimationTimer);
-		sharedAnimationTimer = null;
-	}
+	sharedTickerUnsubscribe?.();
+	sharedTickerUnsubscribe = null;
 }
 
-export function scheduleAnimation(context: any, intervalMs = TOOL_LOADING_INTERVAL_MS) {
+export function scheduleAnimation(context: any, _intervalMs = TOOL_LOADING_INTERVAL_MS) {
 	const state = (context.state ??= {});
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);
-	if (!sharedAnimationTimer) {
-		sharedAnimationTimer = setTimeout(() => {
-			sharedAnimationTimer = null;
-			const contexts = Array.from(activeAnimationContexts);
-			activeAnimationContexts.clear();
-			for (const ctx of contexts) {
-				ctx.state.ccstyleAnimationScheduled = false;
-				ctx.invalidate?.();
-			}
-		}, intervalMs);
-	}
+	ensureSharedAnimationTick();
 }
 
 export function pendingIcon(_name: string): string {

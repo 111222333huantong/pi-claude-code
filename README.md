@@ -84,6 +84,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "startupAnimation": true,                // 每进程播放一次 mascot 成长动画
   "quietStartup": true,                    // 隐藏原生启动资源列表，下会话生效
   "scrollStepLines": 3,                    // fullscreen 滚轮步进
+  "completionBellAfterSec": 0,             // 回合超过 N 秒完成时响铃，0 关闭
 
   // features
   "enableSessionReference": true,          // @ session 引用

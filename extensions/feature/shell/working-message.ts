@@ -6,6 +6,7 @@ import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinne
 import { pickVerb } from "./spinner-verbs.ts";
 import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
 import { formatDuration } from "../../utils/format.ts";
+import { config } from "../../config/config.ts";
 
 type ContentBlock = {
 	type?: unknown;
@@ -663,6 +664,18 @@ export default function (pi: ExtensionAPI): void {
 			} catch {
 				/* noop */
 			}
+			// 长任务完成响铃（默认关闭；TTY 才发 BEL，避免污染管道输出）。
+			try {
+				if (
+					config.completionBellAfterSec > 0 &&
+					elapsed >= config.completionBellAfterSec * 1000 &&
+					process.stdout.isTTY === true
+				) {
+					process.stdout.write("\x07");
+				}
+			} catch {
+				/* noop */
+			}
 			completionTimer = setTimeout(() => {
 				completionTimer = null;
 				if (activeTurnId !== turnId) return;
@@ -689,6 +702,8 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", async () => {
 		turnActive = false;
+		clearCompletionTimer();
+		clearThoughtStatusTimer();
 		clearDisplay();
 		activeCtx = null;
 	});

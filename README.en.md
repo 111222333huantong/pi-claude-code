@@ -84,6 +84,7 @@ Run `/reload` after installation.
   "startupAnimation": true,                // play the mascot build-up once per process
   "quietStartup": true,                    // hide Pi's native startup listing (takes effect next session)
   "scrollStepLines": 3,                    // fullscreen wheel scroll step
+  "completionBellAfterSec": 0,             // ring the bell when a turn takes over N seconds, 0 disables
 
   // features
   "enableSessionReference": true,          // @ session references

@@ -16,6 +16,7 @@ import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import {
 	config,
+	consumeConfigLoadError,
 	formatConfigStatus,
 	normalizeConfig,
 	setConfig,
@@ -219,6 +220,15 @@ export default function (
 	});
 
 	pi.on("session_start", async (event, ctx) => {
+		// 配置文件损坏时启动 toast 一次（消费即清，修好后不再打扰）。
+		try {
+			const loadError = consumeConfigLoadError();
+			if (loadError && ctx?.mode === "tui" && ctx?.hasUI) {
+				ctx.ui.notify?.(loadError, "warning");
+			}
+		} catch {
+			/* noop */
+		}
 		// 延迟到 session_start 注册 write override：加载阶段 getAllTools 不可用且其他扩展
 		// 尚未注册工具，无法检测外部 write 所有者（如 pi-spark），直接注册会与对方撞名。
 		// session_start 时所有扩展已加载完毕，installWriteOverride 内部会检测并让位。

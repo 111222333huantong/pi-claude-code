@@ -6,18 +6,15 @@
  * Ported from cc-my-pi's ticker.ts (MIT, Tim van den Hoorn / FammasMaz).
  */
 
-let tick = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 const subs = new Set<() => void>();
 
-let shimmerTick = 0;
 let shimmerTimer: ReturnType<typeof setInterval> | null = null;
 const shimmerSubs = new Set<() => void>();
 
 function ensure(): void {
 	if (timer) return;
 	timer = setInterval(() => {
-		tick++;
 		for (const fn of [...subs]) {
 			try {
 				fn();
@@ -39,7 +36,6 @@ function maybeStop(): void {
 function ensureShimmer(): void {
 	if (shimmerTimer) return;
 	shimmerTimer = setInterval(() => {
-		shimmerTick++;
 		for (const fn of [...shimmerSubs]) {
 			try {
 				fn();
@@ -76,19 +72,6 @@ export function subscribeShimmer(fn: () => void): () => void {
 	};
 }
 
-export function getTick(): number {
-	return tick;
-}
-
-export function getShimmerTick(): number {
-	return shimmerTick;
-}
-
-/** Test helper — how many active subscribers. */
-export function _tickerSubCount(): number {
-	return subs.size + shimmerSubs.size;
-}
-
 /** Test helper — force stop. */
 export function _resetTicker(): void {
 	if (timer) {
@@ -101,6 +84,4 @@ export function _resetTicker(): void {
 	}
 	subs.clear();
 	shimmerSubs.clear();
-	tick = 0;
-	shimmerTick = 0;
 }

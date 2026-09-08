@@ -10,6 +10,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
@@ -37,8 +38,36 @@ const ui = {
 	requestRender() {},
 } as any;
 
-function tool(name: string, id: string, args: any = {}) {
-	return new ToolExecutionComponent(name, id, args, {}, undefined, ui, process.cwd()) as any;
+function tool(name: string, id: string, args: any = {}, definition: any = undefined) {
+	return new ToolExecutionComponent(name, id, args, {}, definition, ui, process.cwd()) as any;
+}
+
+/**
+ * 0.85+ 内置渲染器不再随构造器附带（也未公开导出），线上由
+ * interactive-mode 经 withBuiltInRenderers 注入。此 stub 还原原生 bash
+ * 折叠预览契约（尾部行 + `N earlier lines` 提示，该文案 0.84/0.85 一致），
+ * 仅用于验证 round 卡对长输出子组件的收纳行为。
+ */
+function bashPreviewDefinition() {
+	const TAIL = 5;
+	return {
+		renderCall: (args: any) => new Text(`bash ${args?.command ?? ""}`, 0, 0),
+		renderResult: (result: any, options: any) => {
+			const text = (result?.content ?? [])
+				.filter((item: any) => item?.type === "text")
+				.map((item: any) => String(item.text ?? ""))
+				.join("\n");
+			const lines = text.split("\n");
+			if (options?.expanded) return new Text(lines.join("\n"), 0, 0);
+			const skipped = lines.length - TAIL;
+			if (skipped <= 0) return new Text(lines.join("\n"), 0, 0);
+			return new Text(
+				["", `... (${skipped} earlier lines, press to expand)`, ...lines.slice(-TAIL)].join("\n"),
+				0,
+				0,
+			);
+		},
+	};
 }
 
 const renderText = (component: any, width = 120): string[] =>
@@ -361,7 +390,7 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			/^Running\.\.\. · 2s, bash×2, fffind×1, read×1/,
 		);
 
-		const bash = tool("bash", "b1", { command: "one" });
+		const bash = tool("bash", "b1", { command: "one" }, bashPreviewDefinition());
 		const longOutput = Array.from({ length: 500 }, (_, index) => `tool output ${index}`).join("\n");
 		bash.updateResult({ content: [{ type: "text", text: longOutput }], isError: false });
 		bash.setExpanded(true);

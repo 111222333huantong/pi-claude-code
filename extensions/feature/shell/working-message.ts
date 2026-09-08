@@ -5,6 +5,7 @@ import { RESET, hexToFgAnsi } from "./spinner-color.ts";
 import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinner-shimmer.ts";
 import { pickVerb } from "./spinner-verbs.ts";
 import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
+import { formatDuration } from "../../utils/format.ts";
 
 type ContentBlock = {
 	type?: unknown;
@@ -242,15 +243,9 @@ Loader.prototype.stop = function patchedStop() {
 // Working message: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens · 12s)`
 // ---------------------------------------------------------------------------
 
-/** Format elapsed ms as compact duration: 5s, 1m 23s, 1h 2m 3s */
-function formatDuration(ms: number): string {
-	const totalSec = Math.floor(ms / 1000);
-	const h = Math.floor(totalSec / 3600);
-	const m = Math.floor((totalSec % 3600) / 60);
-	const s = totalSec % 60;
-	if (h > 0) return `${h}h ${m}m ${s}s`;
-	if (m > 0) return `${m}m ${s}s`;
-	return `${s}s`;
+/** Format elapsed ms as compact duration; sub-second shows "0s" (working footer). */
+function formatWorkingDuration(ms: number): string {
+	return formatDuration(ms) || "0s";
 }
 
 /** Claude-style compact token counts: 18, 1.4k, 12k */
@@ -336,7 +331,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 
 		if (elapsed >= SHOW_TIMER_AFTER_MS || tokens > 0) {
-			statusParts.push(formatDuration(elapsed));
+			statusParts.push(formatWorkingDuration(elapsed));
 		}
 		const activity = activitySuffix();
 		if (activity) statusParts.unshift(activity);
@@ -661,7 +656,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 
 		if (activeCtx?.hasUI) {
-			const message = `${STATUS_DIM}✻ Turn took ${formatDuration(elapsed)}${RESET}`;
+			const message = `${STATUS_DIM}✻ Turn took ${formatWorkingDuration(elapsed)}${RESET}`;
 			lastWorkingMessage = message;
 			try {
 				activeCtx.ui.setWorkingMessage(message);

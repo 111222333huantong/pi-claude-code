@@ -52,7 +52,6 @@
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
 		"grok-mermaid": "^0.2.2",
-		"jiti": "^2.7.0",
 		"pi-paster": "^0.2.3"
 	},
 	"bundledDependencies": [],
@@ -66,7 +65,12 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.5",
+		"@earendil-works/pi-ai": "^0.85.1",
+		"@earendil-works/pi-coding-agent": "^0.85.1",
+		"@earendil-works/pi-tui": "^0.85.1",
 		"@types/node": "^26.1.1",
+		"jiti": "^2.7.0",
 		"typescript": "^5.9.3"
-	}
+	},
+	"bundleDependencies": []
 }

@@ -6,7 +6,14 @@
  * Ported from cc-my-pi's spinner.ts shimmer section (MIT, Tim van den Hoorn).
  * `colorSweep` is a pure function — no side effects.
  */
-import { hexToRgb, mixRgb, parseAnsiRgb, rgbToFgAnsi, type Rgb } from "./spinner-color.ts";
+import {
+	hexToFgAnsi,
+	hexToRgb,
+	mixRgb,
+	parseAnsiRgb,
+	rgbToFgAnsi,
+	type Rgb,
+} from "./spinner-color.ts";
 
 import { RESET } from "./spinner-color.ts";
 
@@ -14,15 +21,8 @@ export const SHIMMER_BAND_WIDTH = 6;
 
 /** Parse a `#rrggbb` literal into a 24-bit ANSI foreground escape, or null. */
 export function hexToAnsiFg(value: string): string | null {
-	const ansi = hexToFgAnsiLocal(value.trim());
+	const ansi = hexToFgAnsi(value.trim());
 	return ansi ? ansi : null;
-}
-
-function hexToFgAnsiLocal(value: string): string {
-	if (!value || !/^#[0-9a-fA-F]{6}$/.test(value)) return "";
-	const rgb = hexToRgb(value);
-	if (!rgb) return "";
-	return rgbToFgAnsi(rgb);
 }
 
 /**

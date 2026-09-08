@@ -10,7 +10,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../config/config.ts";
 import { PROMPT_GLYPH_FACTORY, USER_MESSAGE_PATCH, patchRegistry } from "../utils/patch-keys.ts";
-import { stripAnsi, stripTerminalSequencesPreservingLayout } from "../utils/ansi-text.ts";
+import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 
@@ -19,11 +19,6 @@ export const USER_PROMPT_PREFIX = "❯ ";
 
 const ESC_CODE = 27;
 const BEL_CODE = 7;
-
-/** 行是否有可见文本（ANSI/OSC 剥离后非空）。 */
-function hasVisibleText(line: string): boolean {
-	return stripTerminalSequencesPreservingLayout(line).trim() !== "";
-}
 
 /**
  * 切出行首不可见前缀（空格 + CSI/OSC 转义Run）：手工扫描，

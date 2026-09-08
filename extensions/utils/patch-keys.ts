@@ -33,6 +33,9 @@ export const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for(
 // ── 消息组件补丁 ──
 export const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
 
+// ── 助手正文打点段落（包在 compact-mode 之外层，先拆） ──
+export const ASSISTANT_DOTTED_PATCH = Symbol.for("pi.ccstyle.assistant-dotted-patch");
+
 // ── Markdown 代码块套框 ──
 export const CODE_BLOCK_PATCH = Symbol.for("pi.ccstyle.code-block-patch");
 

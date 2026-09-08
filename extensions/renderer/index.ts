@@ -39,6 +39,7 @@ import {
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
+import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
 import { setCodeBlockTheme } from "./tool/code-block.ts";
 
 /**
@@ -55,6 +56,7 @@ function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): 
 	const tui = getToolMouseTui();
 	toolGrouping?.refresh(tui);
 	refreshMessageDisplays(tui);
+	refreshDottedParagraphs(tui);
 	refreshCompactModeComponents(tui);
 	compactModeHooks?.refresh();
 	tui?.requestRender?.(true);
@@ -109,6 +111,7 @@ export default function (
 				compactMode: CompactModeHooks;
 				disposeMessageDisplay: () => void;
 				disposeToolExpandedBackground: () => void;
+				disposeDottedParagraphs: () => void;
 		  }
 		| undefined;
 
@@ -127,12 +130,15 @@ export default function (
 		const disposeMessageDisplay = installMessageDisplayRendering();
 		// 展开背景必须在 compact-mode 之后装，shutdown 时先于 compact 释放。
 		const disposeToolExpandedBackground = installToolExpandedBackground();
+		// 打点段落包在 compact-mode 之外层（后装先拆），接管其下游 updateContent。
+		const disposeDottedParagraphs = installDottedParagraphs();
 		installation = {
 			defaultMode,
 			toolGrouping,
 			compactMode,
 			disposeMessageDisplay,
 			disposeToolExpandedBackground,
+			disposeDottedParagraphs,
 		};
 		return installation;
 	};
@@ -259,6 +265,8 @@ export default function (
 		current.defaultMode.shutdown();
 		current.toolGrouping.shutdown();
 		current.disposeToolExpandedBackground();
+		// 打点段落在 compact 之外层：先拆，把 updateContent 还给 compact，再拆 compact。
+		current.disposeDottedParagraphs();
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();

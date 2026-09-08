@@ -19,10 +19,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
-import {
-	formatThoughtDuration,
-	styleCompactThinkingText,
-} from "../renderer/compact-mode.ts";
+import { formatThoughtDuration, styleCompactThinkingText } from "../renderer/compact-mode.ts";
 import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 import {
 	COMPACT_THINKING_OWNER,
@@ -366,11 +363,12 @@ function layoutThinkingPreview(
 		cachePreview(cacheKey, entry);
 	}
 	const hiddenLines = entry.hiddenOutside + Math.max(0, entry.lines.length - config.previewLines);
-	const visible = hiddenLines > 0
-		? followTail
-			? entry.lines.slice(-config.previewLines)
-			: entry.lines.slice(0, config.previewLines)
-		: entry.lines;
+	const visible =
+		hiddenLines > 0
+			? followTail
+				? entry.lines.slice(-config.previewLines)
+				: entry.lines.slice(0, config.previewLines)
+			: entry.lines;
 	return { visible, hiddenLines };
 }
 
@@ -539,12 +537,7 @@ export class ThinkingPreviewBlock implements Component {
 						this.theme,
 					);
 				} catch {
-					full = wrapExpandedThinking(
-						this.messageTimestamp,
-						this.runStartIndex,
-						this.text,
-						width,
-					);
+					full = wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width);
 				}
 			} else {
 				full = wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width);
@@ -849,47 +842,47 @@ function compactThinking(pi: ExtensionAPI) {
 						(previous.type === "text" && previous.text.trim()) ||
 						(previous.type === "thinking" && previous.thinking.trim()),
 				);
-		const thinkingBlocks: string[] = [];
-		let latestSummary: SummaryPart | undefined;
-		let latestSummaryFromSignature = false;
-		for (; i < message.content.length; i++) {
-			const thinkingContent = message.content[i];
-			if (thinkingContent.type !== "thinking") break;
-			const thinking = thinkingContent.thinking.trim();
-			if (!thinking) continue;
-			thinkingBlocks.push(thinking);
+			const thinkingBlocks: string[] = [];
+			let latestSummary: SummaryPart | undefined;
+			let latestSummaryFromSignature = false;
+			for (; i < message.content.length; i++) {
+				const thinkingContent = message.content[i];
+				if (thinkingContent.type !== "thinking") break;
+				const thinking = thinkingContent.thinking.trim();
+				if (!thinking) continue;
+				thinkingBlocks.push(thinking);
 
-			if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
-				const contentIsActive =
-					activeThinking?.messageTimestamp === message.timestamp &&
-					activeThinking.contentIndex === i;
-				// During streaming, thinkingSignature may contain only the previously
-				// completed summary parts. Prefer the live text so a newly arriving
-				// title immediately replaces the old one instead of appearing in its
-				// preview body. Once complete, the structured signature is canonical.
-				if (contentIsActive) {
-					const streamed = parseLatestStreamingSummary(thinking);
-					if (streamed !== undefined) {
-						latestSummary = streamed;
+				if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
+					const contentIsActive =
+						activeThinking?.messageTimestamp === message.timestamp &&
+						activeThinking.contentIndex === i;
+					// During streaming, thinkingSignature may contain only the previously
+					// completed summary parts. Prefer the live text so a newly arriving
+					// title immediately replaces the old one instead of appearing in its
+					// preview body. Once complete, the structured signature is canonical.
+					if (contentIsActive) {
+						const streamed = parseLatestStreamingSummary(thinking);
+						if (streamed !== undefined) {
+							latestSummary = streamed;
+						} else {
+							const structured = getLatestOpenAiSummary(thinkingContent.thinkingSignature);
+							if (structured !== undefined) {
+								latestSummary = structured;
+								latestSummaryFromSignature = true;
+							}
+						}
 					} else {
 						const structured = getLatestOpenAiSummary(thinkingContent.thinkingSignature);
 						if (structured !== undefined) {
 							latestSummary = structured;
 							latestSummaryFromSignature = true;
+						} else {
+							const streamed = parseLatestStreamingSummary(thinking);
+							if (streamed !== undefined) latestSummary = streamed;
 						}
-					}
-				} else {
-					const structured = getLatestOpenAiSummary(thinkingContent.thinkingSignature);
-					if (structured !== undefined) {
-						latestSummary = structured;
-						latestSummaryFromSignature = true;
-					} else {
-						const streamed = parseLatestStreamingSummary(thinking);
-						if (streamed !== undefined) latestSummary = streamed;
 					}
 				}
 			}
-		}
 			const runEndIndex = i - 1;
 			i--;
 			const active = isActiveRun(message, runStartIndex, runEndIndex);
@@ -904,56 +897,53 @@ function compactThinking(pi: ExtensionAPI) {
 			const elapsedMs = activeThinking
 				? Math.max(1, Date.now() - activeThinking.startedAt)
 				: undefined;
-		const completedMs = getCompletedDuration(message.timestamp, runStartIndex, runEndIndex);
-		const durationMs = active ? elapsedMs : completedMs;
-		// P0-1：亚秒思考不缀时长，只留中性标题。
-		const durationText =
-			durationMs !== undefined && durationMs >= THINKING_DURATION_MIN_MS
-				? formatThoughtDuration(durationMs)
-				: undefined;
-		const fullText = thinkingBlocks.join("\n\n");
-		// 非签名标题走严格校验（P0-4）；同时给非 OpenAI 消息补标题能力。
-		// 开关关闭时不取标题（尊重 useSummaryTitlesAsThinkingTitle=false）。
-		// P0-2/P0-3：组装前剥离脱敏标记与噪音行。
-		const strictSummary =
-			latestSummaryFromSignature || !config.useSummaryTitlesAsThinkingTitle
-				? undefined
-				: parseStrictSummaryPart(fullText);
-		const rawBody = stripNoiseLines(
-			(latestSummary?.body ?? strictSummary?.body ?? fullText).replace(
-				THINKING_REDACTED_RE,
-				"",
-			),
-		);
+			const completedMs = getCompletedDuration(message.timestamp, runStartIndex, runEndIndex);
+			const durationMs = active ? elapsedMs : completedMs;
+			// P0-1：亚秒思考不缀时长，只留中性标题。
+			const durationText =
+				durationMs !== undefined && durationMs >= THINKING_DURATION_MIN_MS
+					? formatThoughtDuration(durationMs)
+					: undefined;
+			const fullText = thinkingBlocks.join("\n\n");
+			// 非签名标题走严格校验（P0-4）；同时给非 OpenAI 消息补标题能力。
+			// 开关关闭时不取标题（尊重 useSummaryTitlesAsThinkingTitle=false）。
+			// P0-2/P0-3：组装前剥离脱敏标记与噪音行。
+			const strictSummary =
+				latestSummaryFromSignature || !config.useSummaryTitlesAsThinkingTitle
+					? undefined
+					: parseStrictSummaryPart(fullText);
+			const rawBody = stripNoiseLines(
+				(latestSummary?.body ?? strictSummary?.body ?? fullText).replace(THINKING_REDACTED_RE, ""),
+			);
 
-	let heading: string;
-	// 方向 B（Kimi 式降噪）：标题一律静态 dim，不做扫光/加粗。
-	// 流式与完成只靠文案区分（Thinking… · Xs 随计时器跳动 vs Thought for Xs），
-	// 计时器保留：时长跳动与 compact 摘要行动画仍需它驱动重绘。
-	if (active && latestSummary) {
-		heading =
-			thinkingStyle(`${THINKING_BADGE}${latestSummary.title}`) +
-			(durationText ? thinkingStyle(` · ${durationText}`) : "");
-	} else if (active) {
-		const label = self.hiddenThinkingLabel || "Thinking...";
-		// 默认文案用 CC 式单字符省略号；自定义 hiddenThinkingLabel 原样保留只加徽标。
-		const displayLabel = label === "Thinking..." ? "Thinking…" : label;
-		heading =
-			thinkingStyle(`${THINKING_BADGE}${displayLabel}`) +
-			(durationText ? thinkingStyle(` · ${durationText}`) : "");
-	} else {
-		// Completed compact blocks use one provider-independent status line.
-		// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
-		// "Thinking..."：有确切时长用 Thought for Xs，否则用严格校验过的标题或中性 "Thought"。
-		const completedTitle =
-			durationText !== undefined
-				? `Thought for ${durationText}`
-				: ((latestSummaryFromSignature ? latestSummary?.title : undefined) ??
-					strictSummary?.title ??
-					"Thought");
-		heading = thinkingStyle(`${THINKING_BADGE}${completedTitle}`);
-	}
-		const previewSource = rawBody;
+			let heading: string;
+			// 方向 B（Kimi 式降噪）：标题一律静态 dim，不做扫光/加粗。
+			// 流式与完成只靠文案区分（Thinking… · Xs 随计时器跳动 vs Thought for Xs），
+			// 计时器保留：时长跳动与 compact 摘要行动画仍需它驱动重绘。
+			if (active && latestSummary) {
+				heading =
+					thinkingStyle(`${THINKING_BADGE}${latestSummary.title}`) +
+					(durationText ? thinkingStyle(` · ${durationText}`) : "");
+			} else if (active) {
+				const label = self.hiddenThinkingLabel || "Thinking...";
+				// 默认文案用 CC 式单字符省略号；自定义 hiddenThinkingLabel 原样保留只加徽标。
+				const displayLabel = label === "Thinking..." ? "Thinking…" : label;
+				heading =
+					thinkingStyle(`${THINKING_BADGE}${displayLabel}`) +
+					(durationText ? thinkingStyle(` · ${durationText}`) : "");
+			} else {
+				// Completed compact blocks use one provider-independent status line.
+				// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
+				// "Thinking..."：有确切时长用 Thought for Xs，否则用严格校验过的标题或中性 "Thought"。
+				const completedTitle =
+					durationText !== undefined
+						? `Thought for ${durationText}`
+						: ((latestSummaryFromSignature ? latestSummary?.title : undefined) ??
+							strictSummary?.title ??
+							"Thought");
+				heading = thinkingStyle(`${THINKING_BADGE}${completedTitle}`);
+			}
+			const previewSource = rawBody;
 			self.contentContainer.addChild(
 				new ThinkingPreviewBlock(
 					heading,

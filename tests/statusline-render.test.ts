@@ -91,10 +91,7 @@ test("buildLine1: 窄屏按优先级砍 ext→mcp→cost，ctx 永存", () => {
 });
 
 test("buildLine2: 脏仓库 !! + diffstat", () => {
-	assert.equal(
-		buildLine2(base, 120, identity),
-		"~/pi-claude-code │ feat/statusline !! ↑2 +18 -5",
-	);
+	assert.equal(buildLine2(base, 120, identity), "~/pi-claude-code │ feat/statusline !! ↑2 +18 -5");
 });
 
 test("buildLine2: 干净仓库 ok", () => {

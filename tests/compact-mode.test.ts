@@ -969,7 +969,7 @@ test("refreshMountedTranscript asserts compact ownership before redraw (resume w
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
 			animationIntervalMs: 30,
-				thinkingExpandedMaxLines: 200,
+			thinkingExpandedMaxLines: 200,
 		});
 		await emit("session_start", {}, ctx);
 		// 不等 renderer 的 setTimeout(syncCompactMode)：模拟无新消息的 resume。
@@ -1008,7 +1008,7 @@ test("session_start and session_tree keep the compact patch outermost over compa
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
 			animationIntervalMs: 30,
-				thinkingExpandedMaxLines: 200,
+			thinkingExpandedMaxLines: 200,
 		});
 		await emit("session_start", {}, ctx);
 		// renderer 的 session_start 先于 compact-thinking 执行；延迟 sync 重新认领。
@@ -1059,7 +1059,7 @@ test("isStreaming survives the compact + compact-thinking patch chain (mermaid f
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
 			animationIntervalMs: 30,
-				thinkingExpandedMaxLines: 200,
+			thinkingExpandedMaxLines: 200,
 		});
 		// 真实链序：compact-thinking 先装，compact-mode 在其外层再装。
 		await emit("session_start", {}, ctx);

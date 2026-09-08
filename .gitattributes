@@ -1,0 +1,6 @@
+# 统一 LF 行尾，防止 Windows 检出/编辑回潮 CRLF。
+* text=auto eol=lf
+*.png binary
+*.webp binary
+*.svg text eol=lf
+*.bat text eol=crlf

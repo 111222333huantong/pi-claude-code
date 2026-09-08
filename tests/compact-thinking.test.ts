@@ -404,7 +404,10 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 			afterLines.some((line) => line.startsWith("✻ Thought")),
 			`finalized once the subagent ends, got: ${afterLines[0]}`,
 		);
-		assert.ok(!afterLines.some((line) => line.includes("Thinking")), "no loading label after finalize");
+		assert.ok(
+			!afterLines.some((line) => line.includes("Thinking")),
+			"no loading label after finalize",
+		);
 
 		nested.emit("session_shutdown", {}, headlessCtx);
 	} finally {
@@ -931,7 +934,11 @@ test("thinking polish: sub-second hides duration, noise/redacted filtered, stric
 
 		// 3. redacted shell → neutral heading, no body, no expand hint.
 		const redacted = show(thinkingMsg(base + 2, "[REDACTED]"));
-		assert.deepEqual(redacted, ["✻ Thought"], `redacted shell stays neutral, got: ${JSON.stringify(redacted)}`);
+		assert.deepEqual(
+			redacted,
+			["✻ Thought"],
+			`redacted shell stays neutral, got: ${JSON.stringify(redacted)}`,
+		);
 
 		// 4. strict title: double newline accepted…
 		const strict = show(thinkingMsg(base + 3, "**Plan**\n\nFirst do A\nSecond line"));
@@ -995,18 +1002,27 @@ test("expanded thinking uses a tail window before the full body", () => {
 			tail.some((line) => line.includes("15 earlier lines hidden")),
 			`tail hint counts the hidden head, got: ${JSON.stringify(tail)}`,
 		);
-		assert.ok(tail.some((line) => line.includes("line-19")), "tail reaches the latest line");
 		assert.ok(
-			!tail.some((line) => /^line-0$/.test(line)),
-			"tail does not include the head",
+			tail.some((line) => line.includes("line-19")),
+			"tail reaches the latest line",
 		);
+		assert.ok(!tail.some((line) => /^line-0$/.test(line)), "tail does not include the head");
 
 		// Expand again → full body.
 		block.setExpanded(true);
 		const full = renderText(component);
-		assert.ok(!full.some((line) => line.includes("earlier lines hidden")), "full view has no tail hint");
-		assert.ok(full.some((line) => line.includes("line-0")), "full view starts at the head");
-		assert.ok(full.some((line) => line.includes("line-19")), "full view reaches the tail");
+		assert.ok(
+			!full.some((line) => line.includes("earlier lines hidden")),
+			"full view has no tail hint",
+		);
+		assert.ok(
+			full.some((line) => line.includes("line-0")),
+			"full view starts at the head",
+		);
+		assert.ok(
+			full.some((line) => line.includes("line-19")),
+			"full view reaches the tail",
+		);
 
 		// Collapse → head window again.
 		block.setExpanded(false);

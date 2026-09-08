@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
 import { installCodeBlockBox } from "../extensions/renderer/tool/code-block.ts";
-import { DottedParagraph } from "../extensions/renderer/assistant-paragraphs.ts";
-import { stripAnsi } from "../extensions/utils/ansi-text.ts";
+import {
+	DottedParagraph,
+	installDottedParagraphs,
+} from "../extensions/renderer/assistant-paragraphs.ts";
+import {
+	stripAnsi,
+	stripTerminalSequencesPreservingLayout,
+} from "../extensions/utils/ansi-text.ts";
 
 // 恒等主题：所见即所得，断言纯文本布局。
 const identityTheme = {
@@ -25,7 +32,8 @@ const identityTheme = {
 
 installCodeBlockBox();
 
-const plain = (lines: string[]) => lines.map((line) => stripAnsi(line).trimEnd());
+const plain = (lines: string[]) =>
+	lines.map((line) => stripTerminalSequencesPreservingLayout(line).trimEnd());
 
 test("首行打点，续行补 3 空格对齐", () => {
 	const para = new DottedParagraph(
@@ -104,4 +112,31 @@ test("matches 复用 + toMarkdown 还原", () => {
 		plain(restored.render(60)),
 		plain(new Markdown("还原测试", 0, 0, theme).render(60)),
 	);
+});
+
+test("端到端：真实组件经补丁打出圆点（pi-coding-agent 内嵌 pi-tui 双实例回归）", () => {
+	const dispose = installDottedParagraphs();
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: Date.now(),
+			content: [{ type: "text", text: "你好！我是 Agnes。\n第二行正文。" }],
+		} as any;
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const lines = component
+			.render(80)
+			.map((line: string) => stripTerminalSequencesPreservingLayout(line).trimEnd())
+			.filter((line: string) => line.length > 0);
+		assert.ok(
+			lines.some((line: string) => line.startsWith(" ● 你好")),
+			`首行打点，实际: ${JSON.stringify(lines)}`,
+		);
+		assert.ok(
+			lines.some((line: string) => line === "   第二行正文。"),
+			`续行对齐，实际: ${JSON.stringify(lines)}`,
+		);
+	} finally {
+		dispose();
+	}
 });

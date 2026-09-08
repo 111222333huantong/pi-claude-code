@@ -146,6 +146,21 @@ export function isDottedParagraph(value: any): value is DottedParagraph {
 	return value instanceof DottedParagraph;
 }
 
+/**
+ * Markdown 文本块判定：pi-coding-agent 内嵌了自有 pi-tui 副本，其组件产出
+ * 的 Markdown 与顶层 import 不是同一个类，`instanceof` 永假。改用构造器名
+ * 兼容双实例；Text/Spacer 等构造器名不同，不会误伤。
+ */
+function isMarkdownTextBlock(child: any): boolean {
+	if (!child || typeof child !== "object") return false;
+	if (child instanceof Markdown) return true;
+	try {
+		return child.constructor?.name === "Markdown";
+	} catch {
+		return false;
+	}
+}
+
 /** 单个组件内的 Markdown 文本块 ↔ DottedParagraph 双向同步（按当前 mode）。 */
 function resyncAssistantComponent(component: any): void {
 	const container = component?.contentContainer;
@@ -167,10 +182,11 @@ function resyncAssistantComponent(component: any): void {
 	if (!hostTheme) return;
 	for (let i = container.children.length - 1; i >= 0; i--) {
 		const child = container.children[i];
-		if (!(child instanceof Markdown) || isDottedParagraph(child)) {
-			if (isDottedParagraph(child)) child.invalidate();
+		if (isDottedParagraph(child)) {
+			child.invalidate();
 			continue;
 		}
+		if (!isMarkdownTextBlock(child)) continue;
 		const text = (child as any).text;
 		if (typeof text !== "string" || !text) continue;
 		// 斜体 Markdown = thinking 块：保持 Pi 原生，不打点。

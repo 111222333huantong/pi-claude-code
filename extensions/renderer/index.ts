@@ -40,6 +40,7 @@ import {
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
 import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
+import { installUserMessageRender, refreshUserMessages } from "./user-message.ts";
 import { setCodeBlockTheme } from "./tool/code-block.ts";
 
 /**
@@ -56,6 +57,7 @@ function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): 
 	const tui = getToolMouseTui();
 	toolGrouping?.refresh(tui);
 	refreshMessageDisplays(tui);
+	refreshUserMessages(tui);
 	refreshDottedParagraphs(tui);
 	refreshCompactModeComponents(tui);
 	compactModeHooks?.refresh();
@@ -112,6 +114,7 @@ export default function (
 				disposeMessageDisplay: () => void;
 				disposeToolExpandedBackground: () => void;
 				disposeDottedParagraphs: () => void;
+				disposeUserMessage: () => void;
 		  }
 		| undefined;
 
@@ -128,6 +131,7 @@ export default function (
 		});
 		compactModeHooks = compactMode;
 		const disposeMessageDisplay = installMessageDisplayRendering();
+		const disposeUserMessage = installUserMessageRender();
 		// 展开背景必须在 compact-mode 之后装，shutdown 时先于 compact 释放。
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		// 打点段落包在 compact-mode 之外层（后装先拆），接管其下游 updateContent。
@@ -139,6 +143,7 @@ export default function (
 			disposeMessageDisplay,
 			disposeToolExpandedBackground,
 			disposeDottedParagraphs,
+			disposeUserMessage,
 		};
 		return installation;
 	};
@@ -270,6 +275,7 @@ export default function (
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
+		current.disposeUserMessage();
 		clearAllAnimations();
 		installation = undefined;
 	});

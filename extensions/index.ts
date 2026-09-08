@@ -22,6 +22,7 @@ import { installCompactThinking } from "./feature/compact-thinking.ts";
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
 import markdownEnhance from "./renderer/markdown-enhance.ts";
+import { registerPromptGlyph } from "./renderer/user-message.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
@@ -41,6 +42,8 @@ export default function (pi: ExtensionAPI): void {
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。
 		workingRow(pi);
 	}
+	// 输入框 ❯ 包最外层：working-row 等链式包裹先注册，本 handler 后执行。
+	registerPromptGlyph(pi);
 
 	// render stack：thinking controller 直接交给 style 作 query
 	markdownEnhance(pi);

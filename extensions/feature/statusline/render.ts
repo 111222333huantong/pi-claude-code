@@ -1,11 +1,13 @@
 /**
  * 状态栏纯渲染：格式化 + 优先级截断 + 两行组装。
  *
- * 无 Pi 依赖：颜色经 `paint(color, text)` 注入，宽度按字符数估算，
- * 调用方（index.ts）再用 pi-tui `truncateToWidth` 做最终兜底。
+ * 无 Pi 组件依赖：颜色经 `paint(color, text)` 注入；列宽用 pi-tui 纯函数
+ * `visibleWidth`（CJK 计 2 列），调用方（index.ts）再用 `truncateToWidth` 做最终兜底。
  * 定稿样式：无图标纯文字，ctx 无进度条，告警靠整段变色 + `!!`。
  */
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateByWidth } from "../../utils/format.ts";
 
 export type Paint = (color: ThemeColor, text: string) => string;
 
@@ -85,7 +87,7 @@ export interface FitSegment {
 }
 
 function plainWidth(text: string): number {
-	return Array.from(text).length;
+	return visibleWidth(text);
 }
 
 /**
@@ -107,11 +109,7 @@ export function fitSegments(segments: FitSegment[], width: number): string {
 }
 
 function fitSingle(text: string, width: number): string {
-	if (plainWidth(text) <= width) return text;
-	if (width <= 1) return "…".slice(0, Math.max(0, width));
-	return `${Array.from(text)
-		.slice(0, width - 1)
-		.join("")}…`;
+	return truncateByWidth(text, width);
 }
 
 /** L1：`model (thinking) │ ctx pct · used/window │ $cost │ mcp │ ext`。 */

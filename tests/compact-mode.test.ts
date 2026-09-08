@@ -680,7 +680,12 @@ test("compact surfaces abort outside folded tools", () => {
 			errorMessage: undefined,
 		};
 		assistant.updateContent(lenMsg as any);
-		assert.ok(renderText(assistant).some((line) => /truncated before completion/.test(line)));
+		const lenLines = renderText(assistant);
+		assert.ok(lenLines.some((line) => /truncated before completion/.test(line)));
+		assert.ok(
+			lenLines.some((line) => /run \/compact to compress/.test(line)),
+			`length hint must guide to /compact, got: ${JSON.stringify(lenLines)}`,
+		);
 	} finally {
 		config.mode = previousMode;
 		hooks.shutdown();

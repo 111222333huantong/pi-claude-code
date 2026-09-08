@@ -36,12 +36,9 @@ import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
+import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
-
-// 成功勾：亮绿 truecolor（与 message-display 一致）
-const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
-const ANSI_FG_RESET = "\x1b[39m";
 
 // pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
 const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
@@ -228,10 +225,11 @@ function createCcstyleTool(
 				(!visualState && (context?.isPartial || context?.executionStarted));
 			if (isPending && context?.executionStarted) scheduleAnimation(context);
 			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
-			const icon =
-				visualState === "success"
-					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
-					: theme.fg(toolIconColor(context), rawIcon);
+			// 成功色走主题 success 语义色（浅色主题自动适配，不过曝）。
+			const icon = theme.fg(
+				visualState === "success" ? "success" : toolIconColor(context),
+				rawIcon,
+			);
 			const summary = toolCallSummary(toolName, args, {
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
@@ -286,8 +284,48 @@ function createCcstyleTool(
 
 			const expanded = isToolExpanded(options, context);
 			if (options?.isPartial) {
+				// 流式 pending：braille 转圈 + 秒级耗时（与 renderCall 共用动画调度）。
+				if (context?.executionStarted) scheduleAnimation(context);
+				const state = context != null ? (context.state ??= {}) : {};
+				if (typeof state.ccstylePendingSince !== "number") state.ccstylePendingSince = Date.now();
+				const elapsedSec = Math.max(0, Math.floor((Date.now() - state.ccstylePendingSince) / 1000));
+				const timing = elapsedSec > 0 ? ` · ${elapsedSec}s` : "";
+				const lead = expanded ? "↳" : "   ↳";
+				// edit/write 参数已完整时即显示内存投影 diff（预告片），不等落盘；
+				// 投影失败（缺参/超限/不匹配）回落原 Pending 行。
+				if (
+					config.mode === "on" &&
+					(toolName === "edit" || toolName === "write") &&
+					context?.argsComplete === true &&
+					!options?.isError &&
+					!context?.isError
+				) {
+					const previewToolCallId = context?.toolCallId;
+					const preview = renderPendingDiffPreview(toolName, context, {
+						expanded,
+						isHovered: () => isToolCallHovered(previewToolCallId),
+						invalidate: () => context?.invalidate?.(),
+						displayConfig: getToolDisplayConfig,
+						theme,
+					});
+					if (preview) {
+						const previewHead = theme.fg(
+							"muted",
+							`${lead} ${pendingIcon(toolName)} Preview…${timing}`,
+						);
+						const body = {
+							render(innerWidth: number): string[] {
+								return [previewHead, ...preview.render(innerWidth)];
+							},
+							invalidate() {
+								preview.invalidate?.();
+							},
+						};
+						return expanded ? body : insetComponent(body);
+					}
+				}
 				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题
-				const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
+				const pending = `${lead} ${pendingIcon(toolName)} Pending…${timing}`;
 				return new Text(theme.fg("muted", pending), 0, 0);
 			}
 

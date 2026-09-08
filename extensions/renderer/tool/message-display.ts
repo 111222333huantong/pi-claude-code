@@ -18,10 +18,6 @@ import { walkComponentTree } from "../../utils/component-tree.ts";
  * ToolExecutionComponent，无法复用其原型 patch，这里单独统一管理。
  */
 
-// 与 renderer/index.ts renderCall 的成功勾一致：亮绿 ✓（truecolor ANSI）。
-const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
-const ANSI_FG_RESET = "\x1b[39m";
-
 /** 事件上下文中同步的最新主题（与 toolGrouping.setTheme 同一来源）。 */
 let displayTheme: any;
 
@@ -74,7 +70,7 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 	}
 	component.clear();
 	ensureHintHover(component);
-	const icon = `${BRIGHT_GREEN}✓${ANSI_FG_RESET}`; // 已完成消息，等同工具成功态
+	const icon = theme.fg("success", "✓"); // 已完成消息，等同工具成功态（主题语义色）
 	const title = theme.fg("toolTitle", kind.title(component));
 	if (!component.expanded) {
 		const hovered = component.hintHovered === true;

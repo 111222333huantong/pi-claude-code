@@ -34,6 +34,8 @@ import {
 	collapsedHintHitbox,
 	fullscreenContentWidth,
 	fullscreenLeafAt,
+	HINT_HITBOX_PAD_COLS,
+	isOsc8LinkColumn,
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
@@ -339,7 +341,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 		return true;
 	}
 	const line = hit.box.lines?.[hit.localRow];
-	if (typeof line !== "string" || /\x1b]8;[^;]*;/.test(line)) return false;
+	// 含链接的行只排除链接段：点中链接放行官方，行内其余位置仍可展开。
+	if (typeof line !== "string" || isOsc8LinkColumn(line, packet.col)) return false;
 	const isTool = isToolExecutionComponent(component);
 	const isGroup = component instanceof ToolGroupComponent;
 	const isAssistant = isCompactAssistantComponent(component);
@@ -348,7 +351,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	if (!isTool && !isGroup && !isAssistant && !isThinking && !isMessage) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
-		const hint = collapsedHintHitbox(line);
+		const hint = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS);
 		if (!hint || packet.col < hint.startCol || packet.col > hint.endCol) return false;
 		// single-expand：展开前收起其他已展开工具卡/group。
 		const others: any[] = [];
@@ -419,7 +422,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			if (idx >= 0 && x >= idx && x <= idx + plain.length - 1) {
 				target = { kind: "button" };
 			}
-		} else if (typeof line === "string" && !/\x1b]8;/.test(line)) {
+		} else if (typeof line === "string" && !isOsc8LinkColumn(line, packet.col)) {
 			const width = Math.max(1, Number(tui.terminal?.columns) || 80);
 			const contentWidth = fullscreenContentWidth(hit.box, width);
 			// 与点击共用同一定位算法，避免 hover 自建行段与真实组件树错位。
@@ -430,7 +433,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 				contentWidth,
 			);
 			const component = componentHit?.component;
-			const hintBox = collapsedHintHitbox(line);
+			const hintBox = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS);
 			const overHint = Boolean(
 				hintBox && packet.col >= hintBox.startCol && packet.col <= hintBox.endCol,
 			);
@@ -511,7 +514,7 @@ function patchFullscreenViewportInput(tui: any): void {
 	};
 }
 
-function restoreFullscreenViewportInput(tui: any): void {
+export function restoreFullscreenViewportInput(tui: any): void {
 	if (!tui || !tui[FULLSCREEN_VIEWPORT_PATCH]) return;
 	const proto = Object.getPrototypeOf(tui);
 	if (typeof proto?.handleViewportInput === "function") {
@@ -523,6 +526,11 @@ function restoreFullscreenViewportInput(tui: any): void {
 		tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL] = undefined;
 	}
 	tui[FULLSCREEN_VIEWPORT_PATCH] = false;
+}
+
+/** off→on/compact 切回时重装 viewport 包装（restore 后按需恢复点击/hover）。 */
+export function ensureFullscreenViewportInput(tui: any): void {
+	patchFullscreenViewportInput(tui);
 }
 
 function restoreToolMouseRenderPatch(): void {
@@ -570,7 +578,7 @@ function buildInteractionFrame(
 			// Hit columns come from the final painted line (parent may prefix/transform).
 			const line = placement.finalLine;
 			if (!component.expanded) {
-				const box = collapsedHintHitbox(line);
+				const box = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS);
 				if (box && COLLAPSED_TOOL_SUMMARY.test(stripTerminalSequences(line))) {
 					regions.push({ kind: "collapsed-hint", row: finalRow, ...box, component });
 				}

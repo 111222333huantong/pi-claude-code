@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatDuration, oneLine } from "../extensions/utils/format.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { formatDuration, oneLine, truncateByWidth } from "../extensions/utils/format.ts";
 
 test("formatDuration formats elapsed seconds", () => {
 	assert.equal(formatDuration(999), "");
@@ -30,4 +31,15 @@ test("oneLine: sanitize 上限 4096，避免扫超大输入", () => {
 	const out = oneLine(huge, 20);
 	assert.equal(out.length, 20);
 	assert.equal(out.startsWith("y"), true);
+});
+
+test("truncateByWidth: CJK 计 2 列，不断半个宽字符", () => {
+	// max=10 → 预算 9 列 → 4 汉字（8 列）+ …
+	assert.equal(truncateByWidth("中文路径测试长", 10), "中文路径…");
+	assert.equal(visibleWidth(truncateByWidth("中文路径测试长", 10)), 9);
+	// 放得下原样返回；ASCII 与旧 slice 行为一致
+	assert.equal(truncateByWidth("hello", 10), "hello");
+	assert.equal(truncateByWidth("hello world", 8), "hello w…");
+	assert.equal(truncateByWidth("abc", 0), "");
+	assert.equal(truncateByWidth("纯中文", 7), "纯中文");
 });

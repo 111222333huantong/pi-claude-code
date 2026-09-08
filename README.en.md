@@ -79,7 +79,7 @@ Run `/reload` after installation.
   "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
   "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
   "expandedPreviewMaxLines": 40,           // max lines for expanded diff/TaskList bodies
-  "inputClip": 100,                        // tool summary path/command clip length
+  "inputClip": 100,                        // tool summary path/command clip columns (CJK counts 2)
   "showStartupHeader": true,               // startup header (mascot + tips + Loaded) toggle
   "startupAnimation": true,                // play the mascot build-up once per process
   "quietStartup": true,                    // hide Pi's native startup listing (takes effect next session)

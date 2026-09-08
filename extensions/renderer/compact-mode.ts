@@ -125,24 +125,32 @@ function formatThoughtDuration(durationMs: number) {
 
 export { formatThoughtDuration };
 
-/** assistant stopReason → 外层状态文案（与 Pi 原生口径对齐）。 */
-export function messageStopStatus(message: any): string | undefined {
+/** assistant stopReason → 外层状态文案（与 Pi 原生口径对齐）+ 种类（配色用）。 */
+export function messageStopStatus(
+	message: any,
+): { text: string; kind: "aborted" | "error" | "length" } | undefined {
 	const reason = message?.stopReason;
 	if (reason === "aborted") {
-		return message.errorMessage && message.errorMessage !== "Request was aborted"
-			? String(message.errorMessage)
-			: "Operation aborted";
+		return {
+			text:
+				message.errorMessage && message.errorMessage !== "Request was aborted"
+					? String(message.errorMessage)
+					: "Operation aborted",
+			kind: "aborted",
+		};
 	}
 	if (reason === "error") {
-		return `Error: ${message.errorMessage || "Unknown error"}`;
+		return { text: `Error: ${message.errorMessage || "Unknown error"}`, kind: "error" };
 	}
 	if (reason === "length") {
-		return "Response was truncated before completion.";
+		return { text: "Response was truncated before completion.", kind: "length" };
 	}
 	return undefined;
 }
 
-function roundStopStatus(messages: Iterable<any>): string | undefined {
+function roundStopStatus(
+	messages: Iterable<any>,
+): { text: string; kind: "aborted" | "error" | "length" } | undefined {
 	for (const message of messages) {
 		const status = messageStopStatus(message);
 		if (status) return status;
@@ -693,12 +701,17 @@ function compactAssistantLineComponent(
 	};
 }
 
-function compactStopStatusLine(status: string, pad = 0): any {
+function compactStopStatusLine(status: { text: string; kind: string } | string, pad = 0): any {
 	return {
 		render(width: number): string[] {
 			const theme = themeOf();
 			const prefix = " ".repeat(Math.max(0, pad));
-			const line = `${prefix}${theme.fg("error", status)}`;
+			const text = typeof status === "string" ? status : status.text;
+			const kind = typeof status === "string" ? "error" : status.kind;
+			// 取消灰 / 失败红 / 超长 warning + /compact 引导。
+			const color = kind === "aborted" ? "dim" : kind === "length" ? "warning" : "error";
+			const hint = kind === "length" ? theme.fg("dim", " • run /compact to compress") : "";
+			const line = `${prefix}${theme.fg(color, text)}${hint}`;
 			return ["", truncateToWidth(line, width, "")];
 		},
 		invalidate() {},
@@ -715,7 +728,10 @@ function compactAssistantLine(
 	component.contentContainer.addChild(compactAssistantLineComponent(component, summary, query));
 }
 
-function appendStopStatus(component: any, status: string | undefined): void {
+function appendStopStatus(
+	component: any,
+	status: { text: string; kind: string } | string | undefined,
+): void {
 	if (!status || !component?.contentContainer?.addChild) return;
 	component.contentContainer.addChild(
 		compactStopStatusLine(status, Number(component.outputPad) || 0),

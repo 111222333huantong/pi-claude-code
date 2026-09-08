@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.68 · mode=`compact`。
+> 当前版本：ccstyle 0.9.0 · mode=`compact`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 消息折叠摘要行
@@ -16,11 +16,12 @@
 展开（Ctrl+O / 点击摘要行）后恢复原生渲染：
 
 ```text
-   $ npm test
-
+   bash
    pass 79/79
 
-   read a.ts
+   read
+   line1
+   line2
 
   Thinking...
 ```
@@ -86,7 +87,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 不含 toolCall 的 assistant 走原生渲染：
 
 ```text
- task done
+ ● task done
 ```
 
 ## 5. 回合聚合规则

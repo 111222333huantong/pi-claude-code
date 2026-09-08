@@ -24,8 +24,10 @@ import {
 	type Config,
 } from "../config/config.ts";
 import {
+	ensureFullscreenViewportInput,
 	installToolMouseInteraction,
 	resetToolHoverState,
+	restoreFullscreenViewportInput,
 	scheduleSessionRender,
 	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
@@ -83,9 +85,15 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 		if (tui && !isLazyProxyTui(tui)) {
 			tui.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
-	} else if (mode === "compact") {
-		// 切入 compact：先收集当前 transcript，再同步全局展开状态和补丁所有权。
-		syncCompactMode(ctx);
+		// 拆掉 fullscreen viewport 包装：wheel 步进恢复官方值，点击/hover 全归官方。
+		restoreFullscreenViewportInput(tui);
+	} else {
+		// 切回 on/compact：重装 viewport 包装（off 时已拆），恢复点击/hover。
+		ensureFullscreenViewportInput(getToolMouseTui());
+		if (mode === "compact") {
+			// 切入 compact：先收集当前 transcript，再同步全局展开状态和补丁所有权。
+			syncCompactMode(ctx);
+		}
 	}
 	// 立即重塑一次；再延迟一帧（与 session_start 同款），等面板/custom
 	// 卸下、主 transcript 重新挂载后再扫树，避免必须 /reload。

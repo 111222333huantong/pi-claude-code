@@ -7,9 +7,7 @@
 
 /** 单个 CSI 序列（颜色、光标等 SGR/CUP/ED 等）。 */
 const CSI_SEQUENCE_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-/** OSC 序列（如 \x1b]8;;url\x07 或 ST 结尾）。 */
-const OSC_SEQUENCE_RE = /\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
-/** compact-mode 原有 hasVisibleText 用的更严格 OSC（内容不允许内嵌 ESC）。 */
+/** OSC 序列（如 \x1b]8;;url\x07 或 ST 结尾；内容不允许内嵌 ESC，见下）。 */
 const OSC_SEQUENCE_STRICT_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 /** 剥离一行内所有 CSI 序列。 */
@@ -19,7 +17,9 @@ export function stripAnsi(line: string): string {
 
 /** 仅剥离终端序列、保留原布局（换行/空白不动），用于命中区间计算。 */
 export function stripTerminalSequencesPreservingLayout(value: string): string {
-	return value.replace(OSC_SEQUENCE_RE, "").replace(CSI_SEQUENCE_RE, "");
+	// OSC 用严格变体：OSC8 超链接（`\x1b]8;;URI ST text \x1b]8;;ST`）包裹的可见文本
+	// 必须保留，只剥离序列本身；宽松版会贪婪吞掉链接文本导致命中列错位。
+	return value.replace(OSC_SEQUENCE_STRICT_RE, "").replace(CSI_SEQUENCE_RE, "");
 }
 
 /** 剥离终端序列并折叠空白（用于纯文本比较）。 */

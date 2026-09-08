@@ -273,7 +273,7 @@ export async function showCcstylePanel(
 			id: "inputClip",
 			label: "Input clip",
 			description:
-				"Max characters for path/command/name in single and grouped tool summaries. Enter to type a custom value.",
+				"Max columns for path/command/name in single and grouped tool summaries. Enter to type a custom value.",
 			currentValue: String(config.inputClip),
 			values: [...INPUT_CLIP_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>

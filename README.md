@@ -79,7 +79,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
   "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
-  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
+  "inputClip": 100,                        // 工具摘要 path/command 折叠列宽（CJK 计 2 列）
   "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
   "startupAnimation": true,                // 每进程播放一次 mascot 成长动画
   "quietStartup": true,                    // 隐藏原生启动资源列表，下会话生效

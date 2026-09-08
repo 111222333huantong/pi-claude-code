@@ -14,6 +14,12 @@ import claudeCodeStyleExtension, {
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	HINT_HITBOX_PAD_COLS,
+	collapsedHintHitbox,
+	isOsc8LinkColumn,
+	osc8LinkRanges,
+} from "../extensions/renderer/mouse/layout.ts";
 
 initTheme("dark");
 
@@ -829,4 +835,29 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 	} finally {
 		installToolMouseInteraction({});
 	}
+});
+test("collapsed hint hitbox expands by pad cols on both sides", () => {
+	const line = "  ✓ Read foo.ts • click to show more";
+	const exact = collapsedHintHitbox(line)!;
+	const padded = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS)!;
+	assert.equal(HINT_HITBOX_PAD_COLS, 2);
+	assert.equal(padded.startCol, Math.max(1, exact.startCol - 2));
+	assert.equal(padded.endCol, exact.endCol + 2);
+	assert.equal(collapsedHintHitbox("plain line without hint", 2), null);
+});
+
+test("osc8 link ranges only cover linked text, not the whole line", () => {
+	const open = "\x1b]8;;https://example.com\x1b\\";
+	const close = "\x1b]8;;\x1b\\";
+	const line = `  ✓ Read ${open}docs${close} • click to show more`;
+	const ranges = osc8LinkRanges(line);
+	assert.equal(ranges.length, 1);
+	// "  ✓ Read " = 9 cols → link "docs" occupies cols 10-13.
+	assert.deepEqual(ranges[0], { startCol: 10, endCol: 13 });
+	assert.equal(isOsc8LinkColumn(line, 11), true);
+	assert.equal(isOsc8LinkColumn(line, 9), false);
+	// hint col (after the link) is clickable again.
+	const hint = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS)!;
+	assert.equal(isOsc8LinkColumn(line, hint.startCol), false);
+	assert.deepEqual(osc8LinkRanges("no links here"), []);
 });

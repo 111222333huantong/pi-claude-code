@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	MAX_CACHE_ENTRIES,
 	MAX_HL_CHARS,
+	prewarmShikiHighlight,
 	ShikiHighlightCache,
+	shikiHighlightCache,
 } from "../extensions/renderer/tool/diff/shiki-highlight.ts";
 import { shouldHighlightCodeBlock } from "../extensions/renderer/tool/diff/diff-renderer.ts";
 import { sanitizeToolResultText } from "../extensions/utils/tool-result-sanitize.ts";
@@ -72,4 +75,39 @@ test("Shiki failures degrade without caching, retry, and oversized blocks are sk
 	assert.equal(shouldHighlightCodeBlock(oversized), false, "sync highlighting is also skipped");
 	await settle();
 	assert.equal(attempts, 2);
+});
+
+test("LRU bound: entries past the cap evict oldest first", async () => {
+	const cache = new ShikiHighlightCache(async () => async (code: string) => `H:${code}`);
+	const total = MAX_CACHE_ENTRIES + 10;
+	for (let i = 0; i < total; i++) {
+		cache.get(`doc-${i}\nline`, "ts", "github-dark", ["fb"]);
+		await settle();
+	}
+	// 首批文档已被淘汰：重取走 miss 并再次触发 invalidate。
+	let fired = 0;
+	assert.equal(
+		cache.get("doc-0\nline", "ts", "github-dark", ["fb"], () => fired++),
+		undefined,
+	);
+	await settle();
+	assert.equal(fired, 1, "evicted entry re-highlights on demand");
+	// 末批仍在缓存：同步命中，不触发 invalidate。
+	assert.deepEqual(cache.get(`doc-${total - 1}\nline`, "ts", "github-dark", ["fb"]), [
+		`H:doc-${total - 1}`,
+		"line",
+	]);
+});
+
+test("prewarm warms loader once; prewarmed keys hit synchronously", async () => {
+	prewarmShikiHighlight();
+	prewarmShikiHighlight();
+	const deadline = Date.now() + 15_000;
+	let hit: string[] | undefined;
+	while (Date.now() < deadline) {
+		hit = shikiHighlightCache.get("", "typescript", "github-dark", ["x"]);
+		if (hit !== undefined) break;
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+	assert.ok(Array.isArray(hit), "prewarmed empty doc hits without invalidate");
 });

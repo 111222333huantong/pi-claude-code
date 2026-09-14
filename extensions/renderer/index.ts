@@ -37,6 +37,7 @@ import { getToolMouseTui } from "./mouse/scroll.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import { clearAllAnimations } from "./tool/result.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
+import { prewarmShikiHighlight } from "./tool/diff/shiki-highlight.ts";
 import {
 	installMessageDisplayRendering,
 	refreshMessageDisplays,
@@ -145,6 +146,13 @@ export default function (
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		// 打点段落包在 compact-mode 之外层（后装先拆），接管其下游 updateContent。
 		const disposeDottedParagraphs = installDottedParagraphs();
+		// Shiki 预热：动态 import + WASM + 双主题只加载一次（约 200ms），
+		// 后面首次展开 diff 不再顿。fire-and-forget，失败走懒加载。
+		try {
+			prewarmShikiHighlight();
+		} catch {
+			// ignore: highlighting falls back to lazy load + plain text
+		}
 		installation = {
 			defaultMode,
 			toolGrouping,

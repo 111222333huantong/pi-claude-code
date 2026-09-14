@@ -1,8 +1,19 @@
-export const MAX_HL_CHARS = 32_000;
-const MAX_CACHE_ENTRIES = 48;
+/**
+ * 超限降级线（字符数）：基准 78k 文档异步约 160ms（占位符覆盖），
+ * scripts/benchmark-highlight.ts 实测，勿拍脑袋。
+ */
+export const MAX_HL_CHARS = 80_000;
+/**
+ * LRU 上限：基准显示 60 个文档即淘汰（48 时前 10 全灭）。128 条 ×
+ * 平均 30k 文档 ≈ 8MB 最坏内存，长会话可接受。benchmark 定数。
+ * （导出供基准脚本按 cap 自适应加压；生产代码勿依赖具体数值。）
+ */
+export const MAX_CACHE_ENTRIES = 128;
 
 type CodeToAnsi = (code: string, lang: any, theme: any) => Promise<string>;
-type Loader = () => Promise<CodeToAnsi>;
+/** 可注入的 shiki 加载器（测试用假 loader，生产走动态 import）。 */
+export type ShikiLoader = () => Promise<CodeToAnsi>;
+type Loader = ShikiLoader;
 type Subscriber = { fallback: readonly string[]; invalidate: () => void };
 type Pending = { work: Promise<void>; subscribers: Set<Subscriber> };
 
@@ -88,3 +99,27 @@ export class ShikiHighlightCache {
 }
 
 export const shikiHighlightCache = new ShikiHighlightCache();
+
+/** 预热语言 × shiki 主题：与 resolveShikiTheme 的 github-dark/light 对齐。 */
+const PREWARM_LANGS = ["typescript", "markdown", "json"];
+const PREWARM_THEMES = ["github-dark", "github-light"];
+
+let prewarmed = false;
+
+/**
+ * 安装时空跑一次：动态 import + WASM + 主题只加载一次（基准约 200ms），
+ * 后面首次展开 diff 不再顿。幂等；失败静默（get 的懒加载兜底仍在）。
+ */
+export function prewarmShikiHighlight(): void {
+	if (prewarmed) return;
+	prewarmed = true;
+	for (const theme of PREWARM_THEMES) {
+		for (const lang of PREWARM_LANGS) {
+			try {
+				shikiHighlightCache.get("", lang, theme, []);
+			} catch {
+				// 失败走后续真实调用的懒加载。
+			}
+		}
+	}
+}

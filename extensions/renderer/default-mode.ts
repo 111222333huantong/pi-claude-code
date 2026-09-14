@@ -18,6 +18,7 @@ import {
 	countLines,
 	hasExpandableDetail,
 	insetComponent,
+	isAbortedResultText,
 	isToolExpanded,
 	outputLineCount,
 	pendingIcon,
@@ -39,8 +40,9 @@ import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 
-// pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
-const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
+// 子代理派生工具自带专用渲染器（tintinweb 的 Agent / arhen 的 subagent），
+// ccstyle 必须保留：派生计划图等多行体是单行摘要表达不了的。
+const DEDICATED_RENDERER_TOOLS = new Set(["Agent", "subagent"]);
 
 export type DefaultModeHooks = {
 	/** 本安装是否仍持有全局工具渲染补丁。 */
@@ -362,13 +364,19 @@ function createCcstyleTool(
 			const outputLines = outputLineCount(result) || countLines(text);
 			const lineWord = outputLines === 1 ? "line" : "lines";
 			const action = toolName === "read" ? "loaded" : "returned";
+			// 用户中断（esc 等）：与 compact-mode 同词收敛为 `Operation aborted`，
+			// dim 着色，不再复读 `This operation was aborted` 原文。
+			const aborted = Boolean(isError) && isAbortedResultText(text);
+			const detailColor = aborted ? "dim" : isError ? "error" : "muted";
 			const rendered = tasks.length
 				? taskListSummary(tasks)
 				: isError
-					? text
-						? // 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
-							oneLine(text, 72)
-						: "Failed"
+					? aborted
+						? "Operation aborted"
+						: text
+							? // 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
+								oneLine(text, 72)
+							: "Failed"
 					: outputLines
 						? `${outputLines} ${lineWord} ${action}`
 						: "Done";
@@ -397,11 +405,11 @@ function createCcstyleTool(
 					if (cachedLine === undefined || cachedWidth !== width) {
 						cachedWidth = width;
 						cachedLine = theme.fg(
-							isError ? "error" : "muted",
+							detailColor,
 							renderCollapsedToolResultToWidth(rendered, hint, width),
 						);
 						cachedHoveredLine = theme.fg(
-							isError ? "error" : "muted",
+							detailColor,
 							renderCollapsedToolResultToWidth(rendered, hoveredHint, width),
 						);
 					}
@@ -605,6 +613,13 @@ export function installToolExpandedBackground(): () => void {
 		installed: function (this: any) {
 			original.call(this);
 			if (!patch.active || config.mode !== "on" || !this.expanded) return;
+			// Agent/subagent tools render their own tree structure — skip ccstyle background.
+			const toolName = String(this.toolName ?? this.toolDefinition?.name ?? "");
+			if (DEDICATED_RENDERER_TOOLS.has(toolName)) {
+				// contentBox is a Box (has setBgFn); selfRenderContainer is a Container (no setBgFn).
+				if (this.contentBox?.setBgFn) this.contentBox.setBgFn(undefined);
+				return;
+			}
 			const theme = getMessageDisplayTheme();
 			if (!theme?.bg) return;
 			const box = this.contentBox;

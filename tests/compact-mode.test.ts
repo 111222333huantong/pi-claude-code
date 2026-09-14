@@ -30,6 +30,13 @@ import {
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
 import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import {
+	backfillAgentTitles,
+	clearAgentTitles,
+	recordAgentSpawn,
+	registerAgentTitles,
+	resolveAgentTitle,
+} from "../extensions/feature/reference/agent-titles.ts";
 
 initTheme("dark");
 
@@ -276,6 +283,205 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 		assert.deepEqual(args, original, "display formatting does not mutate tool arguments");
 	} finally {
 		config.inputClip = previous;
+	}
+});
+
+test("toolCallSummary: arhen subagent 派生用人名，无 UUID", () => {
+	assert.equal(
+		toolCallSummary("subagent", { agent: "api-reviewer" }).main,
+		"Subagent single api-reviewer",
+	);
+	assert.equal(
+		toolCallSummary("subagent", { tasks: [{ agent: "a" }, { agent: "b" }, { agent: "c" }] }).main,
+		"Subagent parallel 3 · a",
+	);
+	assert.equal(
+		toolCallSummary("subagent", {
+			tasks: [
+				{ id: "api", agent: "api-mapper" },
+				{ id: "db", agent: "db-mapper", needs: ["api"] },
+			],
+		}).main,
+		"Subagent graph 2 · api-mapper",
+	);
+	assert.equal(
+		toolCallSummary("subagent", { chain: [{ agent: "x" }, { agent: "y" }] }).main,
+		"Subagent chain 2",
+	);
+	assert.equal(
+		toolCallSummary("subagent", { agent: "api-reviewer" }, { variant: "grouping" }).main,
+		"Subagent single api-reviewer",
+	);
+	assert.equal(
+		toolCallSummary("subagent_status", { runId: "run_mf2xab_9f3k2q" }).main,
+		"Subagent Status run_mf2xab_9f3k2q",
+	);
+	const steer = toolCallSummary("steer_subagent", { runId: "run_1", taskId: "api" });
+	assert.equal(steer.main, "Steer Subagent api");
+	assert.equal(steer.detail, "run_1");
+	// tintinweb 兼容保留
+	assert.equal(
+		toolCallSummary("get_subagent_result", { agent_id: "abc" }).main,
+		"Get Subagent Result abc",
+	);
+});
+
+test("toolCallSummary: tintinweb agent_id 换 subagent 标题，无映射回短 ID", () => {
+	const previous = config.inputClip;
+	try {
+		config.inputClip = 100;
+		clearAgentTitles();
+		// 无映射：17 位 UUID 只留前 8 位。
+		assert.equal(
+			toolCallSummary("get_subagent_result", { agent_id: "fa38ff4d-9aba-473" }).main,
+			"Get Subagent Result fa38ff4d",
+		);
+		// subagents:created 映射：显示标题，不显示 ID。
+		recordAgentSpawn("fa38ff4d-9aba-473", "Explore", "探索项目结构");
+		assert.equal(
+			toolCallSummary("get_subagent_result", { agent_id: "fa38ff4d-9aba-473" }).main,
+			"Get Subagent Result 探索项目结构",
+		);
+		assert.equal(
+			toolCallSummary(
+				"get_subagent_result",
+				{ agent_id: "fa38ff4d-9aba-473" },
+				{ variant: "grouping" },
+			).main,
+			"Get Subagent Result 探索项目结构",
+		);
+		// description 为空回退 type。
+		recordAgentSpawn("id-2", "Plan", "");
+		assert.equal(
+			toolCallSummary("steer_subagent", { agent_id: "id-2" }).main,
+			"Steer Subagent Plan",
+		);
+	} finally {
+		config.inputClip = previous;
+		clearAgentTitles();
+	}
+});
+
+test("registerAgentTitles: 订阅 subagents:created 并建映射", () => {
+	clearAgentTitles();
+	try {
+		const handlers = new Map<string, (event: any) => void>();
+		registerAgentTitles({
+			on(name: string, handler: (event: any) => void) {
+				handlers.set(name, handler);
+			},
+		} as any);
+		handlers.get("subagents:created")?.({
+			id: "abc123",
+			type: "Explore",
+			description: "找鉴权文件",
+		});
+		assert.equal(resolveAgentTitle("abc123"), "找鉴权文件");
+		assert.equal(resolveAgentTitle("missing"), undefined);
+		// 坏事件不抛。
+		handlers.get("subagents:created")?.(null);
+		handlers.get("subagents:created")?.({});
+	} finally {
+		clearAgentTitles();
+	}
+});
+
+test("backfillAgentTitles: 从历史 toolResult 捡回映射（resume 兜底）", () => {
+	clearAgentTitles();
+	try {
+		const entries = [
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolName: "Agent",
+					content: [
+						{
+							type: "text",
+							text: "Agent started in background.\nAgent ID: 215097ce-47f6-43c\nType: Explore\nDescription: 读鉴权模块\n",
+						},
+					],
+					details: {
+						displayName: "Explore",
+						description: "读鉴权模块",
+						subagentType: "Explore",
+						agentId: "215097ce-47f6-43c",
+					},
+				},
+			},
+			// 无 details：纯正文解析。
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolName: "Agent",
+					content: [
+						{
+							type: "text",
+							text: "Agent started in background.\nAgent ID: aaaaaaaa-1111-222\nDescription: 看日志\n",
+						},
+					],
+				},
+			},
+			// 坏形状不抛。
+			null,
+			{ type: "message" },
+			{
+				type: "message",
+				message: { role: "toolResult", content: [{ type: "text", text: "No output." }] },
+			},
+		];
+		assert.equal(backfillAgentTitles(entries), 2);
+		assert.equal(resolveAgentTitle("215097ce-47f6-43c"), "读鉴权模块");
+		assert.equal(resolveAgentTitle("aaaaaaaa-1111-222"), "看日志");
+		// 重复回填不重复计数。
+		assert.equal(backfillAgentTitles(entries), 0);
+	} finally {
+		clearAgentTitles();
+	}
+});
+
+test("registerAgentTitles: session_start 回填历史分支", () => {
+	clearAgentTitles();
+	try {
+		const handlers = new Map<string, (event: any, ctx: any) => void>();
+		registerAgentTitles({
+			on(name: string, handler: (event: any, ctx: any) => void) {
+				handlers.set(name, handler);
+			},
+		} as any);
+		const branch = [
+			{
+				type: "message",
+				message: {
+					role: "toolResult",
+					toolName: "Agent",
+					content: [
+						{
+							type: "text",
+							text: "Agent started in background.\nAgent ID: bbbbbbbb-3333-444\nDescription: 旧会话任务\n",
+						},
+					],
+				},
+			},
+		];
+		handlers.get("session_start")?.({}, { sessionManager: { getBranch: () => branch } });
+		assert.equal(resolveAgentTitle("bbbbbbbb-3333-444"), "旧会话任务");
+		// 无分支/异常不抛。
+		handlers.get("session_start")?.({}, {});
+		handlers.get("session_start")?.(
+			{},
+			{
+				sessionManager: {
+					getBranch: () => {
+						throw new Error("x");
+					},
+				},
+			},
+		);
+	} finally {
+		clearAgentTitles();
 	}
 });
 

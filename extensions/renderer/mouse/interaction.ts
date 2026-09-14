@@ -1,5 +1,6 @@
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
+import { tracePrimaryScrollView, traceWheelInput } from "../../debug/wheel-trace.ts";
 import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
@@ -490,6 +491,8 @@ function patchFullscreenViewportInput(tui: any): void {
 	}
 	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
 	tui.handleViewportInput = function (this: any, data: string) {
+		// 滚轮跳顶诊断（PI_CC_DEBUG_WHEEL=1 才记录）：先于官方消费抓包与 hook。
+		if (traceWheelInput(data) > 0) tracePrimaryScrollView(tui);
 		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
 			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
 			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
@@ -817,6 +820,8 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 }
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
+	// 内联模式滚轮走这里；fullscreen 键盘触发的滚动（如 top/bottom 快捷键）也经此。
+	if (traceWheelInput(data) > 0) tracePrimaryScrollView(getToolMouseTui());
 	if (!getToolMouseTui()) return undefined;
 	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
 	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。

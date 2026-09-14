@@ -11,6 +11,7 @@ import workingRow from "./feature/shell/working-row.ts";
 
 // feature
 import agentAutocomplete from "./feature/reference/subagent.ts";
+import { registerAgentTitles } from "./feature/reference/agent-titles.ts";
 import agentSummary from "./feature/agent-summary/index.ts";
 import clipboardPaste from "./feature/clipboard-paste.ts";
 import context from "./feature/context.ts";
@@ -53,5 +54,7 @@ export default function (pi: ExtensionAPI): void {
 	if (config.enableContextCommand) context(pi);
 	if (config.enableSessionReference) sessionReference(pi);
 	if (config.enableSubagentAutocomplete) agentAutocomplete(pi);
+	// agent_id → 标题映射（工具卡不再显示裸 UUID；无开关，常驻但仅内存 Map）。
+	registerAgentTitles(pi);
 	if (config.enableAgentSummary) agentSummary(pi);
 }

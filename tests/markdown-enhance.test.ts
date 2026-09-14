@@ -167,6 +167,16 @@ test("圈数字转半角括号（Nerd Font 字形缺陷规避）", () => {
 	assert.ok(run("① ② ⑳").includes("(1) (2) (20)"));
 });
 
+test("键帽/dingbat 数字转半角括号（缺 emoji 字体时方框规避）", () => {
+	assert.strictEqual(
+		run("### 1️⃣ `pi-cc-extensions` → `pi-claude-code` (v0.9.1)").split("\n")[0],
+		"### (1) `pi-cc-extensions` → `pi-claude-code` (v0.9.1)",
+	);
+	assert.ok(run("步骤2️⃣和❶完成").includes("步骤(2)和(1)完成"));
+	assert.ok(run("备选➊➓").includes("备选(1)(10)"));
+	assert.ok(run("无 VS16 的 3⃣ 也转").includes("无 VS16 的 (3) 也转"));
+});
+
 const userCtx = { messageType: "user", isStreaming: false, availableWidth: 100 };
 
 test("用户定界符公式透传原生（不再压平）", () => {

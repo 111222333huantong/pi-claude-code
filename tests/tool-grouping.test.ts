@@ -208,16 +208,21 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 		result.updateResult({ content: [], isError: false });
 		agentParent.addChild(agent);
 		agentParent.addChild(result);
-		const agentLines = agentParent.children[0]
+		// Agent and get_subagent_result are non-groupable — each stays a standalone
+		// ToolExecutionComponent rather than merging into a group.
+		assert.equal(agentParent.children.length, 2);
+		const agentRendered = agentParent.children[0]
 			.render(160)
 			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 			.filter((line: string) => line.trim());
-		assert.match(
-			agentLines[0],
-			/^ ● Multiple Tools: 2 done • Agent, get_subagent_result • click to show more$/,
-		);
-		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
-		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462-95d0-40b");
+		assert.ok(agentRendered.length > 0, "Agent renders standalone output");
+		assert.match(agentRendered[0], /Agent/);
+		const resultRendered = agentParent.children[1]
+			.render(160)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.ok(resultRendered.length > 0, "get_subagent_result renders standalone output");
+		assert.match(resultRendered[0], /get_subagent_result/);
 	} finally {
 		hooks.shutdown();
 	}
@@ -412,6 +417,49 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
 		assert.match(grown.join("\n"), /<error>1<\/error> failed/);
 	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("pending group header dot breathes accent/dim while tools run", () => {
+	const hooks = installToolGrouping(() => true);
+	hooks.setTheme({ fg: (color: string, text: string) => `<${color}>${text}` });
+	const realNow = Date.now;
+	try {
+		const parent = new Container() as any;
+		parent.addChild(started("read", "read-breath"));
+		parent.addChild(started("bash", "bash-breath"));
+		const group = parent.children[0] as ToolGroupComponent;
+		Date.now = () => 100;
+		const bright = group.render(100).find((line: string) => line.trim())!;
+		Date.now = () => 900;
+		const dimmed = group.render(100).find((line: string) => line.trim())!;
+		assert.match(bright, /<accent>●/);
+		assert.match(dimmed, /<dim>●/);
+	} finally {
+		Date.now = realNow;
+		hooks.shutdown();
+	}
+});
+
+test("queued group header dot stays accent", () => {
+	const hooks = installToolGrouping(() => true);
+	hooks.setTheme({ fg: (color: string, text: string) => `<${color}>${text}` });
+	const realNow = Date.now;
+	try {
+		const parent = new Container() as any;
+		parent.addChild(tool("read", "read-queued"));
+		parent.addChild(tool("bash", "bash-queued"));
+		const group = parent.children[0] as ToolGroupComponent;
+		Date.now = () => 100;
+		const first = group.render(100).find((line: string) => line.trim())!;
+		Date.now = () => 900;
+		const second = group.render(100).find((line: string) => line.trim())!;
+		assert.match(first, /<accent>●/);
+		assert.match(second, /<accent>●/);
+		assert.doesNotMatch(second, /<dim>●/);
+	} finally {
+		Date.now = realNow;
 		hooks.shutdown();
 	}
 });

@@ -447,6 +447,48 @@ test("Agent keeps its dedicated renderer under ccstyle", async () => {
 	await events.get("session_shutdown")?.({}, ctx);
 });
 
+test("subagent keeps its dedicated renderer under ccstyle", async () => {
+	const events = new Map<string, Function>();
+	const pi = {
+		registerCommand() {},
+		registerShortcut() {},
+		on(name: string, handler: Function) {
+			events.set(name, handler);
+		},
+	};
+	claudeCodeStyleExtension(pi as any);
+	const extensionTheme = { fg: (_color: string, text: string) => text };
+	const ui = {
+		theme: extensionTheme,
+		setStatus() {},
+		requestRender() {},
+	};
+	const ctx = { mode: "tui", hasUI: true, ui };
+	await events.get("session_start")?.({}, ctx);
+	const definition = {
+		name: "subagent",
+		renderShell: "default",
+		renderCall: () => new Text("subagent dedicated call", 0, 0),
+		renderResult: () => new Text("subagent dedicated result", 0, 0),
+	} as unknown as AnyToolDefinition;
+	const component = new ToolExecutionComponent(
+		"subagent",
+		"subagent-renderer",
+		{ agent: "api-reviewer", task: "Review auth" },
+		{},
+		definition,
+		ui as any,
+		process.cwd(),
+	) as any;
+	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
+	assert.equal(component.children.includes(component.contentBox), true);
+	assert.equal(component.children.includes(component.selfRenderContainer), false);
+	const output = component.render(100).join("\n");
+	assert.match(output, /subagent dedicated/);
+	assert.doesNotMatch(output, /Subagent single api-reviewer/);
+	await events.get("session_shutdown")?.({}, ctx);
+});
+
 test("global renderer reload chains external wrappers and shutdown restores them", async () => {
 	const prototype = ToolExecutionComponent.prototype as any;
 	const methodNames = [

@@ -3,7 +3,11 @@ import { inspect } from "node:util";
 import { config } from "../../config/config.ts";
 import { subscribeTicker } from "../../feature/shell/spinner-ticker.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
-import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import {
+	TOOL_LOADING_INTERVAL_MS,
+	pendingDotColor,
+	toolLoadingIcon,
+} from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
@@ -49,6 +53,11 @@ export function textFromResult(result: any, expanded = false): string {
 	if (!content) return details;
 	if (!expanded || !details || details === content) return content;
 	return `${content}\nDetails:\n${details}`;
+}
+
+/** 中断原文（`This operation was aborted` 等）→ 折叠行收敛为 `Operation aborted`（与 compact-mode 同词）。 */
+export function isAbortedResultText(text: string): boolean {
+	return /operation was aborted|request was aborted|aborted by user/i.test(text.trim());
 }
 
 export function outputLineCount(result: any): number {
@@ -152,11 +161,15 @@ export function resolveToolVisualState(context: any): ToolVisualState | undefine
 	return settledState;
 }
 
-export function toolIconColor(context: any): "accent" | "error" | "success" | "muted" {
+export function toolIconColor(context: any): "accent" | "dim" | "error" | "success" | "muted" {
 	const visualState = getToolVisualState(context);
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
-	if (context?.isPartial || context?.executionStarted || visualState === "pending") return "accent";
+	if (context?.isPartial || context?.executionStarted || visualState === "pending") {
+		// 执行中呼吸（accent↔dim，由调用方动画 tick 驱动重绘）；排队未起跑保持 accent 常亮。
+		if (context?.executionStarted) return pendingDotColor();
+		return "accent";
+	}
 	return "muted";
 }
 

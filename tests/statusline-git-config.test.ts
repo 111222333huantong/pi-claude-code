@@ -17,6 +17,7 @@ import {
 	readStatuslineConfig,
 	writeStatuslineConfig,
 } from "../extensions/feature/statusline/config.ts";
+import { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
 
 test("parsePorcelainHead: 分支与上下游", () => {
 	assert.deepEqual(parsePorcelainHead("## main...origin/main"), {
@@ -77,6 +78,16 @@ test("statusline config: 写合并保留其他键", () => {
 	writeFileSync(file, JSON.stringify({ enabled: false, extra: 1 }));
 	writeStatuslineConfig({ showWorktree: false }, file);
 	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
+});
+
+test("normalizeMcpStatus: adapter 状态（ANSI+图标）收敛为 mcp N enabled", () => {
+	assert.equal(normalizeMcpStatus(undefined), null);
+	assert.equal(normalizeMcpStatus(""), null);
+	// 真机抓到的脏字符串：主题 truecolor ANSI + ♆ 图标 + `MCP: 3 enabled`。
+	assert.equal(normalizeMcpStatus("[38;2;177;185;249m♆ MCP: 3 enabled"), "mcp 3 enabled");
+	assert.equal(normalizeMcpStatus("🔌 MCP: 3 servers"), "mcp 3 enabled");
+	assert.equal(normalizeMcpStatus("MCP: 1 enabled"), "mcp 1 enabled");
+	assert.equal(normalizeMcpStatus("MCP"), "mcp");
 });
 
 test("git poller: 变化即推、无变化退避不扰", async () => {

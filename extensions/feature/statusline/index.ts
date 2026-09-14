@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
+import { stripAnsi } from "../../utils/ansi-text.ts";
 import { readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
 import { summarizeUsage } from "./usage.ts";
 import { collectGitStatus, EMPTY_GIT_SNAPSHOT, startGitPoller, type GitSnapshot } from "./git.ts";
@@ -31,15 +32,22 @@ function modelLabel(model: ExtensionContext["model"]): string {
 	return raw.replace(/^[^/\s]+\//, "");
 }
 
-/** `🔌 MCP: 3 servers` → `mcp 3 enabled`；解析不出回 null 走计数回退。 */
+/**
+ * adapter 的 extension status（`🔌 MCP: 3 servers` / `♆ MCP: 3 enabled`，
+ * 自带主题 ANSI + 图标）→ `mcp 3 enabled`；解析不出回 null 走计数回退。
+ */
 export function normalizeMcpStatus(raw: string | undefined): string | null {
 	if (!raw) return null;
-	const details = raw
-		.replace(/^[^\w]*(MCP:\s*)?/u, "")
-		.replace(/\bservers?\b\s*/giu, "")
+	// 先剥 ANSI：CSI 里 `38;2;R;G;Bm` 的数字会被误判为 word 字符，
+	// 直接正则会漏出 `38;2;177;185;249m` 这种残留。
+	const plain = stripAnsi(raw);
+	const count = plain.match(/(\d+)/)?.[1];
+	if (count) return `mcp ${count} enabled`;
+	const details = plain
+		.replace(/^[^\w]*:?/u, "")
 		.replace(/\s+/g, " ")
 		.trim();
-	if (!details) return "mcp";
+	if (!details || /^mcp:?\s*$/i.test(details)) return "mcp";
 	return `mcp ${details}`;
 }
 

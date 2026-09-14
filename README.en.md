@@ -127,13 +127,15 @@ npm run typecheck
 
 | Extension                                | Purpose                                                      |
 | ---------------------------------------- | ------------------------------------------------------------ |
-| `npm:@tintinweb/pi-subagents`            | Parallel SubAgents, background tasks, and worktree isolation |
+| `npm:@arhen/pi-core-subagent`            | Parallel SubAgents, DAG scheduling, worktree isolation (no bottom-docked panel) |
 | `npm:@tintinweb/pi-tasks`                | Claude Code-style task tracking and coordination             |
 | `npm:pi-mcp-adapter`                     | On-demand MCP tool discovery with lower context usage        |
 | `npm:@ff-labs/pi-fff`                    | FFF-powered fuzzy file and content search (fffind / ffgrep)  |
 | `npm:pi-web-access`                      | Web search, URL fetching, GitHub cloning, PDF/video parsing  |
 | `npm:@narumitw/pi-usage`                 | Current-account usage for Codex / Copilot / OpenRouter       |
 | `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution       |
+
+> **Sharing the screen with `@arhen/pi-core-subagent`**: `subagent` spawns keep their built-in plan-graph rendering (human names, no UUIDs); `subagent_status/result/await/reply/steer/cancel` use this package's tool cards (short `runId` + human `taskId`). Its live widget sits above the editor and `/subagents peek` is on demand — no bottom-docked panel. Note: `@tintinweb/pi-tasks`' `TaskExecute` only speaks tintinweb's private RPC and degrades with arhen (tracking works, dispatch verbally). User-aborted tool waits collapse into a dim `Operation aborted` instead of echoing the raw message.
 
 ## Credits
 

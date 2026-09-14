@@ -5,7 +5,9 @@
  * compact-thinking/Pi 原生或专用 renderer。edit/write 复用 mode=on 的 rich diff
  * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
- * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
+ *
+ * 底部 live 面板由各扩展独立 widget 负责（arhen subagents 在编辑器上方，
+ * pi-tasks 在编辑器上方），不经 tool 卡外置。
  *
  * 工具计数：read 按非空路径去重、其余按调用计数（首次出现顺序）；edit/write 不进摘要。
  * 时长 = 回合流逝挂钟；进行中 Running...，结束 Ran for。
@@ -22,7 +24,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
-import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
+import { pendingDotColor, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
@@ -520,7 +522,15 @@ function compactEditWriteLine(
 	const isError = component.result?.isError === true;
 	const isPending = !component.result || component.isPartial === true;
 	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : "✓";
-	const iconColor = isError ? "error" : isPending ? "accent" : "success";
+	// 执行中呼吸（accent↔dim，由共享 tick/回合 tick 驱动重绘）；排队未起跑保持 accent 常亮。
+	const isRunning = isPending && Boolean(component?.executionStarted);
+	const iconColor = isError
+		? "error"
+		: isPending
+			? isRunning
+				? pendingDotColor()
+				: "accent"
+			: "success";
 	let statsText = "";
 	let statsStyled = "";
 	if (!isError && !isPending) {

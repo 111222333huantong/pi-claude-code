@@ -150,6 +150,32 @@ function deCircled(markdown: string): string {
 	return markdown.replace(CIRCLED_RE, (ch) => `(${ch.codePointAt(0)! - 0x2460 + 1})`);
 }
 
+// 键帽数字（1 + U+FE0F + U+20E3）与 dingbat 数字（U+2776 起）在无 emoji
+// 字体的终端下显示为方框；转成 ASCII "(n)"，与 deCircled 同约定。
+// 模型爱用键帽做序号，终端缺 U+20E3 字形即变方框。
+// 注意：此处不用 /…/ 字面量写不可见字符（传输层易吞），一律 fromCharCode 组装。
+const VS16 = String.fromCharCode(0xfe0f);
+const KEYCAP_MARK = String.fromCharCode(0x20e3);
+const KEYCAP_RE = new RegExp(`([0-9#*])${VS16}?${KEYCAP_MARK}`, "g");
+const DINGBAT_RANGES: Array<[number, number]> = [
+	[0x2776, 10], // ❶-❿
+	[0x2780, 10], // ➀-➉
+	[0x278a, 10], // ➊-➓
+];
+
+function deKeycap(markdown: string): string {
+	let out = markdown.replace(KEYCAP_RE, "($1)");
+	out = out.replace(new RegExp(String.fromCodePoint(0x1f51f), "gu"), "(10)");
+	for (const [base, count] of DINGBAT_RANGES) {
+		const pattern = new RegExp(
+			`[\\u{${base.toString(16)}}-\\u{${(base + count - 1).toString(16)}}]`,
+			"gu",
+		);
+		out = out.replace(pattern, (ch) => `(${ch.codePointAt(0)! - base + 1})`);
+	}
+	return out;
+}
+
 // ============================================================================
 // 用户消息数学公式（native-first：定界符形式全部透传 Pi 原生 LaTeX）
 // ----------------------------------------------------------------------------
@@ -504,6 +530,8 @@ export default function (pi: ExtensionAPI): void {
 		if (isStreaming) return markdown;
 		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
 		markdown = deCircled(markdown);
+		// 0.1 键帽/dingbat 数字转半角括号（缺 emoji 字体时方框规避）
+		markdown = deKeycap(markdown);
 		// 0.5 数学环境补齐：\begin{equation|align|aligned} → $$ 块，user 与
 		// assistant 通用（原生 block tokenizer 的唯一缺口）；定界符形式其余
 		// 全部透传原生。仅 user 消息再走紧凑单段兜底（c7074c5 回归保护）。

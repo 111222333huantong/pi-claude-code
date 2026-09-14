@@ -6,7 +6,11 @@ import {
 	visibleWidth,
 	type Component,
 } from "@earendil-works/pi-tui";
-import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import {
+	TOOL_LOADING_INTERVAL_MS,
+	pendingDotColor,
+	toolLoadingIcon,
+} from "../../utils/tool-loading-icon.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
@@ -23,7 +27,7 @@ import {
 	TOOL_GROUPING_PATCH_KEY as PATCH_KEY,
 } from "../../utils/patch-keys.ts";
 
-const NON_GROUPABLE = new Set(["edit", "write", "apply_patch"]);
+const NON_GROUPABLE = new Set(["edit", "write", "apply_patch", "Agent", "subagent"]);
 
 type Patch = {
 	owner: object;
@@ -313,11 +317,13 @@ export class ToolGroupComponent extends Container {
 		const label =
 			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
-		if (
-			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")
-		)
-			scheduleGroupAnimation(this.patch);
-		const overallColor = overall === "pending" ? "accent" : overall;
+		const hasRunning = (this.children as any[]).some(
+			(tool) => tool?.executionStarted && status(tool) === "pending",
+		);
+		if (hasRunning) scheduleGroupAnimation(this.patch);
+		// 执行中圆点呼吸（accent↔dim，由分组动画 tick 驱动重绘）；排队未起跑保持 accent 常亮。
+		const overallColor =
+			overall === "pending" ? (hasRunning ? pendingDotColor() : "accent") : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
 		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;

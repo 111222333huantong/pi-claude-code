@@ -19,6 +19,7 @@ import {
 	renderWriteDiffResult,
 } from "../extensions/renderer/tool/diff/diff-renderer.ts";
 import { normalizeConfig } from "../extensions/config/config.ts";
+import { isAbortedResultText } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 import {
@@ -604,4 +605,67 @@ test("third-party write ownership prevents registration", () => {
 		},
 	} as any);
 	assert.deepEqual(registered, []);
+});
+
+test("isAbortedResultText 只认运行时中断文案", () => {
+	assert.equal(isAbortedResultText("This operation was aborted"), true);
+	assert.equal(isAbortedResultText("Request was aborted"), true);
+	assert.equal(isAbortedResultText("aborted by user"), true);
+	assert.equal(isAbortedResultText("Error: boom"), false);
+	assert.equal(isAbortedResultText(""), false);
+});
+
+test("default-mode 中断的工具结果收敛为 dim 的 Operation aborted", () => {
+	const previousMode = config.mode;
+	const store = new WriteExecutionMetadataStore();
+	config.mode = "on";
+	const hooks = installDefaultMode(store);
+	const renderAborted = () => {
+		const tool = new ToolExecutionComponent(
+			"get_subagent_result",
+			"g-abort",
+			{ agent_id: "5d44e2c1-f01c-406" },
+			{},
+			undefined,
+			{ theme, requestRender() {}, setStatus() {} } as any,
+			process.cwd(),
+		) as any;
+		tool.updateResult({
+			content: [{ type: "text", text: "This operation was aborted" }],
+			isError: true,
+		});
+		return output(tool, 120).join("\n");
+	};
+	const renderFailed = () => {
+		const tool = new ToolExecutionComponent(
+			"read",
+			"g-failed",
+			{ path: "a.ts" },
+			{},
+			undefined,
+			{ theme, requestRender() {}, setStatus() {} } as any,
+			process.cwd(),
+		) as any;
+		tool.updateResult({
+			content: [{ type: "text", text: "Error: boom" }],
+			isError: true,
+		});
+		return output(tool, 120).join("\n");
+	};
+	try {
+		const strip = (s: string) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const aborted = renderAborted();
+		assert.match(strip(aborted), /↳ Operation aborted/);
+		assert.doesNotMatch(strip(aborted), /This operation was aborted/);
+		// 中断行不再走 error 红：与普通失败行的着色必须不同。
+		const failed = renderFailed();
+		const abortedDetail = aborted.split("\n").find((line) => strip(line).includes("↳")) ?? "";
+		const failedDetail = failed.split("\n").find((line) => strip(line).includes("↳")) ?? "";
+		const sgr = (line: string) => line.match(/^\x1b\[[0-9;]+m/)?.[0] ?? "";
+		assert.ok(failedDetail.includes("Error: boom"));
+		assert.notEqual(sgr(abortedDetail), sgr(failedDetail));
+	} finally {
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
 });

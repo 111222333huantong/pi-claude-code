@@ -2,6 +2,7 @@ import { posix, win32 } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
+import { resolveAgentTitle } from "../../feature/reference/agent-titles.ts";
 
 function clip(value: unknown): string {
 	return oneLine(value, config.inputClip);
@@ -19,11 +20,84 @@ export function humanizeToolLabel(label: string): string {
 }
 
 const AGENT_FAMILY_TOOL_NAMES = new Set([
+	// tintinweb/pi-subagents（已卸载，保留防回切）
 	"Agent",
 	"Agents",
 	"get_subagent_result",
+	// @arhen/pi-core-subagent（7 工具；steer_subagent 与 tintinweb 重名，下方按实参兼容）
 	"steer_subagent",
+	"subagent",
+	"subagent_status",
+	"subagent_result",
+	"await_subagent",
+	"reply_subagent",
+	"subagent_cancel",
 ]);
+
+/** agent 家族 ID 型工具的取值键（tintinweb agent_id / arhen runId+taskId 兼容；首个命中进标题）。 */
+const AGENT_ID_KEYS: Record<string, readonly string[]> = {
+	Agent: ["agent_id"],
+	Agents: ["agent_id"],
+	get_subagent_result: ["agent_id"],
+	subagent_status: ["runId"],
+	subagent_result: ["runId", "taskId"],
+	await_subagent: ["runId"],
+	reply_subagent: ["taskId", "runId"],
+	steer_subagent: ["agent_id", "taskId", "runId"],
+	subagent_cancel: ["runId"],
+};
+
+/** agent 家族 ID 型摘要；无 ID 回 undefined 走后续通用逻辑。 */
+function agentIdSummary(
+	title: string,
+	toolName: string,
+	args: any,
+): { main: string; detail: string } | undefined {
+	const keys = AGENT_ID_KEYS[toolName];
+	if (!keys) return undefined;
+	const ids = keys
+		.map((key) => args?.[key])
+		.filter((value): value is string => typeof value === "string" && value.length > 0);
+	if (ids.length === 0) return undefined;
+	const [first, second] = ids;
+	// tintinweb agent_id：优先换 subagent 标题（subagents:created 映射），
+	// 不要裸 UUID；无映射回 8 位短 ID。
+	if (toolName !== "subagent" && args?.agent_id === first) {
+		const resolved = resolveAgentTitle(first);
+		if (resolved) return { main: `${title} ${clip(resolved)}`, detail: "" };
+		return { main: `${title} ${clip(shortAgentId(first))}`, detail: "" };
+	}
+	return {
+		main: `${title} ${clip(first)}`,
+		detail: second && second !== first ? clip(second) : "",
+	};
+}
+
+/** 长 ID 只留前 8 位（tintinweb agent_id 17 位；短 ID 原样）。 */
+function shortAgentId(id: string): string {
+	return id.length > 12 ? id.slice(0, 8) : id;
+}
+
+/**
+ * arhen `subagent` 派生摘要：人名优先，无 UUID。
+ * `single api-reviewer` / `parallel 3 · api-mapper` / `graph 2` / `chain 2`。
+ */
+function subagentSpawnPlan(args: any): string {
+	if (Array.isArray(args?.chain)) return `chain ${args.chain.length}`;
+	const tasks = Array.isArray(args?.tasks) ? args.tasks : [];
+	if (tasks.length > 0) {
+		if (tasks.length === 1) {
+			const only = tasks[0];
+			if (only && typeof only.agent === "string" && only.agent) return `single ${only.agent}`;
+			return "single task";
+		}
+		const hasEdges = tasks.some((task: any) => Array.isArray(task?.needs) && task.needs.length > 0);
+		const first = tasks.find((task: any) => typeof task?.agent === "string" && task.agent);
+		return `${hasEdges ? "graph" : "parallel"} ${tasks.length}${first ? ` · ${first.agent}` : ""}`;
+	}
+	if (typeof args?.agent === "string" && args.agent) return `single ${args.agent}`;
+	return "launch";
+}
 
 /** default-mode（单工具卡）与 grouping（分组卡）在 agent/bash/grep/find/read/fallback 文案上不同。 */
 export type ToolCallSummaryVariant = "default" | "grouping";
@@ -154,8 +228,10 @@ export function toolCallSummary(
 		return `${title} ${clip(found || fallback)}`;
 	};
 
-	if (variant === "default" && AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
-		return { main: `${title} ${clip(args.agent_id)}`, detail: "" };
+	if (variant === "default" && AGENT_FAMILY_TOOL_NAMES.has(toolName)) {
+		if (name === "subagent") return { main: `${title} ${subagentSpawnPlan(args)}`, detail: "" };
+		const idSummary = agentIdSummary(title, toolName, args);
+		if (idSummary) return idSummary;
 	}
 	if (variant === "grouping" && (name === "agent" || name === "agents")) {
 		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
@@ -167,11 +243,16 @@ export function toolCallSummary(
 			detail: "",
 		};
 	}
-	if (variant === "grouping" && (name === "get_subagent_result" || name === "steer_subagent")) {
-		return {
-			main: value(name === "get_subagent_result" ? "agent result" : "steer agent", "agent_id"),
-			detail: "",
-		};
+	if (variant === "grouping" && name === "subagent") {
+		return { main: `${title} ${subagentSpawnPlan(args)}`, detail: "" };
+	}
+	if (variant === "grouping" && AGENT_FAMILY_TOOL_NAMES.has(toolName)) {
+		return (
+			agentIdSummary(title, toolName, args) ?? {
+				main: value("agent task", "runId", "agent_id", "taskId"),
+				detail: "",
+			}
+		);
 	}
 	if (variant === "default" && name === "agents") {
 		return { main: value("launch agents", "description", "prompt"), detail: "" };

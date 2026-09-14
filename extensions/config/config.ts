@@ -64,6 +64,10 @@ export type Config = {
 	scrollStepLines: number;
 	/** 回合耗时超过 N 秒完成时响铃（BEL）；0 关闭。 */
 	completionBellAfterSec: number;
+	/** bash 执行中/落定尾预览开关。 */
+	liveToolPreview: boolean;
+	/** bash 尾预览行数。 */
+	liveToolPreviewLines: number;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -98,6 +102,8 @@ export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** 完成响铃阈值（秒）预设；0 关闭。 */
 export const COMPLETION_BELL_AFTER_SEC_VALUES = ["0", "10", "30", "60", "120"];
+/** bash live 尾预览行数预设。 */
+export const LIVE_TOOL_PREVIEW_LINES_VALUES = ["3", "5", "8", "12"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",
@@ -134,6 +140,8 @@ export const DEFAULT_CONFIG: Config = {
 	quietStartup: true,
 	scrollStepLines: 3,
 	completionBellAfterSec: 0,
+	liveToolPreview: true,
+	liveToolPreviewLines: 5,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -247,6 +255,13 @@ export function normalizeConfig(input: unknown): Config {
 			DEFAULT_CONFIG.completionBellAfterSec,
 			0,
 			3600,
+		),
+		liveToolPreview: source.liveToolPreview !== false,
+		liveToolPreviewLines: pickPositiveInt(
+			source.liveToolPreviewLines,
+			DEFAULT_CONFIG.liveToolPreviewLines,
+			1,
+			50,
 		),
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,

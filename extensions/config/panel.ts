@@ -32,6 +32,7 @@ import {
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	INPUT_CLIP_VALUES,
+	LIVE_TOOL_PREVIEW_LINES_VALUES,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
 	type CompactStyleMode,
@@ -453,6 +454,15 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, completionBellSetting, closeSubmenu),
 		};
+		const livePreviewLinesSetting = {
+			id: "liveToolPreviewLines",
+			label: "Live preview lines",
+			description: "Bash tail preview rows while running and after settle.",
+			currentValue: String(config.liveToolPreviewLines),
+			values: [...LIVE_TOOL_PREVIEW_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, livePreviewLinesSetting, closeSubmenu),
+		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
 		const sessionReferenceToggle = featureToggleSetting(
@@ -511,6 +521,13 @@ export async function showCcstylePanel(
 			"Clipboard paste disabled.",
 			config.enableClipboardPaste,
 		);
+		const livePreviewToggle = featureToggleSetting(
+			"liveToolPreview",
+			"Live bash preview",
+			"Show bash output tail while running and after settle. Next restart applies.",
+			"Live bash preview disabled, Pending-only.",
+			config.liveToolPreview,
+		);
 		const statuslineToggle = featureToggleSetting(
 			"enableStatusline",
 			"Statusline",
@@ -527,6 +544,7 @@ export async function showCcstylePanel(
 			enableAliases: aliasesToggle,
 			enableImagePaster: imagePasterToggle,
 			enableClipboardPaste: clipboardPasteToggle,
+			liveToolPreview: livePreviewToggle,
 		};
 
 		const onSettingChange = (id: string, value: string) => {
@@ -714,6 +732,17 @@ export async function showCcstylePanel(
 					});
 					completionBellSetting.currentValue = String(config.completionBellAfterSec);
 					break;
+				case "liveToolPreviewLines":
+					updateConfig({
+						liveToolPreviewLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.liveToolPreviewLines,
+							1,
+							50,
+						),
+					});
+					livePreviewLinesSetting.currentValue = String(config.liveToolPreviewLines);
+					break;
 				default:
 					return;
 			}
@@ -764,6 +793,7 @@ export async function showCcstylePanel(
 					quietStartupSetting,
 					scrollStepSetting,
 					completionBellSetting,
+					livePreviewLinesSetting,
 				],
 			},
 			{

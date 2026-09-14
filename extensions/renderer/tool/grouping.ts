@@ -12,6 +12,8 @@ import {
 	toolLoadingIcon,
 } from "../../utils/tool-loading-icon.ts";
 import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
+import { outputLineCount } from "./result.ts";
+import { config } from "../../config/config.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
@@ -346,7 +348,18 @@ export class ToolGroupComponent extends Container {
 			if (!this._expanded) {
 				const summary = toolSummary(tool);
 				const prefix = ` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `;
-				const detail = fg("dim", summary.detail);
+				// bash live 行数：glance 行直接读组件 partial 结果，无跨帧延迟。
+				let detailText = summary.detail;
+				if (
+					config.liveToolPreview !== false &&
+					toolStatus === "pending" &&
+					toolName(tool) === "bash" &&
+					(tool as any)?.executionStarted
+				) {
+					const liveTotal = outputLineCount((tool as any)?.result);
+					if (liveTotal > 0) detailText = `${detailText} · ${liveTotal} lines`;
+				}
+				const detail = fg("dim", detailText);
 				const mainWidth = Math.max(0, width - visibleWidth(prefix) - visibleWidth(detail));
 				lines.push(
 					truncateToWidth(

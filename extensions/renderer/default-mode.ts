@@ -37,6 +37,7 @@ import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
+import { BASH_LIVE_PREVIEW_LINES, bashLivePreview } from "./tool/bash-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 
@@ -202,6 +203,30 @@ function renderExpandedTaskResult(
 	return formatted ? new Text(`↳ ${formatted}`, 0, 0) : undefined;
 }
 
+/** bash live 尾预览正文：永远只有一个 `↳ `（首行锚点），其余行 4 空格缩进
+ * 与 `…` 内容列对齐。折叠态经 insetComponent 后为 `   ↳ …` + `     …`。
+ * 不够折叠时首行即第一行输出（如 `   ↳ hi`），与其他单行结果一致。 */
+function bashLivePreviewBody(
+	preview: { header: string | null; tail: string[] },
+	theme: any,
+	expanded: boolean,
+): unknown {
+	const rows = [
+		...(preview.header ? [`↳ ${preview.header}`] : []),
+		...preview.tail.map((line, index) =>
+			index === 0 && preview.header == null ? `↳ ${line}` : `    ${line}`,
+		),
+	];
+	const body = {
+		render(innerWidth: number): string[] {
+			const width = Math.max(1, innerWidth);
+			return rows.map((line) => truncateToWidth(theme.fg("muted", line), width, ""));
+		},
+		invalidate() {},
+	};
+	return expanded ? body : insetComponent(body);
+}
+
 /** 用 ccstyle call/result 包装任意工具定义。 */
 function createCcstyleTool(
 	originalTool: any,
@@ -252,6 +277,27 @@ function createCcstyleTool(
 			}
 			const extraText = writeStatsText || summary.detail;
 			const extraStyled = writeStatsStyled || theme.fg("dim", summary.detail);
+			// bash live 行数 + 执行耗时：只在执行中显示（isPending 熄灭即隐藏，
+			// 落定同拍生效；仅 bash，避免改动 edit/write 标题）。
+			const liveState = (context?.state ?? {}) as {
+				_liveLineCount?: unknown;
+				ccstylePendingSince?: unknown;
+			};
+			const showLive = toolName === "bash" && isPending && context?.executionStarted;
+			const liveCountText =
+				showLive && typeof liveState._liveLineCount === "number" && liveState._liveLineCount > 0
+					? ` · ${liveState._liveLineCount} lines`
+					: "";
+			let liveElapsedText = "";
+			if (showLive && typeof liveState.ccstylePendingSince === "number") {
+				const elapsedSec = Math.max(
+					0,
+					Math.floor((Date.now() - liveState.ccstylePendingSince) / 1000),
+				);
+				if (elapsedSec > 0) liveElapsedText = ` · ${elapsedSec}s`;
+			}
+			const fullExtraText = `${extraText}${liveElapsedText}${liveCountText}`;
+			const fullExtraStyled = `${extraStyled}${theme.fg("dim", liveElapsedText)}${theme.fg("dim", liveCountText)}`;
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			const expanded = Boolean(context?.expanded);
@@ -265,10 +311,10 @@ function createCcstyleTool(
 						0,
 						viewportWidth - visibleWidth(icon) - 1 - (expanded ? 0 : 1),
 					);
-					const mainWidth = Math.max(0, callWidth - visibleWidth(extraText));
+					const mainWidth = Math.max(0, callWidth - visibleWidth(fullExtraText));
 					cachedWidth = width;
 					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${extraStyled}`;
+					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},
@@ -324,6 +370,20 @@ function createCcstyleTool(
 							},
 						};
 						return expanded ? body : insetComponent(body);
+					}
+				}
+				// bash live 尾预览：执行中取输出尾部窗口；空输出回落 Pending…。
+				if (
+					config.liveToolPreview !== false &&
+					toolName === "bash" &&
+					!options?.isError &&
+					!context?.isError
+				) {
+					const liveLimit = Math.max(1, config.liveToolPreviewLines || BASH_LIVE_PREVIEW_LINES);
+					const live = bashLivePreview(textFromResult(result), liveLimit);
+					if (live.total > 0) {
+						if (context != null) (context.state ??= {})._liveLineCount = live.total;
+						return bashLivePreviewBody(live, theme, expanded);
 					}
 				}
 				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题

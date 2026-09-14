@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
 import {
 	AssistantMessageComponent,
@@ -100,6 +101,33 @@ test("mixed tools group across three empty separators while edit/write and conte
 		parent.addChild(assistant);
 		parent.addChild(tool("bash", "after-content"));
 		assert.equal(parent.children.at(-1).toolCallId, "after-content");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("collapsed groups preserve filenames for long cwd paths", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const path = join(
+			process.cwd(),
+			"extensions",
+			"very-long-feature-name",
+			"nested-renderer-implementation",
+			"target-file.ts",
+		);
+		parent.addChild(started("read", "long-read", { path }));
+		parent.addChild(started("bash", "separator", { command: "echo ok" }));
+		const rendered = parent.children[0]
+			.render(48)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
+		const readLine = rendered.find((line: string) => line.includes("Read"));
+		assert.match(readLine!, /Read extensions.*…[\\/]target-file\.ts$/);
+		assert.doesNotMatch(
+			readLine!,
+			new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+		);
 	} finally {
 		hooks.shutdown();
 	}

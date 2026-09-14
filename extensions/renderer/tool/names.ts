@@ -1,3 +1,5 @@
+import { posix, win32 } from "node:path";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
 
@@ -31,7 +33,106 @@ export type ToolCallSummaryOptions = {
 	title?: string;
 	/** 文案变体；缺省 "default"。 */
 	variant?: ToolCallSummaryVariant;
+	/** 工具执行目录；仅用于生成展示路径，不修改调用参数。 */
+	cwd?: string;
 };
+
+export type ToolCallSummary = {
+	main: string;
+	detail: string;
+	/** 路径摘要保留结构，供最终渲染按实际宽度优先保留文件名。 */
+	path?: { prefix: string; value: string };
+};
+
+function pathApi(value: string) {
+	if (win32.isAbsolute(value)) return win32;
+	if (posix.isAbsolute(value)) return posix;
+	return undefined;
+}
+
+/** cwd 内绝对路径转相对路径；cwd 外路径保持不变。 */
+export function displayPath(value: unknown, cwd?: string): string {
+	const text = oneLine(value, 4096);
+	const base = cwd ? oneLine(cwd, 4096) : "";
+	const api = pathApi(text);
+	if (!api || !base || !api.isAbsolute(base)) return text;
+	const relative = api.relative(base, text);
+	if (!relative) return api.basename(text) || ".";
+	if (relative === ".." || relative.startsWith(`..${api.sep}`) || api.isAbsolute(relative)) {
+		return text;
+	}
+	return relative;
+}
+
+function headToWidth(text: string, width: number, ellipsis = ""): string {
+	if (visibleWidth(text) <= width) return text;
+	if (width <= 0) return "";
+	const suffix = visibleWidth(ellipsis) <= width ? ellipsis : "";
+	const contentWidth = width - visibleWidth(suffix);
+	let head = "";
+	for (const char of Array.from(text)) {
+		if (visibleWidth(head + char) > contentWidth) break;
+		head += char;
+	}
+	return head + suffix;
+}
+
+function tailToWidth(text: string, width: number): string {
+	if (width <= 0) return "";
+	let tail = "";
+	for (const char of Array.from(text).reverse()) {
+		if (visibleWidth(char + tail) > width) break;
+		tail = char + tail;
+	}
+	return tail;
+}
+
+/** 中间截断路径：目录保留开头，末尾优先完整保留文件名。 */
+export function truncatePathToWidth(path: string, width: number): string {
+	if (visibleWidth(path) <= width) return path;
+	if (width <= 1) return width === 1 ? "…" : "";
+	const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+	const filename = separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
+	const filenameWidth = visibleWidth(filename);
+	if (separatorIndex >= 0 && filenameWidth + 1 <= width) {
+		const separator = path[separatorIndex]!;
+		const suffix = `${separator}${filename}`;
+		const prefixWidth = width - visibleWidth(suffix) - 1;
+		const prefix = headToWidth(path.slice(0, separatorIndex), Math.max(0, prefixWidth));
+		return `${prefix}…${prefix ? suffix : filename}`;
+	}
+	const leftWidth = Math.max(1, Math.floor((width - 1) * 0.45));
+	const rightWidth = Math.max(0, width - leftWidth - 1);
+	return `${headToWidth(filename, leftWidth)}…${tailToWidth(filename, rightWidth)}`;
+}
+
+/** 路径展示的统一入口：相对化后按配置和当前可用宽度截断。 */
+export function formatDisplayPath(value: unknown, cwd: string | undefined, width: number): string {
+	return truncatePathToWidth(displayPath(value, cwd), Math.min(width, config.inputClip));
+}
+
+/** 按最终终端宽度渲染摘要；路径摘要不会再被整行头部截断。 */
+export function fitToolCallSummary(summary: ToolCallSummary, width: number): string {
+	if (!summary.path) return headToWidth(summary.main, width, "…");
+	const prefix = summary.path.prefix;
+	const pathWidth = Math.max(0, width - visibleWidth(prefix) - 1);
+	if (pathWidth <= 0) return headToWidth(prefix, width, "…");
+	return `${prefix} ${truncatePathToWidth(summary.path.value, Math.min(pathWidth, config.inputClip))}`;
+}
+
+function pathSummary(
+	prefix: string,
+	value: unknown,
+	cwd: string | undefined,
+	detail = "",
+): ToolCallSummary {
+	const path = displayPath(value, cwd);
+	return {
+		main: `${prefix} ${truncatePathToWidth(path, config.inputClip)}`,
+		detail,
+		path: { prefix, value: path },
+	};
+}
 
 /**
  * 单工具调用摘要（{ main, detail }）。
@@ -43,7 +144,7 @@ export function toolCallSummary(
 	toolName: string,
 	args: any,
 	opts: ToolCallSummaryOptions = {},
-): { main: string; detail: string } {
+): ToolCallSummary {
 	const title = opts.title ?? humanizeToolLabel(toolName);
 	const variant = opts.variant ?? "default";
 	if (!args || typeof args !== "object") return { main: title, detail: "" };
@@ -106,15 +207,13 @@ export function toolCallSummary(
 			args.offset !== undefined ? `offset=${args.offset}` : "",
 			args.limit !== undefined ? `limit=${args.limit}` : "",
 		].filter(Boolean);
-		if (variant === "grouping") {
-			return {
-				main: `Read ${clip(args.path || "...")}`,
-				detail: details.length ? ` (${details.join(", ")})` : "",
-			};
+		const detail = details.length ? ` (${details.join(", ")})` : "";
+		if (typeof args.path === "string" && args.path) {
+			return pathSummary(variant === "grouping" ? "Read" : title, args.path, opts.cwd, detail);
 		}
 		return {
-			main: `${title}${args.path ? ` ${clip(args.path)}` : ""}`,
-			detail: details.length ? ` (${details.join(", ")})` : "",
+			main: variant === "grouping" ? "Read ..." : title,
+			detail,
 		};
 	}
 	if (variant === "grouping") {
@@ -135,9 +234,11 @@ export function toolCallSummary(
 		}
 	}
 	if (variant === "default") {
+		const preferredPath = args.path ?? args.file_path;
+		if (typeof preferredPath === "string" && preferredPath) {
+			return pathSummary(title, preferredPath, opts.cwd);
+		}
 		const preferred =
-			args.path ??
-			args.file_path ??
 			args.command ??
 			args.query ??
 			args.question ??

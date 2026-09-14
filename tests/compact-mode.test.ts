@@ -243,17 +243,37 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	}
 });
 
-test("tool input name length clips single and grouped summaries", () => {
+test("tool path summaries relativize cwd paths and preserve filenames when clipped", () => {
 	const previous = config.inputClip;
-	const path = `src/${"a".repeat(80)}.ts`;
-	const clipped = `${path.slice(0, 19)}…`;
+	const args = {
+		path: join(
+			process.cwd(),
+			"extensions",
+			"very-long-feature-name",
+			"nested-renderer-implementation",
+			"target-file.ts",
+		),
+	};
+	const original = { ...args };
 	try {
-		config.inputClip = 20;
-		assert.equal(toolCallSummary("read", { path }).main, `Read ${clipped}`);
+		config.inputClip = 40;
+		for (const variant of ["default", "grouping"] as const) {
+			const summary = toolCallSummary("read", args, { variant, cwd: process.cwd() });
+			assert.match(summary.main, /^Read extensions/);
+			assert.match(summary.main, /…[\\/]target-file\.ts$/);
+			assert.doesNotMatch(
+				summary.main,
+				new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+			);
+		}
+		config.inputClip = 200;
+		const outside = join(process.cwd(), "..", "outside-project", "target-file.ts");
 		assert.equal(
-			toolCallSummary("read", { path }, { variant: "grouping" }).main,
-			`Read ${clipped}`,
+			toolCallSummary("write", { path: outside }, { cwd: process.cwd() }).main,
+			`Write ${outside}`,
+			"cwd 外绝对路径保持绝对形式",
 		);
+		assert.deepEqual(args, original, "display formatting does not mutate tool arguments");
 	} finally {
 		config.inputClip = previous;
 	}
@@ -855,6 +875,31 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		config.mode = previousMode;
 		config.writeDiffCollapsedLines = previousWriteCollapsed;
 		hooks.shutdown();
+	}
+});
+
+test("compact edit/write summaries preserve filenames for long cwd paths", () => {
+	const { restore } = installHooks();
+	try {
+		const path = join(
+			process.cwd(),
+			"extensions",
+			"very-long-feature-name",
+			"nested-renderer-implementation",
+			"target-file.ts",
+		);
+		for (const [name, id] of [
+			["edit", "long-edit"],
+			["write", "long-write"],
+		] as const) {
+			const component = tool(name, id, { path });
+			component.updateResult({ content: [], isError: false });
+			const title = renderText(component, 50).find((line) => line.includes(name));
+			assert.match(title!, new RegExp(`${name} .*target-file\\.ts`));
+			assert.doesNotMatch(title!, new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+		}
+	} finally {
+		restore();
 	}
 });
 

@@ -17,7 +17,6 @@ import { isToolCallHovered } from "./mouse/hover.ts";
 import {
 	countLines,
 	hasExpandableDetail,
-	headTruncateToWidth,
 	insetComponent,
 	isToolExpanded,
 	outputLineCount,
@@ -38,7 +37,7 @@ import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
+import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 
 // pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
 const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
@@ -233,6 +232,7 @@ function createCcstyleTool(
 			const summary = toolCallSummary(toolName, args, {
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
+				cwd: context?.cwd,
 			});
 			let writeStatsText = "";
 			let writeStatsStyled = "";
@@ -265,8 +265,8 @@ function createCcstyleTool(
 					);
 					const mainWidth = Math.max(0, callWidth - visibleWidth(extraText));
 					cachedWidth = width;
-					// 纯文本先截断再着色（省略号不带 ANSI）；从头截断，与多 tool 一致
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${extraStyled}`;
+					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
+					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${extraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},

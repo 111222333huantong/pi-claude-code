@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -150,6 +151,32 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
 		component.setExpanded(false);
 		assert.equal(component.children.includes(component.selfRenderContainer), true);
+
+		const longPath = join(
+			process.cwd(),
+			"extensions",
+			"very-long-feature-name",
+			"nested-renderer-implementation",
+			"target-file.ts",
+		);
+		const read = new ToolExecutionComponent(
+			"read",
+			"path-summary",
+			{ path: longPath },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		) as any;
+		const readCall = read
+			.render(55)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.find((line: string) => line.includes("Read"));
+		assert.match(readCall!, /Read extensions.*…[\\/]target-file\.ts$/);
+		assert.doesNotMatch(
+			readCall!,
+			new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+		);
 
 		const edit = new ToolExecutionComponent(
 			"edit",

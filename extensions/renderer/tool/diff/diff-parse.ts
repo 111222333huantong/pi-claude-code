@@ -2,7 +2,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { fitToWidth } from "./diff-text.ts";
 
 export type DiffLineKind = "add" | "remove" | "context";
-export type DiffEntryKind = "line" | "meta" | "hunk" | "file";
+export type DiffEntryKind = "line" | "omission" | "meta" | "hunk" | "file";
 
 export interface DiffLineEntry {
 	kind: "line";
@@ -16,13 +16,19 @@ export interface DiffLineEntry {
 	hunkIndex: number;
 }
 
-export interface DiffMetaEntry {
-	kind: Exclude<DiffEntryKind, "line">;
+export interface DiffOmissionEntry {
+	kind: "omission";
 	raw: string;
 	hunkIndex: number;
 }
 
-export type ParsedDiffEntry = DiffLineEntry | DiffMetaEntry;
+export interface DiffMetaEntry {
+	kind: Exclude<DiffEntryKind, "line" | "omission">;
+	raw: string;
+	hunkIndex: number;
+}
+
+export type ParsedDiffEntry = DiffLineEntry | DiffOmissionEntry | DiffMetaEntry;
 
 export interface ParsedDiff {
 	entries: ParsedDiffEntry[];
@@ -40,6 +46,9 @@ export interface DiffStats {
 
 const CANONICAL_LINE_PATTERN = /^([+\- ])(\s*\d+)\|(.*)$/;
 const HASHLINE_ANCHOR_LINE_PATTERN = /^([+\- ])(\s*\d+)#([A-Za-z0-9]+| {2}):(.*)$/;
+// Pi still emits space-separated numbered rows, unlike OMP's pipe-delimited format.
+const PI_LINE_PATTERN = /^([+\- ])(\s*\d+)\s(.*)$/;
+const PI_OMISSION_LINE_PATTERN = /^ {3,}\.\.\.$/;
 const HUNK_HEADER_PATTERN = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
 const MIN_LINE_NUMBER_WIDTH = 2;
 
@@ -62,7 +71,10 @@ function toParsedDiffLine(
 	return { lineKind: "context", lineNumber: normalizedLineNumber, content };
 }
 
-function parseCanonicalDiffLine(line: string): {
+function parseCanonicalDiffLine(
+	line: string,
+	allowPiFormat: boolean,
+): {
 	lineKind: DiffLineKind;
 	lineNumber: string;
 	content: string;
@@ -80,7 +92,8 @@ function parseCanonicalDiffLine(line: string): {
 		};
 	}
 
-	const match = line.match(CANONICAL_LINE_PATTERN);
+	const match =
+		line.match(CANONICAL_LINE_PATTERN) ?? (allowPiFormat ? line.match(PI_LINE_PATTERN) : null);
 	return match ? toParsedDiffLine(match[1] ?? " ", match[2] ?? "", match[3] ?? "") : null;
 }
 
@@ -156,6 +169,14 @@ function pushParsedLineEntry(
 	});
 }
 
+function createOmissionEntry(raw: string, hunkIndex: number): DiffOmissionEntry {
+	return {
+		kind: "omission",
+		raw,
+		hunkIndex,
+	};
+}
+
 function createMetaEntry(raw: string, hunkIndex: number): DiffMetaEntry {
 	return {
 		kind: classifyMetaLine(raw),
@@ -187,12 +208,14 @@ export function parseDiff(diffText: string): ParsedDiff {
 	let oldLineCursor: number | null = null;
 	let newLineCursor: number | null = null;
 	let lineNumberDelta = 0;
+	let hasHunkHeader = false;
 
 	for (const rawLine of diffText.replace(/\r/g, "").split("\n")) {
 		stats.lines++;
 
 		const hunkMatch = rawLine.match(HUNK_HEADER_PATTERN);
 		if (hunkMatch) {
+			hasHunkHeader = true;
 			hunkIndex++;
 			stats.hunks = Math.max(stats.hunks, hunkIndex);
 			oldLineCursor = toNumber(hunkMatch[1]);
@@ -217,7 +240,14 @@ export function parseDiff(diffText: string): ParsedDiff {
 			lineNumberDelta = 0;
 		}
 
-		const canonical = parseCanonicalDiffLine(rawLine);
+		// Pi pads omitted context with a blank line number; it is not a source row.
+		if (!hasHunkHeader && PI_OMISSION_LINE_PATTERN.test(rawLine)) {
+			entries.push(createOmissionEntry(rawLine, hunkIndex));
+			continue;
+		}
+
+		// Pi's headerless format is ambiguous with numeric source text in unified hunks.
+		const canonical = parseCanonicalDiffLine(rawLine, !hasHunkHeader);
 		if (canonical) {
 			hunkIndex = ensureImplicitHunk(hunkIndex);
 			stats.hunks = Math.max(stats.hunks, hunkIndex);

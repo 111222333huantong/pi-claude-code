@@ -1,7 +1,12 @@
 import { Text, type Component } from "@earendil-works/pi-tui";
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
-import { getLineNumberWidth, parseDiff, type ParsedDiff } from "./diff-parse.ts";
+import {
+	getLineNumberWidth,
+	parseDiff,
+	type ParsedDiff,
+	type ParsedDiffEntry,
+} from "./diff-parse.ts";
 import { buildInlineHighlightMap, buildSplitRows } from "./diff-inline.ts";
 import { resolveDiffPalette, type DiffTheme } from "./diff-palette.ts";
 import { createCodeLineHighlighter, resolveLanguageFromPath } from "./diff-highlight.ts";
@@ -42,6 +47,20 @@ function safeGetDiff(details: unknown): string {
 	}
 	const typed = details as Partial<EditToolDetails>;
 	return typeof typed.diff === "string" ? typed.diff : "";
+}
+
+// Pi appends an omission marker after final context to say the file continues.
+// It does not separate visible diff regions, so keep only omissions before a rendered line.
+function omitTerminalOmissions(entries: ParsedDiffEntry[]): ParsedDiffEntry[] {
+	let lastLineIndex = -1;
+	for (let index = entries.length - 1; index >= 0; index--) {
+		if (entries[index]?.kind === "line") {
+			lastLineIndex = index;
+			break;
+		}
+	}
+
+	return entries.filter((entry, index) => entry.kind !== "omission" || index < lastLineIndex);
 }
 
 /**
@@ -85,22 +104,23 @@ export function renderEditDiffResult(
 		return new Text(theme.fg("warning", `↳ unable to render diff: ${message}`), 0, 0);
 	}
 
-	if (parsed.entries.length === 0) {
+	const renderEntries = omitTerminalOmissions(parsed.entries);
+	if (renderEntries.length === 0) {
 		return new Text(theme.fg("muted", "↳ no diff data"), 0, 0);
 	}
 
-	const splitRows = buildSplitRows(parsed.entries);
+	const splitRows = buildSplitRows(renderEntries);
 	const showHashlineAnchors =
 		options.expanded === true &&
-		parsed.entries.some((entry) => entry.kind === "line" && !!entry.hashlineAnchorContent);
-	const lineNumberWidth = getLineNumberWidth(parsed.entries, showHashlineAnchors);
+		renderEntries.some((entry) => entry.kind === "line" && !!entry.hashlineAnchorContent);
+	const lineNumberWidth = getLineNumberWidth(renderEntries, showHashlineAnchors);
 	const palette = resolveDiffPalette(theme);
 	// Rich diffs use ccstyle's self shell. Keep the panel transparent so the
 	// separator cannot leak toolSuccessBg across the entire new column.
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(options.filePath);
 	const cache = createDiffRenderCache();
-	const highlightLine = createCodeLineHighlighter(language, theme, parsed.entries, () => {
+	const highlightLine = createCodeLineHighlighter(language, theme, renderEntries, () => {
 		cache.invalidate();
 		options.invalidate?.();
 	});
@@ -149,7 +169,7 @@ export function renderEditDiffResult(
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			// Only highlight/render a prefix that can fill the display limit; full-diff
 			// LCS + syntax highlight on thousands of hidden lines is pure waste when collapsed.
-			const entryBudget = takeEntriesForLineBudget(parsed.entries, processBudget);
+			const entryBudget = takeEntriesForLineBudget(renderEntries, processBudget);
 			const splitBudget = takeSplitRowsForBudget(splitRows, processBudget);
 			const inlineHighlights = buildInlineHighlightMap(splitBudget.rows);
 			const renderCtx: DiffRenderContext = {

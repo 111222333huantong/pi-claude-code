@@ -1,5 +1,10 @@
 import { normalizeCodeWhitespace } from "./diff-text.ts";
-import type { DiffLineEntry, DiffMetaEntry, ParsedDiffEntry } from "./diff-parse.ts";
+import type {
+	DiffLineEntry,
+	DiffMetaEntry,
+	DiffOmissionEntry,
+	ParsedDiffEntry,
+} from "./diff-parse.ts";
 
 export interface DiffSpan {
 	start: number;
@@ -9,6 +14,7 @@ export interface DiffSpan {
 export interface SplitDiffRow {
 	left?: DiffLineEntry;
 	right?: DiffLineEntry;
+	omission?: DiffOmissionEntry;
 	meta?: DiffMetaEntry;
 	hunkIndex: number | null;
 }
@@ -238,6 +244,12 @@ export function buildSplitRows(entries: ParsedDiffEntry[]): SplitDiffRow[] {
 		const entry = entries[index];
 		if (!entry) {
 			break;
+		}
+
+		if (entry.kind === "omission") {
+			rows.push({ omission: entry, hunkIndex: entry.hunkIndex || null });
+			index++;
+			continue;
 		}
 
 		if (entry.kind !== "line") {

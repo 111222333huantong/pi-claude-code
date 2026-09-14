@@ -36,8 +36,8 @@ import { renderRichToolResult } from "./tool/diff/index.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
-import { oneLine } from "../utils/format.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
+import { formatDisplayPath } from "./tool/names.ts";
 import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
 import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
@@ -511,13 +511,12 @@ function compactEditWriteLine(
 	const theme = themeOf();
 	const name = String(component.toolName ?? "tool");
 	const args = component.args ?? {};
-	const path = sanitizeToolResultText(
+	const path =
 		typeof args.path === "string" && args.path
 			? args.path
 			: typeof args.file_path === "string" && args.file_path
 				? args.file_path
-				: "",
-	);
+				: "";
 	const isError = component.result?.isError === true;
 	const isPending = !component.result || component.isPartial === true;
 	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : "✓";
@@ -551,7 +550,8 @@ function compactEditWriteLine(
 		visibleWidth(statsText) +
 		visibleWidth(hintText);
 	const pathWidth = Math.max(0, width - fixedWidth - (path ? 1 : 0));
-	const pathPart = pathWidth > 0 && path ? ` ${oneLine(path, pathWidth)}` : "";
+	const pathPart =
+		pathWidth > 0 && path ? ` ${formatDisplayPath(path, component.cwd, pathWidth)}` : "";
 	const line = `${iconPart}${namePart}${theme.fg("toolTitle", pathPart)}${statsStyled}${hintText ? theme.fg("dim", hintText) : ""}`;
 	return ["", truncateToWidth(line, width, "")];
 }

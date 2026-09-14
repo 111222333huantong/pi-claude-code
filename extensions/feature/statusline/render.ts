@@ -27,10 +27,13 @@ export interface StatusSnapshot {
 	branch: string | null;
 	changedFiles: number;
 	hasConflicts: boolean;
+	conflictFiles: number;
 	ahead: number | null;
 	behind: number | null;
 	insertions: number;
 	deletions: number;
+	/** 当前分支关联 PR 号；无 gh / 无 PR / 非仓库为 null（整段省略）。 */
+	pr: number | null;
 	worktree: string | null;
 	showWorktree: boolean;
 }
@@ -177,26 +180,31 @@ function line2Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 			snapshot.ahead !== null && snapshot.behind !== null
 				? snapshot.ahead === 0 && snapshot.behind === 0
 					? " ok"
-					: ` !!${snapshot.ahead > 0 ? ` ↑${snapshot.ahead}` : ""}${snapshot.behind > 0 ? ` ↓${snapshot.behind}` : ""}`
-				: dirty
-					? " !!"
-					: " ok";
+					: `${snapshot.ahead > 0 ? ` ↑${snapshot.ahead}` : ""}${snapshot.behind > 0 ? ` ↓${snapshot.behind}` : ""}`
+				: "";
 		const diff =
 			snapshot.insertions > 0 || snapshot.deletions > 0
 				? ` +${snapshot.insertions} -${snapshot.deletions}`
 				: "";
-		const plain = `${snapshot.branch}${sync}${diff}`;
+		const conflicts = snapshot.conflictFiles > 0 ? ` ⚠${snapshot.conflictFiles}` : "";
+		const plain = `${snapshot.branch}${sync}${conflicts}${diff}`;
 		const branchColor: ThemeColor = dirty ? "warning" : "success";
 		segments.push({
 			plain,
 			painted:
 				paint(branchColor, snapshot.branch) +
 				paint(dirty ? "warning" : "dim", sync) +
+				(snapshot.conflictFiles > 0 ? paint("warning", conflicts) : "") +
 				(snapshot.insertions > 0 || snapshot.deletions > 0
 					? ` ${paint("success", `+${snapshot.insertions}`)} ${paint("error", `-${snapshot.deletions}`)}`
 					: ""),
 			priority: 100,
 		});
+	}
+
+	if (snapshot.pr !== null) {
+		const prText = `PR #${snapshot.pr}`;
+		segments.push({ plain: prText, painted: paint("dim", prText), priority: 65 });
 	}
 
 	if (snapshot.showWorktree && snapshot.worktree) {
@@ -206,7 +214,7 @@ function line2Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 	return segments;
 }
 
-/** L2：`cwd │ branch ok|!! [↑a] [↓b] [+i -d] [wt name]`；非仓库时只有 cwd。 */
+/** L2：`cwd │ branch [ok] [↑a] [↓b] [⚠n] [+i -d] [wt name]`；非仓库时只有 cwd。 */
 export function buildLine2(snapshot: StatusSnapshot, width: number, paint: Paint): string {
 	const line = fitSegments(line2Segments(snapshot, paint), width);
 	return line || fitSingle(snapshot.cwd, width);

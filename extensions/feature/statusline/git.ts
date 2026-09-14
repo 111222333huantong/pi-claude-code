@@ -16,6 +16,8 @@ export interface GitSnapshot {
 	branch: string | null;
 	changedFiles: number;
 	hasConflicts: boolean;
+	/** 冲突文件数（porcelain UU/AA/DD/AU/UA/DU/UD 行数）。 */
+	conflictFiles: number;
 	ahead: number | null;
 	behind: number | null;
 	insertions: number;
@@ -28,6 +30,7 @@ export const EMPTY_GIT_SNAPSHOT: GitSnapshot = {
 	branch: null,
 	changedFiles: 0,
 	hasConflicts: false,
+	conflictFiles: 0,
 	ahead: null,
 	behind: null,
 	insertions: 0,
@@ -61,9 +64,11 @@ const CONFLICT_CODES = new Set(["UU", "AA", "DD", "AU", "UA", "DU", "UD"]);
 export function parsePorcelainFiles(lines: readonly string[]): {
 	changedFiles: number;
 	hasConflicts: boolean;
+	conflictFiles: number;
 } {
 	let changedFiles = 0;
 	let hasConflicts = false;
+	let conflictFiles = 0;
 	for (const line of lines) {
 		if (line.length < 2) continue;
 		const code = line.slice(0, 2);
@@ -73,9 +78,12 @@ export function parsePorcelainFiles(lines: readonly string[]): {
 		}
 		if (code.trim() === "") continue;
 		changedFiles++;
-		if (CONFLICT_CODES.has(code)) hasConflicts = true;
+		if (CONFLICT_CODES.has(code)) {
+			hasConflicts = true;
+			conflictFiles++;
+		}
 	}
-	return { changedFiles, hasConflicts };
+	return { changedFiles, hasConflicts, conflictFiles };
 }
 
 /** 解析 `2 files changed, 18 insertions(+), 5 deletions(-)`；纯函数。 */
@@ -113,19 +121,21 @@ export async function collectGitStatus(cwd: string): Promise<GitSnapshot> {
 		// `-uno`（normal）：未跟踪目录折叠为单行，比 `all` 递归扫描便宜一个量级；
 		// 状态栏只用脏否（changedFiles > 0），计数口径差异无影响。
 		runGit(cwd, ["status", "--porcelain=v1", "--branch", "--untracked-files=normal"]),
-		runGit(cwd, ["diff", "--shortstat"]),
+		// 对 HEAD（含 staged）：`git add` 后数字不归零，避免"明明改了却显示 ok"。
+		runGit(cwd, ["diff", "HEAD", "--shortstat"]),
 		runGit(cwd, ["rev-parse", "--git-dir"]),
 	]);
 	if (porcelain === null) return { ...EMPTY_GIT_SNAPSHOT };
 	const lines = porcelain.split("\n");
 	const { branch, ahead, behind } = parsePorcelainHead(lines[0] ?? "");
 	if (branch === null) return { ...EMPTY_GIT_SNAPSHOT };
-	const { changedFiles, hasConflicts } = parsePorcelainFiles(lines.slice(1));
+	const { changedFiles, hasConflicts, conflictFiles } = parsePorcelainFiles(lines.slice(1));
 	const { insertions, deletions } = parseShortstat(shortstat ?? "");
 	return {
 		branch,
 		changedFiles,
 		hasConflicts,
+		conflictFiles,
 		ahead,
 		behind,
 		insertions,

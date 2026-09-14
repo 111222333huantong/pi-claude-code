@@ -30,10 +30,12 @@ const base: StatusSnapshot = {
 	branch: "feat/statusline",
 	changedFiles: 3,
 	hasConflicts: false,
+	conflictFiles: 0,
 	ahead: 2,
 	behind: 0,
 	insertions: 18,
 	deletions: 5,
+	pr: null,
 	worktree: null,
 	showWorktree: true,
 };
@@ -93,8 +95,8 @@ test("buildLine1: 窄屏按优先级砍 ext→mcp→cost，ctx 永存", () => {
 	assert.equal(line.includes("mcp"), false);
 });
 
-test("buildLine2: 脏仓库 !! + diffstat", () => {
-	assert.equal(buildLine2(base, 120, identity), "~/pi-claude-code │ feat/statusline !! ↑2 +18 -5");
+test("buildLine2: 脏仓库 diffstat（无 !! 标记）", () => {
+	assert.equal(buildLine2(base, 120, identity), "~/pi-claude-code │ feat/statusline ↑2 +18 -5");
 });
 
 test("buildLine2: 干净仓库 ok", () => {
@@ -115,6 +117,20 @@ test("buildLine2: worktree 段与开关", () => {
 	assert.equal(on.includes("wt pi-cc-refs"), true);
 	const off = buildLine2({ ...base, worktree: "pi-cc-refs", showWorktree: false }, 120, identity);
 	assert.equal(off.includes("wt"), false);
+});
+
+test("buildLine2: 冲突文件显式 ⚠N，无冲突不显示", () => {
+	const conflicted = buildLine2({ ...base, hasConflicts: true, conflictFiles: 2 }, 120, identity);
+	assert.equal(conflicted.includes("⚠2"), true);
+	const clean = buildLine2(base, 120, identity);
+	assert.equal(clean.includes("⚠"), false);
+});
+
+test("buildLine2: 有 PR 显示 PR #N，无则省略", () => {
+	const withPr = buildLine2({ ...base, pr: 12 }, 120, identity);
+	assert.equal(withPr.includes("PR #12"), true);
+	const withoutPr = buildLine2(base, 120, identity);
+	assert.equal(withoutPr.includes("PR #"), false);
 });
 
 test("fitSegments: 空段过滤，超宽逐个剔最低", () => {

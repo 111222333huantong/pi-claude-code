@@ -2,7 +2,7 @@
  * 状态栏 footer：两行纯文字（无图标无进度条），跟随 Pi 主题。
  *
  * L1: `model (thinking) │ ctx pct · used/window │ $cost │ mcp │ ext`
- * L2: `cwd │ branch ok|!! [↑a] [↓b] [+i -d] [wt name]`
+ * L2: `cwd │ branch [ok] [↑a] [↓b] [⚠n] [+i -d] [PR #n] [wt name]`
  *
  * 数据：model/ctx/用量走 ctx（render 时活读）；git 走后台快照轮询；
  * 扩展/mcp 计数复用 loaded-stats 进程级单例（无额外扫描）。
@@ -16,6 +16,7 @@ import { stripAnsi } from "../../utils/ansi-text.ts";
 import { readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
 import { summarizeUsage } from "./usage.ts";
 import { collectGitStatus, EMPTY_GIT_SNAPSHOT, startGitPoller, type GitSnapshot } from "./git.ts";
+import { getPrNumber } from "./pr.ts";
 import { buildLines, type StatusSnapshot } from "./render.ts";
 
 function shortCwd(cwd: string): string {
@@ -197,10 +198,12 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						branch: git.branch,
 						changedFiles: git.changedFiles,
 						hasConflicts: git.hasConflicts,
+						conflictFiles: git.conflictFiles,
 						ahead: git.ahead,
 						behind: git.behind,
 						insertions: git.insertions,
 						deletions: git.deletions,
+						pr: getPrNumber(ctx.cwd, git.branch !== null),
 						worktree: git.worktree,
 						showWorktree: readStatuslineConfig().showWorktree,
 					};

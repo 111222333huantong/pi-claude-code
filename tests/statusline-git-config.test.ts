@@ -17,6 +17,7 @@ import {
 	readStatuslineConfig,
 	writeStatuslineConfig,
 } from "../extensions/feature/statusline/config.ts";
+import { _resetPrCache, getPrNumber, parsePrNumber } from "../extensions/feature/statusline/pr.ts";
 import { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
 
 test("parsePorcelainHead: 分支与上下游", () => {
@@ -41,8 +42,13 @@ test("parsePorcelainFiles: 计数 ?? 与冲突", () => {
 	assert.deepEqual(parsePorcelainFiles([" M a.ts", "A  b.ts", "?? c.ts", "", "UU d.ts"]), {
 		changedFiles: 4,
 		hasConflicts: true,
+		conflictFiles: 1,
 	});
-	assert.deepEqual(parsePorcelainFiles([]), { changedFiles: 0, hasConflicts: false });
+	assert.deepEqual(parsePorcelainFiles([]), {
+		changedFiles: 0,
+		hasConflicts: false,
+		conflictFiles: 0,
+	});
 });
 
 test("parseShortstat: 插入删除", () => {
@@ -55,6 +61,21 @@ test("parseShortstat: 插入删除", () => {
 		deletions: 0,
 	});
 	assert.deepEqual(parseShortstat(""), { insertions: 0, deletions: 0 });
+});
+
+test("collectGitStatus: staged 改动计入 diffstat", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-staged-"));
+	execFileSync("git", ["init", "-b", "main"], { cwd: dir });
+	execFileSync("git", ["config", "user.email", "test@test"], { cwd: dir });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: dir });
+	writeFileSync(join(dir, "a.txt"), "one\ntwo\n");
+	execFileSync("git", ["add", "."], { cwd: dir });
+	execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+	// staged 未提交：必须计入，否则 add 后数字归零误导。
+	writeFileSync(join(dir, "a.txt"), "one\ntwo\nthree\n");
+	execFileSync("git", ["add", "."], { cwd: dir });
+	const snapshot = await collectGitStatus(dir);
+	assert.ok(snapshot.insertions >= 1, `staged insertions counted, got ${snapshot.insertions}`);
 });
 
 test("parseWorktree: 仅 linked worktree 具名", () => {
@@ -123,4 +144,43 @@ test("git poller: 变化即推、无变化退避不扰", async () => {
 	} finally {
 		stop();
 	}
+});
+
+test("parsePrNumber: gh 输出转 PR 号", () => {
+	assert.equal(parsePrNumber("12\n"), 12);
+	assert.equal(parsePrNumber(" 7 "), 7);
+	assert.equal(parsePrNumber(""), null);
+	assert.equal(parsePrNumber("abc"), null);
+	assert.equal(parsePrNumber("0"), null);
+});
+
+test("getPrNumber: 60s 缓存 + 单飞行 + 失败记 null", async () => {
+	_resetPrCache();
+	let calls = 0;
+	const run = async (_cwd: string) => {
+		calls++;
+		return "12\n";
+	};
+	assert.equal(getPrNumber("D:/repo", true, run, 0), null);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(getPrNumber("D:/repo", true, run, 1000), 12);
+	assert.equal(calls, 1);
+	// TTL 内不重刷。
+	assert.equal(getPrNumber("D:/repo", true, run, 59_000), 12);
+	assert.equal(calls, 1);
+	// 过期重刷。
+	assert.equal(getPrNumber("D:/repo", true, run, 61_000), 12);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 2);
+	// 未启用 / 无 cwd 直接 null，不跑命令。
+	assert.equal(getPrNumber("D:/repo", false, run, 0), null);
+	assert.equal(getPrNumber("", true, run, 0), null);
+	assert.equal(calls, 2);
+	_resetPrCache();
+	const failing = async (_cwd: string): Promise<string> => {
+		throw new Error("no gh");
+	};
+	assert.equal(getPrNumber("D:/repo", true, failing, 0), null);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(getPrNumber("D:/repo", true, failing, 1000), null);
 });

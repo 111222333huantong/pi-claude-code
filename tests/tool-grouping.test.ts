@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
-	ToolExecutionComponent,
 	initTheme,
+	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 
@@ -42,7 +42,7 @@ test("restored tools still render as running with the braille loader", () => {
 });
 
 test("mixed tools group across three empty separators while edit/write and content break groups", () => {
-	let enabled = true;
+	const enabled = true;
 	const hooks = installToolGrouping(() => enabled);
 	try {
 		const parent = new Container() as any;
@@ -181,7 +181,7 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 		);
 		assert.match(expanded, /^ │ ├ Input\s*$/m, "nested tree aligns with the status dot");
 		assert.match(expanded, /^ │ │ path: sample\.ts\s*$/m);
-		assert.match(expanded, /^ │   ok\s*$/m, "output content retains its relative indent");
+		assert.match(expanded, /^ │ {3}ok\s*$/m, "output content retains its relative indent");
 	} finally {
 		hooks.shutdown();
 	}

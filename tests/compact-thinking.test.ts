@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 
 import { config as ccstyleConfig } from "../extensions/config/config.ts";
 import {
@@ -240,7 +240,7 @@ test("session tree restores durations from all entries so old messages keep Thou
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const { emit, pi } = runtime();
-	let durationEntry: any = {
+	const durationEntry: any = {
 		type: "custom",
 		customType: "compact-thinking-duration",
 		data: { messageTimestamp: 0, contentIndex: 0, durationMs: 1234 },

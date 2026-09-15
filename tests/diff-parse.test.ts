@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateDiffString } from "@earendil-works/pi-coding-agent";
-import { parseDiff, type DiffLineEntry } from "../extensions/renderer/tool/diff/diff-parse.ts";
+import { type DiffLineEntry, parseDiff } from "../extensions/renderer/tool/diff/diff-parse.ts";
 
 const expectedLines = [
 	{

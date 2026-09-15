@@ -41,8 +41,8 @@ export function osc8LinkRanges(line: string): Array<{ startCol: number; endCol: 
 	// open 必含非空 URI（`8;params;URI ST`），close 为空（`8;;ST`），两者严格区分。
 	const openRe = /\x1b\]8;[^\x07\x1b]*;[^\x07\x1b]+(?:\x07|\x1b\\)/g;
 	const closeRe = /\x1b\]8;;(?:\x07|\x1b\\)/g;
-	let open: RegExpExecArray | null;
-	while ((open = openRe.exec(line)) !== null) {
+	let open: RegExpExecArray | null = openRe.exec(line);
+	while (open !== null) {
 		const textStart = open.index + open[0].length;
 		closeRe.lastIndex = textStart;
 		const close = closeRe.exec(line);
@@ -58,6 +58,7 @@ export function osc8LinkRanges(line: string): Array<{ startCol: number; endCol: 
 		}
 		if (!close) break;
 		openRe.lastIndex = close.index + close[0].length;
+		open = openRe.exec(line);
 	}
 	return ranges;
 }

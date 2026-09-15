@@ -1,11 +1,11 @@
 import { createWriteToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../../../config/config.ts";
 import {
+	type DisplayConfigInput,
 	renderEditDiffResult,
 	renderWriteDiffResult,
-	type DisplayConfigInput,
 } from "./diff-renderer.ts";
-import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../../../config/config.ts";
 import { executeWriteWithMetadata, WriteExecutionMetadataStore } from "./write-execution.ts";
 
 function resultText(result: any): string {
@@ -118,9 +118,9 @@ export function installWriteOverride(
 
 export {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
-	type ToolDisplayConfig,
-	type DiffViewMode,
 	type DiffIndicatorMode,
+	type DiffViewMode,
+	type ToolDisplayConfig,
 } from "../../../config/config.ts";
 export type { DisplayConfigInput } from "./diff-renderer.ts";
 export { WriteExecutionMetadataStore } from "./write-execution.ts";

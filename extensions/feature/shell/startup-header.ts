@@ -6,14 +6,16 @@
  * Phoobobo/pi-claude-code-tui (MIT, Phoobobo). Layout, gradient removal and
  * the native-hints right column are original to this package.
  */
-import { VERSION } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VERSION } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
-import { PI_MASCOT_FRAME_COUNT, PI_MASCOT_WIDTH, piMascotFrame } from "./mascot.ts";
-import { collectLoadedStats, resolveAgentDir, type LoadedStats } from "./loaded-stats.ts";
+import { shortenCwd } from "../../utils/format.ts";
+import { collectLoadedStats, type LoadedStats, resolveAgentDir } from "./loaded-stats.ts";
+import { PI_MASCOT_FRAME_COUNT, piMascotFrame } from "./mascot.ts";
 import { createQuietStartupFile } from "./quiet-startup.ts";
 
 // 左右双栏布局：左侧 mascot + 模型/目录，右侧 Getting started + Loaded
@@ -178,7 +180,7 @@ function twoColumn(
 // ---- 文本格式化（pi-claude-code-tui 原体，MIT） ----
 
 function formatCwd(cwd: string, home: string = homedir()): string {
-	return home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
+	return shortenCwd(cwd, home);
 }
 
 function formatModelLabel(model: { provider?: string; id?: string } | null | undefined): string {

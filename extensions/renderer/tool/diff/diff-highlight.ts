@@ -1,17 +1,17 @@
 import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
-import { sanitizeAnsiForThemedOutput } from "./ansi-utils.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
-import { MAX_HL_CHARS, shikiHighlightCache } from "./shiki-highlight.ts";
-import { normalizeCodeWhitespace } from "./diff-text.ts";
+import { sanitizeAnsiForThemedOutput } from "./ansi-utils.ts";
+import type { DiffSpan } from "./diff-inline.ts";
 import {
 	applyInlineSpanHighlight,
-	getLineBackground,
-	resolveShikiTheme,
 	type DiffPalette,
 	type DiffTheme,
+	getLineBackground,
+	resolveShikiTheme,
 } from "./diff-palette.ts";
 import type { DiffLineEntry, ParsedDiffEntry } from "./diff-parse.ts";
-import type { DiffSpan } from "./diff-inline.ts";
+import { normalizeCodeWhitespace } from "./diff-text.ts";
+import { MAX_HL_CHARS, shikiHighlightCache } from "./shiki-highlight.ts";
 
 export type CodeLineHighlighter = (line: string, entry: DiffLineEntry) => string;
 
@@ -24,7 +24,7 @@ export function shouldHighlightCodeBlock(code: string): boolean {
 }
 
 export function resolveLanguageFromPath(rawPath: string | undefined): string | undefined {
-	if (!rawPath || !rawPath.trim()) {
+	if (!rawPath?.trim()) {
 		return undefined;
 	}
 	const normalizedPath = rawPath.replace(/^@/, "").trim();

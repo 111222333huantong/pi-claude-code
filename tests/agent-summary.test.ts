@@ -1,16 +1,16 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import agentSummaryFeature, {
-	AGENT_SUMMARY_ENTRY_TYPE,
-} from "../extensions/feature/agent-summary/index.ts";
 import {
 	AgentRunSummary,
+	type AgentSummaryData,
 	bindAgentSummary,
 	classifyTool,
 	summaryMarkdown,
-	type AgentSummaryData,
 } from "../extensions/feature/agent-summary/core.ts";
+import agentSummaryFeature, {
+	AGENT_SUMMARY_ENTRY_TYPE,
+} from "../extensions/feature/agent-summary/index.ts";
 
 function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");

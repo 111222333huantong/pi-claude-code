@@ -11,11 +11,10 @@ import {
 	hexToRgb,
 	mixRgb,
 	parseAnsiRgb,
-	rgbToFgAnsi,
+	RESET,
 	type Rgb,
+	rgbToFgAnsi,
 } from "./spinner-color.ts";
-
-import { RESET } from "./spinner-color.ts";
 
 export const SHIMMER_BAND_WIDTH = 6;
 

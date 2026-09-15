@@ -1,12 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Loader, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { subscribeShimmer, subscribeTicker } from "./spinner-ticker.ts";
-import { RESET, hexToFgAnsi } from "./spinner-color.ts";
-import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinner-shimmer.ts";
-import { pickVerb } from "./spinner-verbs.ts";
-import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
-import { formatDuration } from "../../utils/format.ts";
 import { config } from "../../config/config.ts";
+import { formatDuration, formatTokens } from "../../utils/format.ts";
+import { hexToFgAnsi, RESET } from "./spinner-color.ts";
+import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
+import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinner-shimmer.ts";
+import {
+	claimTickerGeneration,
+	isStaleTickerGeneration,
+	subscribeShimmer,
+	subscribeTicker,
+} from "./spinner-ticker.ts";
+import { pickVerb } from "./spinner-verbs.ts";
 
 type ContentBlock = {
 	type?: unknown;
@@ -249,16 +254,9 @@ function formatWorkingDuration(ms: number): string {
 	return formatDuration(ms) || "0s";
 }
 
-/** Claude-style compact token counts: 18, 1.4k, 12k */
+/** Claude-style compact token counts: 18, 1.4k, 12k（收口自 utils/format）。 */
 function formatTokenCount(value: number): string {
-	const n = Math.max(0, Math.round(value));
-	if (n < 1000) return String(n);
-	const k = n / 1000;
-	if (k < 10) {
-		const oneDecimal = Math.round(k * 10) / 10;
-		return `${oneDecimal % 1 === 0 ? oneDecimal.toFixed(0) : oneDecimal.toFixed(1)}k`;
-	}
-	return `${Math.round(k)}k`;
+	return formatTokens(value);
 }
 
 function statusText(text: string): string {
@@ -283,6 +281,8 @@ const TURN_COMPLETION_MS = 2_500;
  */
 export default function (pi: ExtensionAPI): void {
 	if (!spinnerModuleEnabled()) return;
+	// 代际令牌：reload 后旧实例的 shimmer 回调自检过期并自退订。
+	const tickerGeneration = claimTickerGeneration();
 	let agentStartTime = 0;
 	let turnStartTime = 0;
 	let completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -409,6 +409,11 @@ export default function (pi: ExtensionAPI): void {
 	function scheduleRefreshTick(): void {
 		if (!turnActive || shimmerUnsub) return;
 		shimmerUnsub = subscribeShimmer(() => {
+			if (isStaleTickerGeneration(tickerGeneration)) {
+				// reload 后旧实例残留：退订自己，不再碰失效 ctx。
+				stopRefreshLoop();
+				return;
+			}
 			if (!turnActive) return;
 			syncWorkingMessage();
 		});

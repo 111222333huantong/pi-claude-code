@@ -9,7 +9,7 @@
 		"includes": [
 			"extensions/**/*.ts",
 			"tests/**/*.ts",
-			"scripts/**/*.mjs",
+			"scripts/**/*.ts",
 			"package.json",
 			"themes/**/*.json"
 		]
@@ -23,14 +23,32 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"preset": "none",
+			"preset": "recommended",
+			"suspicious": {
+				// 终端转义（\x1b）在正则里是本项目的领域常态，非误写。
+				"noControlCharactersInRegex": "off",
+				"noExplicitAny": "off"
+			},
+			"style": {
+				// 补丁/桩代码里 `!` 是既定风格（101 处），逐条改噪音大于收益。
+				"noNonNullAssertion": "off"
+			},
+			"complexity": {
+				// 补丁与测试桩大量用 `Function` 描述无类型 Pi API（67 处）。
+				"noBannedTypes": "off"
+			},
 			"correctness": {
 				"noUnusedVariables": "error"
 			}
 		}
 	},
 	"assist": {
-		"enabled": false
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
 	},
 	"javascript": {
 		"formatter": {

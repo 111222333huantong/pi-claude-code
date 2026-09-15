@@ -1,14 +1,14 @@
-import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
+import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { subscribeTicker } from "../../feature/shell/spinner-ticker.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
 import {
-	TOOL_LOADING_INTERVAL_MS,
 	pendingDotColor,
+	TOOL_LOADING_INTERVAL_MS,
 	toolLoadingIcon,
 } from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
 
@@ -117,7 +117,8 @@ export function clearAllAnimations() {
 }
 
 export function scheduleAnimation(context: any, _intervalMs = TOOL_LOADING_INTERVAL_MS) {
-	const state = (context.state ??= {});
+	const state = context.state ?? {};
+	context.state = state;
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);
@@ -130,7 +131,7 @@ export function pendingIcon(_name: string): string {
 
 type ToolVisualState = "pending" | "success" | "error";
 
-export function settledIcon(name: string, state: ToolVisualState | undefined): string {
+export function settledIcon(_name: string, state: ToolVisualState | undefined): string {
 	if (state === "success") return "✓";
 	if (state === "error") return "✗";
 	// toolIcon(name) 曾恒返回 "●"，已内联；name 保留以稳定导出签名。
@@ -138,7 +139,8 @@ export function settledIcon(name: string, state: ToolVisualState | undefined): s
 }
 
 export function setToolVisualState(context: any, visualState: ToolVisualState) {
-	const state = (context.state ??= {});
+	const state = context.state ?? {};
+	context.state = state;
 	if (visualState !== "pending") clearAnimation(context);
 	if (state.ccstyleToolVisualState === visualState) return;
 	state.ccstyleToolVisualState = visualState;
@@ -568,7 +570,7 @@ export function headTruncateToWidth(text: string, width: number): string {
 	if (width <= 1) return "…";
 	let left = "";
 	for (const char of Array.from(text)) {
-		if (visibleWidth(left + "…" + char) > width) break;
+		if (visibleWidth(`${left}…${char}`) > width) break;
 		left += char;
 	}
 	return `${left}…`;
@@ -587,7 +589,7 @@ export function middleTruncateToWidth(text: string, width: number): string {
 		left += char;
 	}
 	for (const char of chars.reverse()) {
-		if (visibleWidth(left + "…" + char + right) > width) break;
+		if (visibleWidth(`${left}…${char}${right}`) > width) break;
 		right = char + right;
 	}
 	return `${left}…${right}`;

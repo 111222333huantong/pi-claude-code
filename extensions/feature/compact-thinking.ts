@@ -12,21 +12,26 @@ import {
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+	Box,
+	type Component,
 	getKeybindings,
+	Markdown,
+	Spacer,
+	Text,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
-import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
 import { formatThoughtDuration, styleCompactThinkingText } from "../renderer/compact-mode.ts";
+import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
 import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 import {
 	COMPACT_THINKING_OWNER,
 	COMPACT_THINKING_PATCH_KEY,
-	patchRegistry,
 	PROTOTYPE_ORIGINAL_KEY,
+	patchRegistry,
 } from "../utils/patch-keys.ts";
+
 // pi-tui 类型声明中 TUI 的 re-export 解析失败，本地用最小结构化类型（只用到 requestRender）。
 type RenderTui = { requestRender(force?: boolean): void };
 
@@ -650,8 +655,11 @@ function parseLatestStreamingSummary(text: string): SummaryPart | undefined {
 	// summary parts, so accept a bold title at the start of any source line.
 	const titlePattern = /(?:^|\r?\n)\s*\*\*([^\n*]+?)\*\*[ \t]*(?:\r?\n)?/g;
 	let latest: RegExpExecArray | undefined;
-	let match: RegExpExecArray | null;
-	while ((match = titlePattern.exec(text))) latest = match;
+	let match: RegExpExecArray | null = titlePattern.exec(text);
+	while (match !== null) {
+		latest = match;
+		match = titlePattern.exec(text);
+	}
 	if (!latest) return parseSummaryPart(text);
 
 	return {

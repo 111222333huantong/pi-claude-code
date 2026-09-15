@@ -89,7 +89,7 @@ export function stripBackgroundSgrParams(params: readonly number[]): number[] {
 }
 
 export function filterSgrSequences(text: string, filter: (params: number[]) => number[]): string {
-	if (!text || !text.includes("\x1b[")) {
+	if (!text?.includes("\x1b[")) {
 		return text;
 	}
 

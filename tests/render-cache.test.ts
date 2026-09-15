@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	ExpandedToolIoView,
 	ExpandedToolResultText,
 	formatToolInputArgs,
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { createDiffRenderCache } from "../extensions/renderer/tool/diff/diff-component.ts";
 
 function expectedExpandedLines(text: string, prefix: string, width: number): string[] {
 	const normalized = text.replace(/\t/g, "   ").replace(/\n+$/, "");
@@ -177,4 +178,22 @@ test("ExpandedToolIoView records exact show-more header rows, not body text", ()
 	);
 	assert.ok(decoyRow > 0, "body still paints the decoy text");
 	assert.ok(!headers.some((h) => h.line === decoyRow));
+});
+
+test("write diff render caches by width and drops cache on invalidate", () => {
+	// 改编自 cc-my-pi test-render-cache §1（暖缓存一致 + 失效重建）。
+	// 直接测 createDiffRenderCache：行级 strictEqual 不受 shiki 异步升级干扰。
+	const cache = createDiffRenderCache();
+	const rows = ["header", "body"];
+	assert.strictEqual(cache.set(100, true, "unified", "key", false, rows), rows);
+	assert.strictEqual(
+		cache.get(100, true, "unified", "key", false),
+		rows,
+		"same key reuses the cached rows",
+	);
+	assert.equal(cache.get(80, true, "unified", "key", false), undefined, "width miss rebuilds");
+	assert.equal(cache.get(100, true, "split", "key", false), undefined, "mode miss rebuilds");
+	assert.equal(cache.get(100, true, "unified", "key", true), undefined, "hover miss rebuilds");
+	cache.invalidate();
+	assert.equal(cache.get(100, true, "unified", "key", false), undefined, "invalidate drops all");
 });

@@ -5,13 +5,14 @@
  *    边框/留白/底色/附件树/图片块全部保持 Pi 原生。
  * B. 输入框：提示行加 `❯ `；bash `!` 开头与已装饰行放过，续行不动。
  */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../config/config.ts";
-import { PROMPT_GLYPH_FACTORY, USER_MESSAGE_PATCH, patchRegistry } from "../utils/patch-keys.ts";
 import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
+import { PROMPT_GLYPH_FACTORY, patchRegistry, USER_MESSAGE_PATCH } from "../utils/patch-keys.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 
 /** 箭头前缀 `❯ `。 */

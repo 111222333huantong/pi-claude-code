@@ -43,20 +43,23 @@ export function getPrNumber(
 	enabled: boolean,
 	run: Runner = defaultRunner,
 	now: number = Date.now(),
+	// 分支名：切分支即换 key 立刷，避免旧分支 PR 号残留 60s（不传则退化为按 cwd）。
+	branch?: string | null,
 ): number | null {
 	if (!enabled || !cwd) return null;
-	const hit = cache.get(cwd);
+	const key = branch ? `${cwd}\0${branch}` : cwd;
+	const hit = cache.get(key);
 	if (hit && now - hit.at < PR_CACHE_TTL_MS) return hit.value;
-	if (inFlight.has(cwd)) return hit?.value ?? null;
-	inFlight.add(cwd);
+	if (inFlight.has(key)) return hit?.value ?? null;
+	inFlight.add(key);
 	run(cwd).then(
 		(out) => {
-			cache.set(cwd, { at: now, value: parsePrNumber(out) });
-			inFlight.delete(cwd);
+			cache.set(key, { at: now, value: parsePrNumber(out) });
+			inFlight.delete(key);
 		},
 		() => {
-			cache.set(cwd, { at: now, value: null });
-			inFlight.delete(cwd);
+			cache.set(key, { at: now, value: null });
+			inFlight.delete(key);
 		},
 	);
 	return hit?.value ?? null;

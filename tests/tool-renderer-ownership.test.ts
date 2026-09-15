@@ -3,12 +3,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-	ToolExecutionComponent,
 	initTheme,
 	type ToolDefinition,
+	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
+
 type AnyToolDefinition = ToolDefinition<any, any, any>;
+
 import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
@@ -196,7 +198,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			.render(100)
 			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 			.find((line: string) => line.includes("↳"));
-		assert.match(editMarker!, /^   ↳/, "rich diff marker is nested two columns inside the tool");
+		assert.match(editMarker!, /^ {3}↳/, "rich diff marker is nested two columns inside the tool");
 	} finally {
 		await events.get("session_shutdown")?.({}, ctx);
 	}

@@ -1,51 +1,51 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { installToolGrouping, type ToolGroupingHooks } from "./tool/grouping.ts";
 import {
-	installCompactMode,
-	refreshCompactModeComponents,
-	type CompactModeHooks,
-	type CompactThinkingQuery,
-} from "./compact-mode.ts";
-import {
-	installDefaultMode,
-	installToolExpandedBackground,
-	type DefaultModeHooks,
-} from "./default-mode.ts";
-import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
-import { showCcstylePanel } from "../config/panel.ts";
-import {
+	type CompactStyleMode,
+	type Config,
 	config,
 	consumeConfigLoadError,
 	formatConfigStatus,
 	normalizeConfig,
 	setConfig,
 	updateConfig,
-	type CompactStyleMode,
-	type Config,
 } from "../config/config.ts";
+import { showCcstylePanel } from "../config/panel.ts";
+import type { CompactThinkingController } from "../feature/compact-thinking.ts";
+import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
+import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
+import {
+	type CompactModeHooks,
+	type CompactThinkingQuery,
+	installCompactMode,
+	refreshCompactModeComponents,
+} from "./compact-mode.ts";
+import {
+	type DefaultModeHooks,
+	installDefaultMode,
+	installToolExpandedBackground,
+} from "./default-mode.ts";
+import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import {
 	ensureFullscreenViewportInput,
 	installToolMouseInteraction,
 	resetToolHoverState,
 	restoreFullscreenViewportInput,
 	scheduleSessionRender,
-	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
+	teardownToolMouseInteraction,
 } from "./mouse/interaction.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
-import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
-import { clearAllAnimations } from "./tool/result.ts";
+import { setCodeBlockTheme } from "./tool/code-block.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { prewarmShikiHighlight } from "./tool/diff/shiki-highlight.ts";
+import { installToolGrouping, type ToolGroupingHooks } from "./tool/grouping.ts";
 import {
 	installMessageDisplayRendering,
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
-import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
+import { clearAllAnimations } from "./tool/result.ts";
 import { installUserMessageRender, refreshUserMessages } from "./user-message.ts";
-import { setCodeBlockTheme } from "./tool/code-block.ts";
 
 /**
  * Claude Code Style for pi — 装配入口。
@@ -227,7 +227,7 @@ export default function (
 		}, 0);
 	});
 
-	pi.on("session_start", async (event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		// 配置文件损坏时启动 toast 一次（消费即清，修好后不再打扰）。
 		try {
 			const loadError = consumeConfigLoadError();
@@ -258,7 +258,7 @@ export default function (
 		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
 	});
 
-	pi.on("session_compact", async (event, ctx) => {
+	pi.on("session_compact", async (_event, ctx) => {
 		const hooks = ensureTuiInstallation(ctx);
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
@@ -274,7 +274,7 @@ export default function (
 		});
 	});
 
-	pi.on("session_tree", async (event, ctx) => {
+	pi.on("session_tree", async (_event, ctx) => {
 		// 会话树重建后在当前帧和下一帧各同步一次，替换旧组件引用。
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		syncCompactMode(ctx);
@@ -292,7 +292,7 @@ export default function (
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);
 		const current = installation;
-		if (!current || !current.defaultMode.isOwner()) return;
+		if (current?.defaultMode.isOwner() !== true) return;
 		current.defaultMode.shutdown();
 		current.toolGrouping.shutdown();
 		current.disposeToolExpandedBackground();
@@ -315,10 +315,10 @@ export {
 	preservesOriginalRenderer,
 	shouldRenderRichDiff,
 } from "./default-mode.ts";
+export { installToolMouseInteraction } from "./mouse/interaction.ts";
 export {
 	ExpandedToolIoView,
 	ExpandedToolResultText,
 	formatToolInputArgs,
 	SHOW_MORE_LABEL,
 } from "./tool/result.ts";
-export { installToolMouseInteraction } from "./mouse/interaction.ts";

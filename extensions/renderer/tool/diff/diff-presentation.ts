@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { pluralize } from "./diff-text.ts";
 import type { ToolDisplayConfig } from "../../../config/config.ts";
+import { pluralize } from "./diff-text.ts";
 
 export interface DiffSummaryStats {
 	added: number;
@@ -34,15 +34,14 @@ export function resolveDiffPresentationMode(
 		return "compact";
 	}
 
-	switch (config.diffViewMode) {
-		case "split":
-			return canRenderSplitLayout ? "split" : "unified";
-		case "unified":
-			return "unified";
-		case "auto":
-		default:
-			return safeWidth >= config.diffSplitMinWidth && canRenderSplitLayout ? "split" : "unified";
+	if (config.diffViewMode === "split") {
+		return canRenderSplitLayout ? "split" : "unified";
 	}
+	if (config.diffViewMode === "unified") {
+		return "unified";
+	}
+	// "auto" 及未知模式：够宽且可分栏走 split，否则 unified。
+	return safeWidth >= config.diffSplitMinWidth && canRenderSplitLayout ? "split" : "unified";
 }
 
 export function buildDiffSummaryText(stats: DiffSummaryStats, width: number): string {

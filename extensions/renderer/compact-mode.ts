@@ -19,29 +19,13 @@
  */
 import {
 	AssistantMessageComponent,
-	ToolExecutionComponent,
 	type Theme,
+	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
+import { Box, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
-import { pendingDotColor, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
-import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
-import { refreshTranscriptComponent } from "./transcript-refresh.ts";
-import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { showMoreHintText } from "./tool/show-more-hint.ts";
-import {
-	countEditDiffStats,
-	countWriteDiffStats,
-	isRichDiffComponent,
-} from "./tool/diff/diff-renderer.ts";
-import { renderRichToolResult } from "./tool/diff/index.ts";
-import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
-import { isToolCallHovered } from "./mouse/hover.ts";
-import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
-import { paddedBackgroundRow } from "./tool/grouping.ts";
-import { formatDisplayPath } from "./tool/names.ts";
-import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
 import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
+import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import {
 	ASSISTANT_REENTRY_KEY,
@@ -49,9 +33,26 @@ import {
 	ASSISTANT_TOGGLE_ROUND_KEY,
 	COMPACT_MODE_PATCH_KEY,
 	COMPACT_THINKING_PATCH_KEY,
-	patchRegistry,
 	PROTOTYPE_ORIGINAL_KEY,
+	patchRegistry,
 } from "../utils/patch-keys.ts";
+import { pendingDotColor, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
+import { formatElapsedShort } from "../utils/tool-metrics.ts";
+import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
+import { isToolCallHovered } from "./mouse/hover.ts";
+import {
+	countEditDiffStats,
+	countWriteDiffStats,
+	isRichDiffComponent,
+} from "./tool/diff/diff-renderer.ts";
+import { renderRichToolResult } from "./tool/diff/index.ts";
+import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
+import { paddedBackgroundRow } from "./tool/grouping.ts";
+import { getMessageDisplayTheme } from "./tool/message-display.ts";
+import { formatDisplayPath } from "./tool/names.ts";
+import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
+import { showMoreHintText } from "./tool/show-more-hint.ts";
+import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 
 /** compact 渲染层对 compact-thinking 的只读查询面（不建第二套计时器）。 */
 export type CompactThinkingQuery = {
@@ -534,19 +535,25 @@ function compactEditWriteLine(
 	let statsText = "";
 	let statsStyled = "";
 	if (!isError && !isPending) {
+		const writeMeta = name === "write" ? writeMetadata?.get(component.toolCallId) : undefined;
 		const stats =
 			name === "edit"
 				? countEditDiffStats(component.result?.details)
 				: name === "write"
 					? countWriteDiffStats(
 							typeof args.content === "string" ? args.content : undefined,
-							writeMetadata?.get(component.toolCallId)?.previousContent,
-							writeMetadata?.get(component.toolCallId)?.fileExistedBeforeWrite,
+							writeMeta?.previousContent,
+							writeMeta?.fileExistedBeforeWrite,
 						)
 					: undefined;
 		if (stats) {
 			statsText = ` (+${stats.added} -${stats.removed})`;
 			statsStyled = ` ${theme.fg("dim", "(")}${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}${theme.fg("dim", ")")}`;
+			const elapsed = formatElapsedShort(writeMeta?.elapsedMs ?? 0);
+			if (elapsed) {
+				statsText += ` ·${elapsed}`;
+				statsStyled += theme.fg("dim", ` ·${elapsed}`);
+			}
 		}
 	}
 	// 展开卡 Box(1,1) 已 pad；折叠行自己留 1 格前导空格
@@ -635,7 +642,8 @@ function compactEditWriteLines(
 						.join("\n")
 				: "",
 		);
-		const state = (component.state ??= {});
+		const state = component.state ?? {};
+		component.state = state;
 		detail = renderExpandedToolResult(
 			outputText,
 			theme,

@@ -1,11 +1,11 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeAnsiForThemedOutput } from "./ansi-utils.ts";
-import { normalizeCodeWhitespace, wrapToWidth } from "./diff-text.ts";
-import { emphasis, stabilizeBackgroundResets, type DiffTheme } from "./diff-palette.ts";
+import type { RenderedRow } from "./diff-layout.ts";
 import { clampDiffLineToWidth } from "./diff-limits.ts";
+import { type DiffTheme, emphasis, stabilizeBackgroundResets } from "./diff-palette.ts";
 import type { DiffMetaEntry, DiffStats } from "./diff-parse.ts";
 import type { DiffPresentationMode } from "./diff-presentation.ts";
-import type { RenderedRow } from "./diff-layout.ts";
+import { normalizeCodeWhitespace, wrapToWidth } from "./diff-text.ts";
 
 export function formatMetaEntryRows(
 	entry: DiffMetaEntry,

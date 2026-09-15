@@ -4,36 +4,30 @@
  *   docs/tool-render-examples-compact.md  （mode=compact）
  * 入口：npm run docs:tool-render
  */
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
-	ToolExecutionComponent,
 	initTheme,
+	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container } from "@earendil-works/pi-tui";
+import { config } from "../extensions/config/config.ts";
+import { buildMessageSummary, installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import claudeCodeStyle from "../extensions/renderer/index.ts";
-import {
-	buildMessageSummary,
-	installCompactMode,
-} from "../extensions/renderer/compact-mode.ts";
-import {
-	installToolGrouping,
-	ToolGroupComponent,
-} from "../extensions/renderer/tool/grouping.ts";
-import {
-	getMessageDisplayTheme,
-	setMessageDisplayTheme,
-} from "../extensions/renderer/tool/message-display.ts";
-import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
 } from "../extensions/renderer/tool/diff/index.ts";
-import { config } from "../extensions/config/config.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	getMessageDisplayTheme,
+	setMessageDisplayTheme,
+} from "../extensions/renderer/tool/message-display.ts";
+import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -401,9 +395,7 @@ async function generateDefault() {
 			parent.addChild(grep);
 			const group = parent.children[0];
 			if (!(group instanceof ToolGroupComponent)) {
-				throw new Error(
-					`expected tool group, got ${group?.constructor?.name ?? typeof group}`,
-				);
+				throw new Error(`expected tool group, got ${group?.constructor?.name ?? typeof group}`);
 			}
 
 			const running = renderLines(group);
@@ -553,7 +545,10 @@ async function generateCompact() {
 			succeed(tool("read", "x2", { path: "a.ts" }), "line1\nline2");
 			// 发送最终文本结束回合，展开时摘要显示 Ran for（而非 Running...）。
 			new AssistantMessageComponent(
-				{ role: "assistant", content: [{ type: "text", text: "done" }] } as unknown as AssistantMessage,
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "done" }],
+				} as unknown as AssistantMessage,
 				true,
 			).updateContent({
 				role: "assistant",
@@ -637,11 +632,7 @@ async function generateCompact() {
 
 		// 3. edit/write 独立行
 		{
-			const editDiff = [
-				"@@ -1 +1 @@",
-				"-const x = 1",
-				"+const x = 2",
-			].join("\n");
+			const editDiff = ["@@ -1 +1 @@", "-const x = 1", "+const x = 2"].join("\n");
 			const edit = succeed(tool("edit", "ce1", { path: "sample.ts" }), undefined, {
 				diff: editDiff,
 			});
@@ -665,9 +656,11 @@ async function generateCompact() {
 				[
 					"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
 					fence([
-						...renderLines(succeed(tool("edit", "ce2", { path: "sample.ts" }), undefined, {
-							diff: editDiff,
-						})),
+						...renderLines(
+							succeed(tool("edit", "ce2", { path: "sample.ts" }), undefined, {
+								diff: editDiff,
+							}),
+						),
 						...renderLines(write),
 					]),
 					"展开 edit：",
@@ -687,10 +680,7 @@ async function generateCompact() {
 			chunks.push(
 				section(
 					"4. 无 toolCall 的最终回复",
-					[
-						"不含 toolCall 的 assistant 走原生渲染：",
-						fence(renderLines(final)),
-					].join("\n\n"),
+					["不含 toolCall 的 assistant 走原生渲染：", fence(renderLines(final))].join("\n\n"),
 				),
 			);
 		}

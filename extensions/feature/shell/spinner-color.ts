@@ -7,48 +7,19 @@
  * FammasMaz). Only the helpers the spinner shimmer needs are included.
  */
 
+import { ansi256ToRgb } from "../../utils/ansi-color.ts";
+
 export type Rgb = { r: number; g: number; b: number };
 
 export const ESC = "\u001B";
 export const RESET = `${ESC}[0m`;
 const FG = `${ESC}[38;2;`;
 
-const CUBE_VALUES = [0, 95, 135, 175, 215, 255];
-
 export function xterm256ToRgb(index: number): Rgb | null {
 	if (!Number.isInteger(index) || index < 0 || index > 255) return null;
-	if (index < 16) {
-		const basic: Array<[number, number, number]> = [
-			[0, 0, 0],
-			[128, 0, 0],
-			[0, 128, 0],
-			[128, 128, 0],
-			[0, 0, 128],
-			[128, 0, 128],
-			[0, 128, 128],
-			[192, 192, 192],
-			[128, 128, 128],
-			[255, 0, 0],
-			[0, 255, 0],
-			[255, 255, 0],
-			[0, 0, 255],
-			[255, 0, 255],
-			[0, 255, 255],
-			[255, 255, 255],
-		];
-		const [r, g, b] = basic[index] ?? [255, 255, 255];
-		return { r, g, b };
-	}
-	if (index < 232) {
-		const i = index - 16;
-		return {
-			r: CUBE_VALUES[Math.floor(i / 36) % 6] ?? 0,
-			g: CUBE_VALUES[Math.floor(i / 6) % 6] ?? 0,
-			b: CUBE_VALUES[i % 6] ?? 0,
-		};
-	}
-	const level = 8 + (index - 232) * 10;
-	return { r: level, g: level, b: level };
+	// 色表唯一真相源收口自 utils/ansi-color（钳制逻辑在 utils 侧，此处保留越界 null 语义）。
+	const [r, g, b] = ansi256ToRgb(index);
+	return { r, g, b };
 }
 
 export function parseAnsiRgb(ansi: string): Rgb | null {

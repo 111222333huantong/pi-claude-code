@@ -2,16 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import type { LoadedStats } from "../extensions/feature/shell/loaded-stats.ts";
 import {
-	renderHeaderLines,
 	applyStartupHeader,
-} from "../extensions/feature/shell/startup-header.ts";
-import {
-	headerAnimState,
 	ensureHeaderAnimTick,
+	headerAnimState,
+	renderHeaderLines,
 	resetHeaderAnimation,
 } from "../extensions/feature/shell/startup-header.ts";
-import type { LoadedStats } from "../extensions/feature/shell/loaded-stats.ts";
 
 // 模拟 pi 运行时：注册 app.* 键绑定（默认与 pi 内置一致）
 setKeybindings(

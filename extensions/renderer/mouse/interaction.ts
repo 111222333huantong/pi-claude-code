@@ -1,37 +1,35 @@
-import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
-import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
-import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
-import { ToolGroupComponent } from "../tool/grouping.ts";
-import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
-import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
+import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
+import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
+import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
+import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
+import { ToolGroupComponent } from "../tool/grouping.ts";
+import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import {
 	type ExpandedToolIoView,
 	getActiveIoViewFrame,
-	isExpandedToolIoView,
 	type IoViewFrameState,
+	isExpandedToolIoView,
 	setActiveIoViewFrame,
 	type ToolIoSection,
 } from "../tool/result.ts";
+import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
 import {
-	collectToolComponents,
-	extractToolFramePlacements,
-	isSgrLeftPress,
-	isSgrLeftRelease,
-	isToolExecutionComponent,
-	parseSgrMousePackets,
-	stripTerminalSequences,
-	stripTerminalSequencesPreservingLayout,
-	toolFrameMarker,
-	type FrameToolPlacement,
-	type SgrMousePacket,
-} from "./packets.ts";
+	applyFullscreenHover,
+	cachedFullscreenComponentAtRow,
+	type FullscreenHoverTarget,
+	setHoveredMessageDisplay,
+	setHoveredThinking,
+	setHoveredToolCallId,
+	setHoveredToolGroup,
+	setHoveredToolIo,
+	sharedToolHoverState,
+} from "./hover.ts";
 import {
+	collapsedHintHitbox,
 	collectFullscreenToolCards,
 	componentAtLocalRow,
-	collapsedHintHitbox,
 	fullscreenContentWidth,
 	fullscreenLeafAt,
 	HINT_HITBOX_PAD_COLS,
@@ -39,8 +37,24 @@ import {
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
+	collectToolComponents,
+	extractToolFramePlacements,
+	type FrameToolPlacement,
+	isSgrLeftPress,
+	isSgrLeftRelease,
+	isToolExecutionComponent,
+	parseSgrMousePackets,
+	type SgrMousePacket,
+	stripTerminalSequences,
+	stripTerminalSequencesPreservingLayout,
+	toolFrameMarker,
+} from "./packets.ts";
+import {
 	disableOfficialScrollToEnd,
 	fullscreenLazyTui,
+	getScrollButtonVisible,
+	getScrollButtonWidget,
+	getToolMouseTui,
 	hideScrollButton,
 	isScrollBottomInput,
 	renderScrollButton,
@@ -50,23 +64,9 @@ import {
 	setScrollButtonVisible,
 	setScrollButtonWidget,
 	setToolMouseTui,
-	getScrollButtonVisible,
-	getScrollButtonWidget,
-	getToolMouseTui,
 	toolMouseInteractionActive,
 	updateScrollButtonFromInput,
 } from "./scroll.ts";
-import {
-	applyFullscreenHover,
-	cachedFullscreenComponentAtRow,
-	sharedToolHoverState,
-	setHoveredToolCallId,
-	setHoveredToolGroup,
-	setHoveredThinking,
-	setHoveredMessageDisplay,
-	setHoveredToolIo,
-	type FullscreenHoverTarget,
-} from "./hover.ts";
 
 type FrameToolRender = {
 	component: any;
@@ -404,11 +404,24 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 /**
  * fullscreen 鼠标悬停：collapsed 卡 [click to show more] hint、
  * expanded 卡截断头 show-more、回到底部按钮。motion 不 consume，官方链照常。
+ *
+ * 同格跳过：滚轮/拖拽风暴里同一格会连报多次，布局树 walk 结果必相同，
+ * 直接跳过（hover 状态无变化，`applyFullscreenHover` 本来也不会重绘）。
  */
+let lastFullscreenHoverCell: { col: number; row: number; layout: unknown } | null = null;
+
 function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	if (packet.final !== "M") return;
 	const layout = tui.currentLayout;
 	if (!layout?.root) return;
+	if (
+		lastFullscreenHoverCell?.col === packet.col &&
+		lastFullscreenHoverCell?.row === packet.row &&
+		lastFullscreenHoverCell?.layout === layout
+	) {
+		return;
+	}
+	lastFullscreenHoverCell = { col: packet.col, row: packet.row, layout };
 	const x = packet.col - 1;
 	const y = packet.row - 1;
 	let target: FullscreenHoverTarget | null = null;
@@ -515,7 +528,7 @@ function patchFullscreenViewportInput(tui: any): void {
 }
 
 export function restoreFullscreenViewportInput(tui: any): void {
-	if (!tui || !tui[FULLSCREEN_VIEWPORT_PATCH]) return;
+	if (!tui?.[FULLSCREEN_VIEWPORT_PATCH]) return;
 	const proto = Object.getPrototypeOf(tui);
 	if (typeof proto?.handleViewportInput === "function") {
 		tui.handleViewportInput = proto.handleViewportInput;
@@ -866,6 +879,7 @@ export function teardownToolMouseInteraction(
 	}
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
+	lastFullscreenHoverCell = null;
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);

@@ -5,40 +5,40 @@
  * CcstylePanelHooks 注入，避免 config → renderer 循环依赖。
  */
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Input, matchesKey, SettingsList, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import { createQuietStartupFile } from "../feature/shell/quiet-startup.ts";
+import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import { readStatuslineConfig, writeStatuslineConfig } from "../feature/statusline/config.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
-	config,
 	COMPLETION_BELL_AFTER_SEC_VALUES,
+	type CompactStyleMode,
+	type Config,
+	config,
 	DEFAULT_CONFIG,
 	DIFF_COLLAPSED_LINES_VALUES,
 	DIFF_INDICATOR_MODES,
 	DIFF_SPLIT_MIN_WIDTH_VALUES,
 	DIFF_VIEW_MODES,
+	type DiffIndicatorMode,
+	type DiffViewMode,
 	EXCLUDE_RENDERER_CANDIDATES,
 	EXPANDED_INPUT_MAX_LINES_VALUES,
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
+	INPUT_CLIP_VALUES,
+	LIVE_TOOL_PREVIEW_LINES_VALUES,
 	pickPositiveInt,
 	pickPositiveNumber,
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
-	INPUT_CLIP_VALUES,
-	LIVE_TOOL_PREVIEW_LINES_VALUES,
-	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
-	type CompactStyleMode,
-	type Config,
-	type DiffIndicatorMode,
-	type DiffViewMode,
+	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */

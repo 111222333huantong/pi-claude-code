@@ -1,5 +1,14 @@
+import { homedir } from "node:os";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
+
+/** 执行耗时/输出量键与短格式（真相源在 tool-metrics.ts，此处重导出防漂移）。 */
+export {
+	attachExecuteMetrics,
+	ELAPSED_MS_KEY,
+	formatElapsedShort,
+	OUTPUT_CHARS_KEY,
+} from "./tool-metrics.ts";
 
 /** 毫秒 → "1h 2m 3s"/"2m 3s"/"3s"；低于 1 秒返回 ""（省略）。 */
 export function formatDuration(ms: number): string {
@@ -11,6 +20,33 @@ export function formatDuration(ms: number): string {
 	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
 	if (minutes > 0) return `${minutes}m ${seconds}s`;
 	return `${seconds}s`;
+}
+
+/** Claude-style 紧凑 token 计数：18 / 1.4k / 12k（working-message 与 statusline 同口径）。 */
+export function formatTokens(value: number): string {
+	const n = Math.max(0, Math.round(value));
+	if (n < 1000) return String(n);
+	const k = n / 1000;
+	if (k < 10) {
+		const oneDecimal = Math.round(k * 10) / 10;
+		return `${oneDecimal % 1 === 0 ? oneDecimal.toFixed(0) : oneDecimal.toFixed(1)}k`;
+	}
+	return `${Math.round(k)}k`;
+}
+
+/**
+ * cwd 缩写：HOME → `~`（`~` 后保留分隔符）。
+ * 与 naive `startsWith(home)` 不同：`/home/user2` 不会被 `/home/user` 误匹配；
+ * Windows 下同时识别 `/` 与 `\` 分隔符。
+ */
+export function shortenCwd(cwd: string, home: string = homedir()): string {
+	if (!cwd) return cwd;
+	if (!home) return cwd;
+	if (cwd === home) return "~";
+	if (cwd.startsWith(`${home}/`) || cwd.startsWith(`${home}\\`)) {
+		return `~${cwd.slice(home.length)}`;
+	}
+	return cwd;
 }
 
 /** 文本单行化：去换行空白，超宽按列宽截断加省略号。 */

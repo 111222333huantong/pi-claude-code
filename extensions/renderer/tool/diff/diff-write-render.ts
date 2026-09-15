@@ -1,119 +1,94 @@
-import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { structuredPatch } from "diff";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
 import { showMoreHintText } from "../show-more-hint.ts";
-import { splitWriteContentLines } from "./diff-text.ts";
 import {
-	collectDiffStats,
-	getLineNumberWidth,
-	type DiffLineEntry,
-	type DiffStats,
-	type ParsedDiffEntry,
-} from "./diff-parse.ts";
+	createDiffRenderCache,
+	type DiffRenderOptions,
+	type DisplayConfigInput,
+	displayConfigCacheKey,
+	RICH_DIFF_COMPONENT,
+	resolveDiffIndicatorMode,
+	resolveLiveDisplayConfig,
+} from "./diff-component.ts";
+import { renderDiffFrameLine, renderSingleDiffRow, renderWriteHeader } from "./diff-header.ts";
+import {
+	type CodeLineHighlighter,
+	createCodeLineHighlighter,
+	resolveLanguageFromPath,
+} from "./diff-highlight.ts";
 import {
 	buildInlineHighlightMap,
 	buildSplitRows,
 	type DiffSpan,
 	type SplitDiffRow,
 } from "./diff-inline.ts";
-import { resolveDiffPalette, type DiffTheme } from "./diff-palette.ts";
-import {
-	createCodeLineHighlighter,
-	resolveLanguageFromPath,
-	type CodeLineHighlighter,
-} from "./diff-highlight.ts";
 import {
 	canRenderSplitLayout,
+	type DiffRenderContext,
+	type RenderedRow,
 	renderCompact,
 	renderSplit,
 	renderUnified,
-	type DiffRenderContext,
-	type RenderedRow,
 } from "./diff-layout.ts";
-import { renderDiffFrameLine, renderSingleDiffRow, renderWriteHeader } from "./diff-header.ts";
 import {
 	applyLineLimit,
-	clampDiffLineToWidth,
 	clampDiffLinesToWidth,
+	clampDiffLineToWidth,
 	resolveDiffDisplayLimit,
 	resolveDiffProcessBudget,
 	resolveWriteCollapsedLimit,
 	takeEntriesForLineBudget,
 	takeSplitRowsForBudget,
 } from "./diff-limits.ts";
+import { type DiffTheme, resolveDiffPalette } from "./diff-palette.ts";
 import {
-	RICH_DIFF_COMPONENT,
-	createDiffRenderCache,
-	displayConfigCacheKey,
-	resolveDiffIndicatorMode,
-	resolveLiveDisplayConfig,
-	type DiffRenderOptions,
-	type DisplayConfigInput,
-} from "./diff-component.ts";
+	collectDiffStats,
+	type DiffLineEntry,
+	type DiffStats,
+	getLineNumberWidth,
+	type ParsedDiffEntry,
+} from "./diff-parse.ts";
 import {
 	buildDiffSummaryText,
+	type DiffPresentationMode,
 	normalizeDiffRenderWidth,
 	resolveDiffPresentationMode,
-	type DiffPresentationMode,
 } from "./diff-presentation.ts";
+import { splitWriteContentLines } from "./diff-text.ts";
 
-type WriteDiffOperationKind = "context" | "remove" | "add";
+/** structuredPatch hunk 上下文行数：与 edit 路径及 cc-tools `parseDiff` 对齐。 */
+const WRITE_DIFF_CONTEXT_LINES = 3;
 
-interface WriteDiffOperation {
-	kind: WriteDiffOperationKind;
-	content: string;
+/**
+ * 行数组拼回 Myers 输入：统一补末尾换行，避免 JsDiff 把 "b\n" 与 "b"
+ * 判成不同行（旧行模型是 split 后的纯行，无换行概念）。
+ */
+function joinWriteLines(lines: string[]): string {
+	if (lines.length === 0) return "";
+	const text = lines.join("\n");
+	return text.endsWith("\n") ? text : `${text}\n`;
 }
 
-function buildWriteDiffOperations(oldLines: string[], newLines: string[]): WriteDiffOperation[] {
-	const oldLength = oldLines.length;
-	const newLength = newLines.length;
-	const table: number[][] = Array.from({ length: oldLength + 1 }, () =>
-		Array<number>(newLength + 1).fill(0),
-	);
-
-	for (let oldIndex = 1; oldIndex <= oldLength; oldIndex++) {
-		for (let newIndex = 1; newIndex <= newLength; newIndex++) {
-			if ((oldLines[oldIndex - 1] ?? "") === (newLines[newIndex - 1] ?? "")) {
-				table[oldIndex]![newIndex] = (table[oldIndex - 1]?.[newIndex - 1] ?? 0) + 1;
-				continue;
-			}
-			const top = table[oldIndex - 1]?.[newIndex] ?? 0;
-			const left = table[oldIndex]?.[newIndex - 1] ?? 0;
-			table[oldIndex]![newIndex] = Math.max(top, left);
-		}
-	}
-
-	const operations: WriteDiffOperation[] = [];
-	let oldCursor = oldLength;
-	let newCursor = newLength;
-
-	while (oldCursor > 0 || newCursor > 0) {
-		const oldLine = oldCursor > 0 ? (oldLines[oldCursor - 1] ?? "") : undefined;
-		const newLine = newCursor > 0 ? (newLines[newCursor - 1] ?? "") : undefined;
-
-		if (oldCursor > 0 && newCursor > 0 && oldLine === newLine) {
-			operations.push({ kind: "context", content: oldLine ?? "" });
-			oldCursor--;
-			newCursor--;
-			continue;
-		}
-
-		const top = oldCursor > 0 ? (table[oldCursor - 1]?.[newCursor] ?? 0) : -1;
-		const left = newCursor > 0 ? (table[oldCursor]?.[newCursor - 1] ?? 0) : -1;
-
-		if (newCursor > 0 && left >= top) {
-			operations.push({ kind: "add", content: newLine ?? "" });
-			newCursor--;
-			continue;
-		}
-
-		if (oldCursor > 0) {
-			operations.push({ kind: "remove", content: oldLine ?? "" });
-			oldCursor--;
-		}
-	}
-
-	operations.reverse();
-	return operations;
+function pushWriteLineEntry(
+	entries: ParsedDiffEntry[],
+	lineKind: "context" | "remove" | "add",
+	oldLineNumber: number | null,
+	newLineNumber: number | null,
+	content: string,
+	hunkIndex: number,
+): void {
+	const marker = lineKind === "context" ? " " : lineKind === "remove" ? "-" : "+";
+	entries.push({
+		kind: "line",
+		lineKind,
+		oldLineNumber,
+		newLineNumber,
+		fallbackLineNumber: `${newLineNumber ?? oldLineNumber ?? ""}`,
+		content,
+		raw: `${marker}${content}`,
+		hunkIndex,
+	});
 }
 
 function buildWriteEntries(lines: string[]): ParsedDiffEntry[] {
@@ -129,56 +104,66 @@ function buildWriteEntries(lines: string[]): ParsedDiffEntry[] {
 	}));
 }
 
+/**
+ * 覆盖写 diff：JsDiff Myers（`structuredPatch`，O(ND) 线性内存）替代手写
+ * O(N*M) LCS 全矩阵。抄 cc-tools `parseDiff`（`context: 3`），行号取自 hunk 头。
+ * 无 hunk（内容完全一致）→ 全量 context，保持旧行为（不显示 "(empty file)"）。
+ */
 function buildWriteOverwriteEntries(oldLines: string[], newLines: string[]): ParsedDiffEntry[] {
-	const operations = buildWriteDiffOperations(oldLines, newLines);
+	const patch = structuredPatch(
+		"",
+		"",
+		joinWriteLines(oldLines),
+		joinWriteLines(newLines),
+		"",
+		"",
+		{
+			context: WRITE_DIFF_CONTEXT_LINES,
+		},
+	);
+	if (patch.hunks.length === 0) {
+		return oldLines.map((line, index) => ({
+			kind: "line",
+			lineKind: "context",
+			oldLineNumber: index + 1,
+			newLineNumber: index + 1,
+			fallbackLineNumber: `${index + 1}`,
+			content: line,
+			raw: ` ${line}`,
+			hunkIndex: 1,
+		}));
+	}
 	const entries: ParsedDiffEntry[] = [];
-	let oldLineNumber = 1;
-	let newLineNumber = 1;
-
-	for (const operation of operations) {
-		if (operation.kind === "context") {
-			entries.push({
-				kind: "line",
-				lineKind: "context",
-				oldLineNumber,
-				newLineNumber,
-				fallbackLineNumber: `${newLineNumber}`,
-				content: operation.content,
-				raw: ` ${operation.content}`,
-				hunkIndex: 1,
-			});
+	patch.hunks.forEach((hunk, hunkOrdinal) => {
+		const hunkIndex = hunkOrdinal + 1;
+		let oldLineNumber = hunk.oldStart;
+		let newLineNumber = hunk.newStart;
+		for (const hunkLine of hunk.lines) {
+			const marker = hunkLine[0];
+			const content = hunkLine.slice(1);
+			if (marker === "\\") continue; // "\ No newline at end of file"
+			if (marker === " ") {
+				pushWriteLineEntry(entries, "context", oldLineNumber, newLineNumber, content, hunkIndex);
+				oldLineNumber++;
+				newLineNumber++;
+				continue;
+			}
+			if (marker === "-") {
+				pushWriteLineEntry(entries, "remove", oldLineNumber, null, content, hunkIndex);
+				oldLineNumber++;
+				continue;
+			}
+			if (marker === "+") {
+				pushWriteLineEntry(entries, "add", null, newLineNumber, content, hunkIndex);
+				newLineNumber++;
+				continue;
+			}
+			// 未知标记：按 context 保底，不丢行。
+			pushWriteLineEntry(entries, "context", oldLineNumber, newLineNumber, content, hunkIndex);
 			oldLineNumber++;
 			newLineNumber++;
-			continue;
 		}
-
-		if (operation.kind === "remove") {
-			entries.push({
-				kind: "line",
-				lineKind: "remove",
-				oldLineNumber,
-				newLineNumber: null,
-				fallbackLineNumber: `${oldLineNumber}`,
-				content: operation.content,
-				raw: `-${operation.content}`,
-				hunkIndex: 1,
-			});
-			oldLineNumber++;
-			continue;
-		}
-
-		entries.push({
-			kind: "line",
-			lineKind: "add",
-			oldLineNumber: null,
-			newLineNumber,
-			fallbackLineNumber: `${newLineNumber}`,
-			content: operation.content,
-			raw: `+${operation.content}`,
-			hunkIndex: 1,
-		});
-		newLineNumber++;
-	}
+	});
 
 	return entries;
 }
@@ -198,9 +183,8 @@ interface WriteOverwriteGuard {
 }
 
 const MAX_WRITE_OVERWRITE_DIFF_LINES = 4000;
-const MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS = 1_000_000;
-/** Collapsed overwrite previews refuse larger LCS matrices to avoid TUI freezes. */
-const MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS = 200_000;
+/** 双边字符总量封顶（超长单行同样熔断；Myers 本身线性内存，此为渲染侧保护）。 */
+const MAX_WRITE_OVERWRITE_DIFF_CHARS = 2_000_000;
 
 function buildApproximateWriteStats(
 	lineCount: number,
@@ -224,7 +208,7 @@ function buildWriteDiffData(entries: ParsedDiffEntry[]): WriteDiffData {
 	const splitRows = buildSplitRows(entries);
 	const inlineHighlights = buildInlineHighlightMap(splitRows);
 	const lineNumberWidth = getLineNumberWidth(entries);
-	const hunkCount = entries.length > 0 ? 1 : 0;
+	const hunkCount = entries.reduce((max, entry) => Math.max(max, entry.hunkIndex), 0);
 	const stats = collectDiffStats(entries, hunkCount, 1);
 	return {
 		entries,
@@ -239,7 +223,6 @@ function buildWriteDiffData(entries: ParsedDiffEntry[]): WriteDiffData {
 function resolveWriteOverwriteGuard(
 	previousLines: string[],
 	nextLines: string[],
-	expanded = true,
 ): WriteOverwriteGuard | undefined {
 	const previousLineCount = previousLines.length;
 	const nextLineCount = nextLines.length;
@@ -252,12 +235,21 @@ function resolveWriteOverwriteGuard(
 	if (previousLineCount === 0 || nextLineCount === 0) {
 		return undefined;
 	}
-	const cellLimit = expanded
-		? MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS
-		: MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS;
-	return previousLineCount * nextLineCount > cellLimit
-		? { previousLineCount, nextLineCount }
-		: undefined;
+	// 字符总量封顶：O(总字符) 一遍累加，遇超即停。
+	let chars = 0;
+	for (const line of previousLines) {
+		chars += line.length + 1;
+		if (chars > MAX_WRITE_OVERWRITE_DIFF_CHARS) {
+			return { previousLineCount, nextLineCount };
+		}
+	}
+	for (const line of nextLines) {
+		chars += line.length + 1;
+		if (chars > MAX_WRITE_OVERWRITE_DIFF_CHARS) {
+			return { previousLineCount, nextLineCount };
+		}
+	}
+	return undefined;
 }
 
 function buildWriteOverwriteGuardText(guard: WriteOverwriteGuard, width: number): string {
@@ -325,9 +317,9 @@ function renderWriteCollapsedHintLine(
 }
 
 /**
- * write 变更行统计（compact 单行用）：复用当前 write diff 算法。
- * 新文件 = 全部新内容为 added；覆盖已有文件用 LCS 精确统计。
- * content 非字符串、元数据缺失或超过矩阵预算时返回 undefined（不显示计数）。
+ * write 变更行统计（compact 单行用）：与正文同一套 Myers 算法。
+ * 新文件 = 全部新内容为 added；覆盖已有文件精确统计。
+ * content 非字符串、元数据缺失或超出行数/字符预算时返回 undefined（不显示计数）。
  */
 export function countWriteDiffStats(
 	content: string | undefined,
@@ -342,14 +334,30 @@ export function countWriteDiffStats(
 	if (previousLines.length === 0 || lines.length === 0) {
 		return { added: lines.length, removed: previousLines.length };
 	}
-	if (previousLines.length * lines.length > MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS) {
+	if (
+		previousLines.length > MAX_WRITE_OVERWRITE_DIFF_LINES ||
+		lines.length > MAX_WRITE_OVERWRITE_DIFF_LINES
+	) {
 		return undefined;
 	}
+	const patch = structuredPatch(
+		"",
+		"",
+		joinWriteLines(previousLines),
+		joinWriteLines(lines),
+		"",
+		"",
+		{
+			context: 0,
+		},
+	);
 	let added = 0;
 	let removed = 0;
-	for (const operation of buildWriteDiffOperations(previousLines, lines)) {
-		if (operation.kind === "add") added++;
-		else if (operation.kind === "remove") removed++;
+	for (const hunk of patch.hunks) {
+		for (const hunkLine of hunk.lines) {
+			if (hunkLine[0] === "+") added++;
+			else if (hunkLine[0] === "-") removed++;
+		}
 	}
 	return { added, removed };
 }
@@ -458,9 +466,9 @@ export function renderWriteDiffResult(
 				theme,
 				options.headerLabel,
 			);
-			// Guard depends on expanded: collapsed previews use a stricter LCS cell budget.
+			// 超限熔断：行数/字符总量封顶（Myers 线性内存，此为渲染侧保护）。
 			const overwriteGuard = hasComparablePrevious
-				? resolveWriteOverwriteGuard(previousLines, lines, options.expanded)
+				? resolveWriteOverwriteGuard(previousLines, lines)
 				: undefined;
 			if (overwriteGuard) {
 				return cache.set(

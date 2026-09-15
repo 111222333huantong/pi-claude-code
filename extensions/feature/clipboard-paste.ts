@@ -76,9 +76,10 @@ export function isImageFilePath(text: string): boolean {
 export function findMarkerNumbers(text: string): number[] {
 	const seen = new Set<number>();
 	IMAGE_MARKER_RE.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = IMAGE_MARKER_RE.exec(text)) !== null) {
+	let match: RegExpExecArray | null = IMAGE_MARKER_RE.exec(text);
+	while (match !== null) {
 		seen.add(Number(match[1]));
+		match = IMAGE_MARKER_RE.exec(text);
 	}
 	return [...seen];
 }

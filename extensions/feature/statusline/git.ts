@@ -151,13 +151,24 @@ export const MAX_GIT_POLL_INTERVAL_MS = 30_000;
  * 启动后台轮询：立即采一次 + 按需刷新（单飞行，忙则跳过）。
  * 快照无变化或采集失败时指数退避（×2，上限 30s），有变化立即恢复基准；
  * 无变化不调 onUpdate（省一次 footer 重绘）。
- * 返回停表函数；回调异常内部吞掉。
+ *
+ * 返回停表函数（另带 `refresh` 立即刷一次、`refreshIfIdle` 忙则丢弃，
+ * 抄 cc-my-pi `refresh-coordinator` 的 run/runIfIdle 语义，供工具结束等
+ * 事件驱动刷新；测试旧用法 `stop()` 保持兼容）。
  */
+export interface GitPoller {
+	(): void;
+	/** 立即采一次（单飞行：采集中则顺延到下一拍，不丢弃）。 */
+	refresh(): void;
+	/** 仅空闲时立即采一次；采集中/已停止则丢弃（事件驱动防抖）。 */
+	refreshIfIdle(): void;
+}
+
 export function startGitPoller(
 	cwd: string,
 	onUpdate: (snapshot: GitSnapshot) => void,
 	intervalMs = 3000,
-): () => void {
+): GitPoller {
 	let stopped = false;
 	let inFlight = false;
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -200,9 +211,26 @@ export function startGitPoller(
 	};
 
 	void tick();
-	return () => {
+	const stop = () => {
 		stopped = true;
 		if (timer) clearTimeout(timer);
 		timer = null;
 	};
+	/** 有待执行的定时拍则提前到现在（采集中时 tick 内部顺延，不丢弃）。 */
+	const refresh = () => {
+		if (stopped) return;
+		if (timer) {
+			clearTimeout(timer);
+			timer = null;
+		}
+		void tick();
+	};
+	/** 仅完全空闲（无待采定时器、无采集中任务）才立即采一次，否则丢弃。 */
+	const refreshIfIdle = () => {
+		if (stopped || inFlight || timer === null) return;
+		clearTimeout(timer);
+		timer = null;
+		void tick();
+	};
+	return Object.assign(stop, { refresh, refreshIfIdle });
 }

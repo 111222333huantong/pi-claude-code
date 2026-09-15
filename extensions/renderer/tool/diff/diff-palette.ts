@@ -1,3 +1,4 @@
+import { ansi256ToRgb } from "../../../utils/ansi-color.ts";
 import {
 	ANSI_SGR_PATTERN,
 	expandSgrReset,
@@ -5,10 +6,9 @@ import {
 	readSgrColorSequence,
 	toSgrParams,
 } from "./ansi-utils.ts";
-import { ansi256ToRgb } from "../../../utils/ansi-color.ts";
-import { fitToWidth } from "./diff-text.ts";
-import { mergeSpans, type DiffSpan } from "./diff-inline.ts";
+import { type DiffSpan, mergeSpans } from "./diff-inline.ts";
 import type { DiffLineKind } from "./diff-parse.ts";
+import { fitToWidth } from "./diff-text.ts";
 
 export interface DiffTheme {
 	fg(color: string, text: string): string;
@@ -212,13 +212,13 @@ function mixRgb(base: RgbColor, tint: RgbColor, ratio: number): RgbColor {
 }
 
 function extractThemeBackgroundAnsi(text: string): string | undefined {
-	if (!text || !text.includes("\x1b[")) {
+	if (!text?.includes("\x1b[")) {
 		return undefined;
 	}
 
 	ANSI_SGR_PATTERN.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = ANSI_SGR_PATTERN.exec(text)) !== null) {
+	let match: RegExpExecArray | null = ANSI_SGR_PATTERN.exec(text);
+	while (match !== null) {
 		const parsed = toSgrParams(match[1] ?? "");
 		for (let index = 0; index < parsed.length; index += 1) {
 			const param = parsed[index] ?? 0;
@@ -234,6 +234,7 @@ function extractThemeBackgroundAnsi(text: string): string | undefined {
 				index += colorSequence.length - 1;
 			}
 		}
+		match = ANSI_SGR_PATTERN.exec(text);
 	}
 
 	return undefined;

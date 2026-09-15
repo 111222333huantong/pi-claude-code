@@ -7,7 +7,7 @@
  * visitor 在每个非数组对象节点上调用一次；返回 `false` 表示不再下钻该节点的
  * children 与 mounted roots（对应各处原有的提前 return 语义）。
  */
-export function walkComponentTree(root: any, visitor: (value: any) => boolean | void): void {
+export function walkComponentTree(root: any, visitor: (value: any) => unknown): void {
 	const seen = new Set<any>();
 	const visit = (value: any): void => {
 		if (!value || typeof value !== "object" || seen.has(value)) return;

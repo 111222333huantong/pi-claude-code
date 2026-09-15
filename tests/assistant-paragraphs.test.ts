@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
-import { installCodeBlockBox } from "../extensions/renderer/tool/code-block.ts";
 import {
 	DottedParagraph,
 	installDottedParagraphs,
 } from "../extensions/renderer/assistant-paragraphs.ts";
+import { installCodeBlockBox } from "../extensions/renderer/tool/code-block.ts";
 import {
 	stripAnsi,
 	stripTerminalSequencesPreservingLayout,

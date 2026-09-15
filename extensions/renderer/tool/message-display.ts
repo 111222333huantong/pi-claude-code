@@ -4,10 +4,10 @@ import {
 	SkillInvocationMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 import { config } from "../../config/config.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
+import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 
 /**
  * 接管三个消息组件（`<skill>` 块、压缩摘要、分支摘要），ccstyle on 时渲染为

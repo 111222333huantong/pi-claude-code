@@ -101,7 +101,16 @@ export class ShikiHighlightCache {
 export const shikiHighlightCache = new ShikiHighlightCache();
 
 /** 预热语言 × shiki 主题：与 resolveShikiTheme 的 github-dark/light 对齐。 */
-const PREWARM_LANGS = ["typescript", "markdown", "json"];
+const PREWARM_LANGS = [
+	"typescript",
+	"tsx",
+	"javascript",
+	"markdown",
+	"json",
+	"python",
+	"rust",
+	"go",
+];
 const PREWARM_THEMES = ["github-dark", "github-light"];
 
 let prewarmed = false;

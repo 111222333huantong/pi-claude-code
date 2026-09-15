@@ -5,9 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	collectLoadedStats,
+	type LoadedStats,
 	renderLoadedMessage,
 	resetLoadedStatsCache,
-	type LoadedStats,
 } from "../extensions/feature/shell/loaded-stats.ts";
 
 const stubLoader = () => ({

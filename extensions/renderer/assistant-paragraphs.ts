@@ -12,13 +12,13 @@
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Markdown, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../config/config.ts";
+import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
+import { walkComponentTree } from "../utils/component-tree.ts";
 import {
 	ASSISTANT_DOTTED_PATCH,
 	PROTOTYPE_ORIGINAL_KEY,
 	patchRegistry,
 } from "../utils/patch-keys.ts";
-import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
-import { walkComponentTree } from "../utils/component-tree.ts";
 
 type MarkdownThemeLike = ConstructorParameters<typeof Markdown>[3];
 type MarkdownTransformOption = NonNullable<ConstructorParameters<typeof Markdown>[5]>["transform"];

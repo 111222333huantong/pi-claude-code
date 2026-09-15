@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	EMPTY_BRACKETED_PASTE,
 	clipboardImageMarker,
+	EMPTY_BRACKETED_PASTE,
 	findMarkerNumbers,
 	isImageFilePath,
 	registerClipboardPaste,
@@ -76,7 +76,7 @@ test("markers are numbered and stripped in occurrence order", () => {
 
 test("shortcut with clipboard image: marker inserted, input attaches", async () => {
 	const { pi, handlers, ui, getShortcut } = makePi();
-	let now = 1000;
+	const now = 1000;
 	const ok = registerClipboardPaste(pi, {
 		enabled: true,
 		platform: "win32",
@@ -215,7 +215,7 @@ test("two pastes get sequential numbers and both attach", async () => {
 
 test("input without markers drops stale pending images", async () => {
 	const { pi, handlers, ui, getShortcut } = makePi();
-	let now = 7000;
+	const now = 7000;
 	registerClipboardPaste(pi, {
 		enabled: true,
 		platform: "win32",

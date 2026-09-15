@@ -43,7 +43,9 @@
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"docs:tool-render": "node --experimental-strip-types scripts/generate-tool-render-examples.ts",
+		"bench:write-diff": "node scripts/benchmark-write-diff.ts",
 		"lint": "biome check .",
+		"ci": "npm run lint && npm run typecheck && npm test",
 		"preversion": "npm run format && npm run lint && npm run typecheck && npm test && npm run docs:tool-render",
 		"release": "npm version patch && npm publish",
 		"release:minor": "npm version minor && npm publish",
@@ -51,6 +53,7 @@
 	},
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
+		"diff": "^9.0.0",
 		"grok-mermaid": "^0.2.2",
 		"pi-paster": "^0.2.3"
 	},
@@ -68,8 +71,9 @@
 		"@earendil-works/pi-ai": "^0.85.1",
 		"@earendil-works/pi-coding-agent": "^0.85.1",
 		"@earendil-works/pi-tui": "^0.85.1",
+		"@types/diff": "^7.0.2",
 		"@types/node": "^26.1.1",
-		"jiti": "^2.7.0",
 		"typescript": "^5.9.3"
-	}
+	},
+	"bundleDependencies": []
 }

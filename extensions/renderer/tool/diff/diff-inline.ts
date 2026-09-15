@@ -1,10 +1,10 @@
-import { normalizeCodeWhitespace } from "./diff-text.ts";
 import type {
 	DiffLineEntry,
 	DiffMetaEntry,
 	DiffOmissionEntry,
 	ParsedDiffEntry,
 } from "./diff-parse.ts";
+import { normalizeCodeWhitespace } from "./diff-text.ts";
 
 export interface DiffSpan {
 	start: number;
@@ -28,11 +28,12 @@ function tokenizeInlineDiff(input: string): Array<{ value: string; start: number
 
 	const tokens: Array<{ value: string; start: number; end: number }> = [];
 	const pattern = /(\s+|[A-Za-z0-9_]+|[^A-Za-z0-9_\s])/g;
-	let match: RegExpExecArray | null;
+	let match: RegExpExecArray | null = pattern.exec(input);
 
-	while ((match = pattern.exec(input)) !== null) {
+	while (match !== null) {
 		const value = match[0] ?? "";
 		if (!value) {
+			match = pattern.exec(input);
 			continue;
 		}
 		tokens.push({
@@ -40,6 +41,7 @@ function tokenizeInlineDiff(input: string): Array<{ value: string; start: number
 			start: match.index,
 			end: match.index + value.length,
 		});
+		match = pattern.exec(input);
 	}
 
 	if (tokens.length === 0 && input.length > 0) {
@@ -227,7 +229,7 @@ function collectConsecutiveLineEntries(
 	let index = startIndex;
 	while (index < entries.length) {
 		const candidate = entries[index];
-		if (!candidate || candidate.kind !== "line" || candidate.lineKind !== lineKind) {
+		if (candidate?.kind !== "line" || candidate?.lineKind !== lineKind) {
 			break;
 		}
 		collected.push(candidate);

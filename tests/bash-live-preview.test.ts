@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
-import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
+import { bashLivePreview } from "../extensions/renderer/tool/bash-preview.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { installToolGrouping } from "../extensions/renderer/tool/grouping.ts";
 import { clearAllAnimations } from "../extensions/renderer/tool/result.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { bashLivePreview } from "../extensions/renderer/tool/bash-preview.ts";
 
 initTheme("dark");
 
@@ -89,7 +89,7 @@ test("running bash shows tail preview with count in title", () => {
 		assert.match(text, /· 8 lines/);
 		// 方案B：尾行无 ↳，4 空格缩进与 … 内容列对齐。
 		assert.doesNotMatch(text, /↳ row-08/);
-		assert.match(text, /^     row-08$/m);
+		assert.match(text, /^ {5}row-08$/m);
 	} finally {
 		config.mode = previousMode;
 		config.liveToolPreview = previousFlag;
@@ -112,8 +112,8 @@ test("short bash output shows all lines without earlier head", () => {
 		assert.match(text, /row-03/);
 		assert.doesNotMatch(text, /earlier lines/);
 		// 不够折叠时也只有一个 ↳（首行），其余缩进。
-		assert.match(text, /^   ↳ row-01$/m);
-		assert.match(text, /^     row-02$/m);
+		assert.match(text, /^ {3}↳ row-01$/m);
+		assert.match(text, /^ {5}row-02$/m);
 		assert.doesNotMatch(text, /↳ row-02/);
 	} finally {
 		config.mode = previousMode;

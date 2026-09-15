@@ -5,29 +5,29 @@ import {
 	AssistantMessageComponent,
 	getMarkdownTheme,
 	initTheme,
-	SkillInvocationMessageComponent,
 	type ParsedSkillBlock,
+	SkillInvocationMessageComponent,
 } from "@earendil-works/pi-coding-agent";
+import { config } from "../extensions/config/config.ts";
+import {
+	installCompactThinking,
+	ThinkingPreviewBlock,
+} from "../extensions/feature/compact-thinking.ts";
+import { showTextPreview } from "../extensions/feature/context.ts";
+import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
-import { showTextPreview } from "../extensions/feature/context.ts";
-import { config } from "../extensions/config/config.ts";
-import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
-import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
+import { isToolCallHovered, sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
 	getMessageDisplayTheme,
 	installMessageDisplayRendering,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
-import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
-import {
-	installCompactThinking,
-	ThinkingPreviewBlock,
-} from "../extensions/feature/compact-thinking.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -209,7 +209,7 @@ function createUi(tui: any) {
 test("lazy-proxy tui: regular stands down without mouse reporting (terminal scrollback preserved)", async () => {
 	const tool = createTool("tool-1");
 	const { terminal, writes } = createTerminalFixture();
-	let renderer = createRenderer("regular", [tool], terminal);
+	const renderer = createRenderer("regular", [tool], terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
 	const { pi, events } = runtime();
@@ -1193,7 +1193,7 @@ test("lazy-proxy frame capture rolls back partial render wrappers on failure", (
 		},
 	};
 	const { terminal } = createTerminalFixture();
-	let renderer = createRenderer("regular", [first, hostile], terminal);
+	const renderer = createRenderer("regular", [first, hostile], terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
 	installToolMouseInteraction(ui.ctx);

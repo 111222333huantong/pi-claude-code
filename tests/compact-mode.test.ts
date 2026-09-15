@@ -6,30 +6,13 @@ import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
-	ToolExecutionComponent,
 	initTheme,
+	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
-import {
-	buildMessageSummary,
-	installCompactMode,
-	isCompactAssistantComponent,
-	refreshCompactModeComponents,
-	styleCompactThinkingText,
-} from "../extensions/renderer/compact-mode.ts";
-import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
-import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
-import {
-	getMessageDisplayTheme,
-	setMessageDisplayTheme,
-} from "../extensions/renderer/tool/message-display.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
-import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
 import {
 	backfillAgentTitles,
 	clearAgentTitles,
@@ -37,6 +20,22 @@ import {
 	registerAgentTitles,
 	resolveAgentTitle,
 } from "../extensions/feature/reference/agent-titles.ts";
+import {
+	buildMessageSummary,
+	installCompactMode,
+	isCompactAssistantComponent,
+	refreshCompactModeComponents,
+	styleCompactThinkingText,
+} from "../extensions/renderer/compact-mode.ts";
+import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import {
+	getMessageDisplayTheme,
+	setMessageDisplayTheme,
+} from "../extensions/renderer/tool/message-display.ts";
+import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
+import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
 
 initTheme("dark");
 
@@ -1050,13 +1049,13 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.match(unknownWriteExpanded, /Input/);
 		assert.match(unknownWriteExpanded, /Output/);
 
-		// 大文件超过精确统计预算时省略数字，不显示误导性的全量替换统计。
+		// Myers 精确统计：500 行改 1 行也显示 (+1 -1)，不再因旧 LCS 矩阵预算省略。
 		const oldLines = Array.from({ length: 500 }, (_, index) => `line ${index}`).join("\n");
 		const newLines = oldLines.replace("line 250", "changed");
 		const largeWrite = tool("write", "w3", { path: "large.ts", content: newLines });
 		metadata.set("w3", { fileExistedBeforeWrite: true, previousContent: oldLines });
 		largeWrite.updateResult({ content: [], isError: false });
-		assert.doesNotMatch(renderText(largeWrite).join("\n"), /\(\+\d+ -\d+\)/);
+		assert.match(renderText(largeWrite).join("\n"), /write large\.ts \(\+1 -1\)/);
 
 		// compact 路径、Input 和 Output 都不能保留终端控制序列。
 		const unsafeWrite = tool("write", "w4", {

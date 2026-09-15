@@ -2,14 +2,14 @@ import {
 	type BuildSystemPromptOptions,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
-	type ToolInfo,
 	estimateTokens,
 	formatSkillsForPrompt,
 	getMarkdownTheme,
+	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { formatTokens, padLine } from "../utils/format.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
-import { padLine } from "../utils/format.ts";
 
 export type ContextPart = {
 	label: string;
@@ -305,11 +305,8 @@ export function capParts(parts: ContextPart[], target: number, fixedPrefix = 0):
 	return [...fixed, ...capped];
 }
 
-export function formatTokens(tokens: number): string {
-	if (tokens < 1_000) return String(tokens);
-	if (tokens < 100_000) return `${(tokens / 1_000).toFixed(1)}k`;
-	return `${Math.round(tokens / 1_000)}k`;
-}
+/** 紧凑 token 计数（收口自 utils/format，保持导出兼容）。 */
+export { formatTokens };
 
 export function resolveUsedTokens(
 	usage: { tokens: number | null; percent: number | null } | undefined,
@@ -524,7 +521,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			while (true) {
 				// 主弹框也计入活动 overlay，fullscreen 下官方输入链才会把鼠标包放行给行点击。
 				activeContextOverlays++;
-				let action;
+				let action: unknown;
 				try {
 					action = await ctx.ui.custom(
 						(tui, theme, _keybindings, done) => {
@@ -563,7 +560,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									}
 
 									const mouse = parseSgrMousePacket(data);
-									if (!mouse || mouse.final !== "M") return;
+									if (mouse?.final !== "M") return;
 									if ((mouse.code & 32) !== 0) {
 										// SGR 1003 的无按键 hover code 为 35，不能按左键事件过滤。
 										const overEsc = Boolean(

@@ -1,33 +1,33 @@
 import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import {
+	type Component,
 	Container,
 	Spacer,
 	truncateToWidth,
 	visibleWidth,
-	type Component,
 } from "@earendil-works/pi-tui";
-import {
-	TOOL_LOADING_INTERVAL_MS,
-	pendingDotColor,
-	toolLoadingIcon,
-} from "../../utils/tool-loading-icon.ts";
-import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
-import { outputLineCount } from "./result.ts";
 import { config } from "../../config/config.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
-	fitToolCallSummary,
-	humanizeToolLabel,
-	toolCallSummary,
-	type ToolCallSummary,
-} from "./names.ts";
-import {
-	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
 	TOOL_GROUPING_PARENT_KEY as PARENT_KEY,
 	TOOL_GROUPING_PATCH_KEY as PATCH_KEY,
+	patchRegistry,
 } from "../../utils/patch-keys.ts";
+import {
+	pendingDotColor,
+	TOOL_LOADING_INTERVAL_MS,
+	toolLoadingIcon,
+} from "../../utils/tool-loading-icon.ts";
+import {
+	fitToolCallSummary,
+	humanizeToolLabel,
+	type ToolCallSummary,
+	toolCallSummary,
+} from "./names.ts";
+import { outputLineCount } from "./result.ts";
+import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 
 const NON_GROUPABLE = new Set(["edit", "write", "apply_patch", "Agent", "subagent"]);
 
@@ -421,7 +421,7 @@ function ungroup(patch: Patch): void {
 	}
 }
 
-function normalizeGroup(patch: Patch, group: ToolGroupComponent): void {
+function normalizeGroup(_patch: Patch, group: ToolGroupComponent): void {
 	if (group.children.length > 1) return;
 	const parent = (group as any)[PARENT_KEY];
 	const index = parent?.children?.indexOf(group) ?? -1;

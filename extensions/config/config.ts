@@ -1,7 +1,7 @@
-import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
 
 export type CompactStyleMode = "on" | "compact" | "off";
 

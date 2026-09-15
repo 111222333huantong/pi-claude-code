@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import workingMessageExtension from "../extensions/feature/shell/working-message.ts";
+import { parseAnsiRgb } from "../extensions/feature/shell/spinner-color.ts";
+import { _resetSpinnerSettingsCache } from "../extensions/feature/shell/spinner-settings.ts";
 import {
 	colorSweep,
 	hexToAnsiFg,
 	resolveShimmerColors,
 } from "../extensions/feature/shell/spinner-shimmer.ts";
-import { parseAnsiRgb } from "../extensions/feature/shell/spinner-color.ts";
 import { _resetTicker } from "../extensions/feature/shell/spinner-ticker.ts";
-import { _resetSpinnerSettingsCache } from "../extensions/feature/shell/spinner-settings.ts";
+import workingMessageExtension from "../extensions/feature/shell/working-message.ts";
 
 function install() {
 	const events = new Map<string, Function>();

@@ -10,8 +10,8 @@ import {
 	formatCost,
 	formatTokens,
 	SINGLE_LINE_MAX_WIDTH,
-	thinkingColor,
 	type StatusSnapshot,
+	thinkingColor,
 } from "../extensions/feature/statusline/render.ts";
 
 /** paint 透传：断言纯文本布局。 */

@@ -1,8 +1,8 @@
 import { posix, win32 } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
-import { oneLine } from "../../utils/format.ts";
 import { resolveAgentTitle } from "../../feature/reference/agent-titles.ts";
+import { oneLine } from "../../utils/format.ts";
 
 function clip(value: unknown): string {
 	return oneLine(value, config.inputClip);

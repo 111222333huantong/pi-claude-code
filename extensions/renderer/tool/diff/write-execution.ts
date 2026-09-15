@@ -1,6 +1,7 @@
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import type { Stats } from "node:fs";
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 export const MAX_COMPARABLE_WRITE_BYTES = 512_000;
 export const MAX_WRITE_METADATA_ENTRIES = 100;
@@ -9,6 +10,8 @@ export type WriteExecutionMeta = {
 	fileExistedBeforeWrite: boolean;
 	previousContent?: string;
 	diffUnavailableReason?: string;
+	/** 工具执行耗时（毫秒，含队列等待+落盘）；缺失表示未知，不展示。 */
+	elapsedMs?: number;
 };
 
 export class WriteExecutionMetadataStore {
@@ -38,7 +41,7 @@ export class WriteExecutionMetadataStore {
 }
 
 async function capturePreviousContent(absolutePath: string): Promise<WriteExecutionMeta> {
-	let info;
+	let info: Stats;
 	try {
 		info = await lstat(absolutePath);
 	} catch (error: any) {
@@ -83,6 +86,7 @@ export async function executeWriteWithMetadata(
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }> {
 	const absolutePath = isAbsolute(params.path) ? params.path : resolve(cwd, params.path);
 	store.delete(toolCallId);
+	const startedAt = performance.now();
 	try {
 		return await withFileMutationQueue(absolutePath, async () => {
 			const throwIfAborted = () => {
@@ -95,6 +99,7 @@ export async function executeWriteWithMetadata(
 			throwIfAborted();
 			await writeFile(absolutePath, params.content, "utf8");
 			throwIfAborted();
+			metadata.elapsedMs = performance.now() - startedAt;
 			store.set(toolCallId, metadata);
 			return {
 				content: [

@@ -13,10 +13,10 @@
  * - 文件读经 `statSync` 限 1MB + UTF-8 解码 + mtime 内容缓存；
  *   组件按 `args 指纹 + expanded` 缓存在 `context.state`，流式同参复用。
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, type Stats, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
-import { renderWriteDiffResult } from "./diff-write-render.ts";
 import type { DisplayConfigInput } from "./diff-renderer.ts";
+import { renderWriteDiffResult } from "./diff-write-render.ts";
 
 /** 预览可读的源文件上限（与 write-execution 512KB  comparable 档位区分，预览放宽到 1MB）。 */
 export const MAX_PENDING_PREVIEW_BYTES = 1_000_000;
@@ -28,7 +28,7 @@ type FileCacheEntry = { mtimeMs: number; size: number; content: string };
 const fileCache = new Map<string, FileCacheEntry>();
 
 function readPreviewFile(absolutePath: string): { content: string } | { reason: string } {
-	let stat;
+	let stat: Stats;
 	try {
 		stat = statSync(absolutePath);
 	} catch (error: any) {
@@ -157,6 +157,16 @@ export function planPendingPreview(toolName: string, args: any, cwd: string): Pe
 	return { reason: `unsupported tool ${toolName}` };
 }
 
+/** FNV-1a 同步 hash（抄 cc-tools `hashText`）：指纹用长度+hash，不 stringify 全文。 */
+export function hashPreviewText(text: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; index++) {
+		hash ^= text.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(36);
+}
+
 export type PendingPreviewRenderInput = {
 	expanded: boolean;
 	isHovered?: () => boolean;
@@ -177,14 +187,20 @@ export function renderPendingDiffPreview(
 ): any | undefined {
 	const args = context?.args;
 	if (!args || typeof args !== "object") return undefined;
+	// write content 可能很大：指纹用长度+hash，不 JSON 全文（省每帧一次大分配）。
+	const writeContent = toolName === "write" ? args.content : undefined;
 	const fingerprint = JSON.stringify({
 		tool: toolName,
 		path: args.path ?? args.file_path ?? null,
 		edits: toolName === "edit" ? (args.edits ?? null) : undefined,
-		content: toolName === "write" ? (args.content ?? null) : undefined,
+		content:
+			typeof writeContent === "string"
+				? `len:${writeContent.length}:${hashPreviewText(writeContent)}`
+				: (writeContent ?? null),
 		expanded: input.expanded,
 	});
-	const state = (context.state ??= {}) as Record<string, any>;
+	const state = (context.state ?? {}) as Record<string, any>;
+	context.state = state;
 	const cacheKey = "__ccPendingPreview";
 	const cached = state[cacheKey];
 	if (cached && cached.fingerprint === fingerprint && cached.component) return cached.component;

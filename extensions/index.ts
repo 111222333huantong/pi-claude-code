@@ -1,24 +1,22 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "./config/config.ts";
-
+import agentSummary from "./feature/agent-summary/index.ts";
+import clipboardPaste from "./feature/clipboard-paste.ts";
+import { installCompactThinking } from "./feature/compact-thinking.ts";
+import context from "./feature/context.ts";
+import imagePaster from "./feature/image-paster.ts";
+import { registerAgentTitles } from "./feature/reference/agent-titles.ts";
+import sessionReference from "./feature/reference/index.ts";
+// feature
+import agentAutocomplete from "./feature/reference/subagent.ts";
 // shell
 import piAliases from "./feature/shell/aliases.ts";
 import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
-import piStartupHeader from "./feature/shell/startup-header.ts";
 import { registerLoadedCommand } from "./feature/shell/loaded-stats.ts";
+import piStartupHeader from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 import workingRow from "./feature/shell/working-row.ts";
-
-// feature
-import agentAutocomplete from "./feature/reference/subagent.ts";
-import { registerAgentTitles } from "./feature/reference/agent-titles.ts";
-import agentSummary from "./feature/agent-summary/index.ts";
-import clipboardPaste from "./feature/clipboard-paste.ts";
-import context from "./feature/context.ts";
-import imagePaster from "./feature/image-paster.ts";
 import registerStatusline from "./feature/statusline/index.ts";
-import sessionReference from "./feature/reference/index.ts";
-import { installCompactThinking } from "./feature/compact-thinking.ts";
 
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";

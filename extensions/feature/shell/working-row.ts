@@ -1,4 +1,4 @@
-import { CustomEditor, VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionAPI, VERSION } from "@earendil-works/pi-coding-agent";
 import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
 
 /** Editor 工厂签名（与 Pi 的 EditorFactory 同形；包索引未导出该类型，本地定义）。 */

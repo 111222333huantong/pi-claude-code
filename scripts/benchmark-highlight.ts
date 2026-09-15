@@ -156,16 +156,18 @@ async function main(): Promise<void> {
 		const big = makeDoc("ts", MAX_HL_CHARS + 10_000);
 		const t0 = performance.now();
 		const got = cache.get(big, "typescript", THEME, [""]);
-	 const dt = performance.now() - t0;
+		const dt = performance.now() - t0;
 		console.log("");
-		console.log(`oversize fast-path: got=${got === undefined ? "undefined" : "VALUE!"} in ${fmt(dt)}`);
+		console.log(
+			`oversize fast-path: got=${got === undefined ? "undefined" : "VALUE!"} in ${fmt(dt)}`,
+		);
 	}
 
 	// LRU 压力：插入 cap+30 个小文档后，前 10 个应被淘汰（证明有界，不无限增长）。
 	{
 		const cache = new ShikiHighlightCache();
 		const total = MAX_CACHE_ENTRIES + 30;
-		const docs = Array.from({ length: total }, (_, i) => makeDoc("ts", 500) + `\n// doc-${i}`);
+		const docs = Array.from({ length: total }, (_, i) => `${makeDoc("ts", 500)}\n// doc-${i}`);
 		for (const doc of docs) {
 			// eslint-disable-next-line no-await-in-loop
 			await timeMiss(cache, doc, "typescript");
@@ -174,7 +176,9 @@ async function main(): Promise<void> {
 		for (const doc of docs.slice(0, 10)) {
 			if (cache.get(doc, "typescript", THEME, [""]) !== undefined) hits++;
 		}
-		console.log(`lru pressure: first-10 hits ${hits}/10 after ${total} inserts (cap ${MAX_CACHE_ENTRIES})`);
+		console.log(
+			`lru pressure: first-10 hits ${hits}/10 after ${total} inserts (cap ${MAX_CACHE_ENTRIES})`,
+		);
 	}
 }
 

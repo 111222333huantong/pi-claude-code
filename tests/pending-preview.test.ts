@@ -3,13 +3,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { getToolDisplayConfig } from "../extensions/config/config.ts";
 import {
 	clearPendingPreviewFileCache,
+	hashPreviewText,
 	MAX_PENDING_PREVIEW_BYTES,
 	planPendingPreview,
 	renderPendingDiffPreview,
 } from "../extensions/renderer/tool/diff/pending-preview.ts";
-import { getToolDisplayConfig } from "../extensions/config/config.ts";
 
 const theme = {
 	fg(_color: string, text: string) {
@@ -158,6 +159,26 @@ test("超限/目录/未知工具回 reason，不抛错", () => {
 				),
 		);
 		assert.ok(MAX_PENDING_PREVIEW_BYTES >= 1_000_000);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+		clearPendingPreviewFileCache();
+	}
+});
+
+test("hashPreviewText: 确定性 FNV-1a，大 content 指纹不分配全文 JSON", () => {
+	assert.equal(hashPreviewText("hello"), hashPreviewText("hello"));
+	assert.notEqual(hashPreviewText("hello"), hashPreviewText("world"));
+	assert.match(hashPreviewText("x"), /^[0-9a-z]+$/);
+	// write 大 content：同参二次渲染复用组件（指纹命中，不重跑 Myers）。
+	const dir = fixture({ "big.ts": "base\n" });
+	try {
+		const content = `${"line\n".repeat(2000)}tail`;
+		const input = { expanded: false, displayConfig: getToolDisplayConfig, theme };
+		const context: any = { args: { path: "big.ts", content }, cwd: dir };
+		const first = renderPendingDiffPreview("write", context, input);
+		assert.ok(first && typeof first.render === "function");
+		const second = renderPendingDiffPreview("write", context, input);
+		assert.strictEqual(second, first, "same large content must reuse the cached component");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 		clearPendingPreviewFileCache();

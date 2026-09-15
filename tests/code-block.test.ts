@@ -1,10 +1,10 @@
-import { test } from "node:test";
 import assert from "node:assert";
+import { test } from "node:test";
 import { Markdown, visibleWidth } from "@earendil-works/pi-tui";
 import {
-	PLAIN_FENCE_LANGS,
 	boxRenderedCodeBlock,
 	installCodeBlockBox,
+	PLAIN_FENCE_LANGS,
 	parseRenderedFenceLine,
 	resolveBorderColor,
 	roundedCodeBlockBottom,

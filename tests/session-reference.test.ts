@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { Buffer } from "node:buffer";
+import test from "node:test";
 import {
-	SESSION_REFERENCE_CUSTOM_TYPE,
 	buildReferenceContentFromSections,
-	formatReferenceSession,
 	extractSessionReferenceIds,
+	formatReferenceSession,
+	SESSION_REFERENCE_CUSTOM_TYPE,
 	sessionTitle,
 	truncateUtf8,
 } from "../extensions/feature/reference/session.ts";

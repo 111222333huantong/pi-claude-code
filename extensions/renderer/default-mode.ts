@@ -6,14 +6,22 @@
  */
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { config, getToolDisplayConfig, type CompactStyleMode } from "../config/config.ts";
+import { type CompactStyleMode, config, getToolDisplayConfig } from "../config/config.ts";
+import { oneLine } from "../utils/format.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
 	GLOBAL_TOOL_RENDER_PATCH,
 	patchRegistry,
 	TOOL_EXPANDED_BACKGROUND_PATCH,
 } from "../utils/patch-keys.ts";
+import { formatElapsedShort } from "../utils/tool-metrics.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
+import { BASH_LIVE_PREVIEW_LINES, bashLivePreview } from "./tool/bash-preview.ts";
+import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
+import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
+import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
+import { getMessageDisplayTheme } from "./tool/message-display.ts";
+import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 import {
 	countLines,
 	hasExpandableDetail,
@@ -26,20 +34,13 @@ import {
 	renderExpandedToolResult,
 	resolveToolVisualState,
 	scheduleAnimation,
-	settledIcon,
 	setToolVisualState,
+	settledIcon,
 	textFromResult,
 	toolIconColor,
 	toolViewportWidth,
 } from "./tool/result.ts";
-import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
-import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
-import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
-import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
-import { BASH_LIVE_PREVIEW_LINES, bashLivePreview } from "./tool/bash-preview.ts";
-import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 
 // 子代理派生工具自带专用渲染器（tintinweb 的 Agent / arhen 的 subagent），
 // ccstyle 必须保留：派生计划图等多行体是单行摘要表达不了的。
@@ -187,14 +188,13 @@ function renderExpandedTaskResult(
 	const line = text.trim();
 	if (!line || line.includes("\n")) return undefined;
 	let formatted: string | undefined;
-	let match: RegExpMatchArray | null;
-	if (
-		toolName === "TaskCreate" &&
-		(match = line.match(/^Task #(\d+) created successfully: (.+)$/))
-	) {
-		formatted = `${theme.fg("success", "Created task")} ${theme.fg("accent", `#${match[1]}`)} ${theme.fg("muted", match[2])}`;
-	} else if (toolName === "TaskUpdate" && (match = line.match(/^Updated task #(\d+) (.+)$/))) {
-		formatted = `${theme.fg("success", "Updated task")} ${theme.fg("accent", `#${match[1]}`)} ${theme.fg("muted", match[2])}`;
+	const createMatch =
+		toolName === "TaskCreate" ? line.match(/^Task #(\d+) created successfully: (.+)$/) : null;
+	const updateMatch = toolName === "TaskUpdate" ? line.match(/^Updated task #(\d+) (.+)$/) : null;
+	if (createMatch) {
+		formatted = `${theme.fg("success", "Created task")} ${theme.fg("accent", `#${createMatch[1]}`)} ${theme.fg("muted", createMatch[2])}`;
+	} else if (updateMatch) {
+		formatted = `${theme.fg("success", "Updated task")} ${theme.fg("accent", `#${updateMatch[1]}`)} ${theme.fg("muted", updateMatch[2])}`;
 	} else if (toolName === "TaskExecute") {
 		formatted = `${theme.fg("success", "Started")} ${theme.fg("muted", line)}`;
 	} else if (toolName === "TaskStop") {
@@ -273,6 +273,12 @@ function createCcstyleTool(
 				if (stats) {
 					writeStatsText = ` (+${stats.added} -${stats.removed})`;
 					writeStatsStyled = ` ${theme.fg("dim", "(")}${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}${theme.fg("dim", ")")}`;
+					// 落盘耗时 ≥1s 才缀标题（短写零噪音；元数据缺失时不显示）。
+					const elapsed = formatElapsedShort(meta?.elapsedMs ?? 0);
+					if (elapsed) {
+						writeStatsText += ` ·${elapsed}`;
+						writeStatsStyled += theme.fg("dim", ` ·${elapsed}`);
+					}
 				}
 			}
 			const extraText = writeStatsText || summary.detail;
@@ -334,7 +340,8 @@ function createCcstyleTool(
 			if (options?.isPartial) {
 				// 流式 pending：braille 转圈 + 秒级耗时（与 renderCall 共用动画调度）。
 				if (context?.executionStarted) scheduleAnimation(context);
-				const state = context != null ? (context.state ??= {}) : {};
+				const state = context != null ? (context.state ?? {}) : {};
+				if (context != null) context.state = state;
 				if (typeof state.ccstylePendingSince !== "number") state.ccstylePendingSince = Date.now();
 				const elapsedSec = Math.max(0, Math.floor((Date.now() - state.ccstylePendingSince) / 1000));
 				const timing = elapsedSec > 0 ? ` · ${elapsedSec}s` : "";
@@ -382,7 +389,11 @@ function createCcstyleTool(
 					const liveLimit = Math.max(1, config.liveToolPreviewLines || BASH_LIVE_PREVIEW_LINES);
 					const live = bashLivePreview(textFromResult(result), liveLimit);
 					if (live.total > 0) {
-						if (context != null) (context.state ??= {})._liveLineCount = live.total;
+						if (context != null) {
+							const liveState = context.state ?? {};
+							liveState._liveLineCount = live.total;
+							context.state = liveState;
+						}
 						return bashLivePreviewBody(live, theme, expanded);
 					}
 				}
@@ -542,7 +553,7 @@ function prototypeToolRenderMethods(prototype: any): ToolRenderMethods {
 }
 
 function isOwnershipAwarePatch(value: any): value is GlobalToolRenderPatch {
-	if (!value || value.version !== 2 || !value.installed || !value.downstream) return false;
+	if (value?.version !== 2 || !value?.installed || !value?.downstream) return false;
 	return ["hasRendererDefinition", "getRenderShell", "getCallRenderer", "getResultRenderer"].every(
 		(name) =>
 			typeof value.installed[name] === "function" && typeof value.downstream[name] === "function",

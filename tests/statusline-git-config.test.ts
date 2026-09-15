@@ -5,20 +5,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+	readStatuslineConfig,
+	writeStatuslineConfig,
+} from "../extensions/feature/statusline/config.ts";
+import {
 	collectGitStatus,
+	type GitSnapshot,
 	parsePorcelainFiles,
 	parsePorcelainHead,
 	parseShortstat,
 	parseWorktree,
 	startGitPoller,
-	type GitSnapshot,
 } from "../extensions/feature/statusline/git.ts";
-import {
-	readStatuslineConfig,
-	writeStatuslineConfig,
-} from "../extensions/feature/statusline/config.ts";
-import { _resetPrCache, getPrNumber, parsePrNumber } from "../extensions/feature/statusline/pr.ts";
 import { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
+import { _resetPrCache, getPrNumber, parsePrNumber } from "../extensions/feature/statusline/pr.ts";
 
 test("parsePorcelainHead: 分支与上下游", () => {
 	assert.deepEqual(parsePorcelainHead("## main...origin/main"), {

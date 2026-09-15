@@ -7,7 +7,7 @@
  */
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { truncateByWidth } from "../../utils/format.ts";
+import { formatTokens, truncateByWidth } from "../../utils/format.ts";
 
 export type Paint = (color: ThemeColor, text: string) => string;
 
@@ -40,17 +40,8 @@ export interface StatusSnapshot {
 
 export const SEPARATOR = " │ ";
 
-/** 与 working-message 一致的紧凑 token 计数：18 / 1.4k / 12k。 */
-export function formatTokens(value: number): string {
-	const n = Math.max(0, Math.round(value));
-	if (n < 1000) return String(n);
-	const k = n / 1000;
-	if (k < 10) {
-		const oneDecimal = Math.round(k * 10) / 10;
-		return `${oneDecimal % 1 === 0 ? oneDecimal.toFixed(0) : oneDecimal.toFixed(1)}k`;
-	}
-	return `${Math.round(k)}k`;
-}
+/** 与 working-message 一致的紧凑 token 计数：18 / 1.4k / 12k（收口自 utils/format）。 */
+export { formatTokens };
 
 /** `$1.23` 两位小数；订阅制零成本由调用方整段隐藏。 */
 export function formatCost(cost: number): string {

@@ -11,21 +11,23 @@
 import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import { shortenCwd } from "../../utils/format.ts";
+import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
 import { readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
-import { summarizeUsage } from "./usage.ts";
-import { collectGitStatus, EMPTY_GIT_SNAPSHOT, startGitPoller, type GitSnapshot } from "./git.ts";
+import {
+	collectGitStatus,
+	EMPTY_GIT_SNAPSHOT,
+	type GitPoller,
+	type GitSnapshot,
+	startGitPoller,
+} from "./git.ts";
 import { getPrNumber } from "./pr.ts";
 import { buildLines, type StatusSnapshot } from "./render.ts";
+import { summarizeUsage } from "./usage.ts";
 
 function shortCwd(cwd: string): string {
-	const home = homedir();
-	if (cwd === home) return "~";
-	if (cwd.startsWith(`${home}/`) || cwd.startsWith(`${home}\\`)) {
-		return `~${cwd.slice(home.length)}`;
-	}
-	return cwd;
+	return shortenCwd(cwd, homedir());
 }
 
 function modelLabel(model: ExtensionContext["model"]): string {
@@ -89,8 +91,19 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		},
 	});
 
-	let stopPoller: (() => void) | null = null;
+	let stopPoller: GitPoller | null = null;
 	let unsubscribeBranch: (() => void) | null = null;
+	// 当前会话的 poller（工具结束事件驱动刷新用；session 切换时更新）。
+	let activePoller: GitPoller | null = null;
+
+	// 工具落定即刷 git 段（忙则丢弃，下拍补上；空闲 3s 拍不受影响）。
+	pi.on("tool_execution_end", async () => {
+		try {
+			activePoller?.refreshIfIdle();
+		} catch {
+			// ignore
+		}
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
@@ -119,6 +132,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			git = snapshot;
 			rerender();
 		});
+		activePoller = stopPoller;
 
 		// 扩展/mcp 计数：复用 loaded-stats 单例，无额外扫描。
 		collectLoadedStats(ctx.cwd, resolveAgentDir(), hasMcpAdapter(pi)).then(
@@ -203,7 +217,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						behind: git.behind,
 						insertions: git.insertions,
 						deletions: git.deletions,
-						pr: getPrNumber(ctx.cwd, git.branch !== null),
+						pr: getPrNumber(ctx.cwd, git.branch !== null, undefined, Date.now(), git.branch),
 						worktree: git.worktree,
 						showWorktree: readStatuslineConfig().showWorktree,
 					};
@@ -219,6 +233,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async () => {
 		stopPoller?.();
 		stopPoller = null;
+		activePoller = null;
 		unsubscribeBranch?.();
 		unsubscribeBranch = null;
 	});

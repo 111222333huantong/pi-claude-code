@@ -1,27 +1,27 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { fitToWidth, normalizeCodeWhitespace, wrapToWidth } from "./diff-text.ts";
+import type { DiffIndicatorMode } from "../../../config/config.ts";
+import { formatMetaEntryRows } from "./diff-header.ts";
+import { type CodeLineHighlighter, highlightDiffLine } from "./diff-highlight.ts";
+import { type DiffSpan, getCellLineNumber, type SplitDiffRow } from "./diff-inline.ts";
 import {
 	ANSI_BG_RESET,
 	applyLineBackgroundToWrappedRows,
 	colorizeSegment,
-	readThemeAnsi,
-	stabilizeBackgroundResets,
 	type DiffPalette,
 	type DiffTheme,
+	readThemeAnsi,
+	stabilizeBackgroundResets,
 } from "./diff-palette.ts";
-import { highlightDiffLine, type CodeLineHighlighter } from "./diff-highlight.ts";
 import {
-	formatLineNumberLabel,
-	getCompactLineRenderContent,
 	type DiffLineEntry,
 	type DiffLineKind,
 	type DiffMetaEntry,
 	type DiffOmissionEntry,
+	formatLineNumberLabel,
+	getCompactLineRenderContent,
 	type ParsedDiffEntry,
 } from "./diff-parse.ts";
-import { getCellLineNumber, type DiffSpan, type SplitDiffRow } from "./diff-inline.ts";
-import { formatMetaEntryRows } from "./diff-header.ts";
-import type { DiffIndicatorMode } from "../../../config/config.ts";
+import { fitToWidth, normalizeCodeWhitespace, wrapToWidth } from "./diff-text.ts";
 
 export interface RenderedRow {
 	text: string;
@@ -66,18 +66,16 @@ function resolveIndicatorGlyph(
 		return " ";
 	}
 
-	switch (indicatorMode) {
-		case "bars":
-			return "▌";
-		case "classic":
-			if (continuation) {
-				return " ";
-			}
-			return kind === "add" ? "+" : "-";
-		case "none":
-		default:
-			return " ";
+	if (indicatorMode === "bars") {
+		return "▌";
 	}
+	if (indicatorMode === "classic") {
+		if (continuation) {
+			return " ";
+		}
+		return kind === "add" ? "+" : "-";
+	}
+	return " "; // "none" 及未知模式一律空白
 }
 
 function renderChangeMarker(

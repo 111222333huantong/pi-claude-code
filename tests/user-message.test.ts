@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UserMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import {
 	addArrowToFirstLine,
 	prefixEditorPromptLine,

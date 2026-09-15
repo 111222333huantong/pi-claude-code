@@ -422,7 +422,7 @@ function userTextLooksLikeMarkdown(text: string): boolean {
 /** 紧凑单段表达式（如整行只有一个 \frac）整体转换；文章/路径/标点句一律放过。 */
 function shouldFormatUserStandaloneMath(text: string): boolean {
 	const plain = text.trim();
-	if (!plain || !plain.includes("\\")) return false;
+	if (!plain?.includes("\\")) return false;
 	// $ 包裹的走行内路径，避免定界符残留。
 	if (/\$[^$\n]+\$/.test(plain)) return false;
 	// \(…\) / \[…\] 定界的交给原生（旧行内/块级路径删除后，此处必须显式豁免）。
@@ -554,14 +554,23 @@ const ART_CACHE_MAX = 50;
 /** 获取/计算 mermaid art（带缓存）。 */
 function getArt(src: string): ReturnType<typeof renderMermaid> | null {
 	const cached = ART_CACHE.get(src);
-	if (cached) return cached;
+	if (cached) {
+		// LRU：命中提到最末，避免常用图被抖动淘汰。
+		ART_CACHE.delete(src);
+		ART_CACHE.set(src, cached);
+		return cached;
+	}
 	let art = null;
 	try {
 		art = renderMermaid(src);
 	} catch {
 		art = null;
 	}
-	if (ART_CACHE.size >= ART_CACHE_MAX) ART_CACHE.clear();
+	// 满则淘汰最旧一条（原全清会导致抖动时反复重算）。
+	if (ART_CACHE.size >= ART_CACHE_MAX) {
+		const oldest = ART_CACHE.keys().next().value;
+		if (oldest !== undefined) ART_CACHE.delete(oldest);
+	}
 	if (art) ART_CACHE.set(src, art);
 	return art;
 }

@@ -3,8 +3,9 @@ import {
 	type DiffIndicatorMode,
 	type ToolDisplayConfig,
 } from "../../../config/config.ts";
-import type { DiffPresentationMode } from "./diff-presentation.ts";
 import { RICH_DIFF_COMPONENT } from "../../../utils/patch-keys.ts";
+import type { DiffPresentationMode } from "./diff-presentation.ts";
+
 export { RICH_DIFF_COMPONENT };
 
 /** Snapshot or live getter — panel changes must apply on the next paint. */

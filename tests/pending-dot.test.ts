@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { pendingDotColor } from "../extensions/utils/tool-loading-icon.ts";
-import { clearAllAnimations, toolIconColor } from "../extensions/renderer/tool/result.ts";
+import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { config } from "../extensions/config/config.ts";
-import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { clearAllAnimations, toolIconColor } from "../extensions/renderer/tool/result.ts";
+import { pendingDotColor } from "../extensions/utils/tool-loading-icon.ts";
 
 initTheme("dark");
 

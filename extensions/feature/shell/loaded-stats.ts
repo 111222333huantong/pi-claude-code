@@ -22,8 +22,8 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	DefaultResourceLoader,
-	getAgentDir,
 	type ExtensionAPI,
+	getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
@@ -332,12 +332,24 @@ async function doCollect(
 }
 
 /**
- * Collect loaded-resource stats, shared per (cwd, agentDir, hasMcpAdapter).
+ * Collect loaded-resource stats, shared per (cwd, agentDir, hasMcpAdapter, mcpPaths).
  * Same key reuses the in-flight/completed promise (header + `/loaded` +
  * statusline 共用一次扫描）; a failed collection clears its key so a later
  * call can retry. `hasMcpAdapter` gates MCP counting entirely — pass
  * `pi.getCommands().some((c) => c.name === "mcp")`.
  */
+/** mcpPaths 指纹：测试注入不同路径时不串缓存；生产调用恒为 undefined 走同一 key。 */
+function mcpPathsFingerprint(mcpPaths: Partial<McpResolutionPaths> | undefined): string {
+	if (!mcpPaths) return "-";
+	return Object.keys(mcpPaths)
+		.sort()
+		.map((key) => {
+			const value = (mcpPaths as Record<string, unknown>)[key];
+			return `${key}=${Array.isArray(value) ? value.join(",") : String(value ?? "")}`;
+		})
+		.join(";");
+}
+
 export function collectLoadedStats(
 	cwd: string,
 	agentDir: string,
@@ -345,7 +357,7 @@ export function collectLoadedStats(
 	options?: CollectOptions,
 ): Promise<LoadedStats> {
 	if (!statsCache) statsCache = new Map();
-	const key = `${cwd} ${agentDir} ${hasMcpAdapter ? 1 : 0}`;
+	const key = `${cwd} ${agentDir} ${hasMcpAdapter ? 1 : 0} ${mcpPathsFingerprint(options?.mcpPaths)}`;
 	const cached = statsCache.get(key);
 	if (cached) return cached;
 	const promise = doCollect(cwd, agentDir, hasMcpAdapter, options).catch((err) => {

@@ -1,25 +1,22 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-
-import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 
-import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Container, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { createJiti } from "jiti";
+import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { type Component, Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
-	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
-import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
-	HINT_HITBOX_PAD_COLS,
 	collapsedHintHitbox,
+	HINT_HITBOX_PAD_COLS,
 	isOsc8LinkColumn,
 	osc8LinkRanges,
 } from "../extensions/renderer/mouse/layout.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 
 initTheme("dark");
 
@@ -317,7 +314,7 @@ test("show-more hover targets the view rendered in the current frame after compa
 test("expanded tool group show-more opens preview instead of collapsing the group", () => {
 	const grouping = installToolGrouping(() => true);
 	grouping.setTheme({
-		fg: (color: string, text: string) => text,
+		fg: (_color: string, text: string) => text,
 		bold: (text: string) => text,
 		bg: (_slot: string, text: string) => text,
 	});

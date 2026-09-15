@@ -1,7 +1,7 @@
 import { Markdown, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
-import { CODE_BLOCK_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import { CODE_BLOCK_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 
 /**
  * Assistant 代码块美化：把 Pi 原生 Markdown 渲染出的 ```fence 行

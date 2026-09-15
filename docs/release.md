@@ -25,7 +25,7 @@ npm test            # 全量用例，必须全绿
 ## 3. 提交 + 推 fork
 
 ```powershell
-git add -A -- . ":!themes/cc-dark.bak.json"   # bak 备份文件永不提交
+git add -A
 git commit -m "chore: 升版 x.y.z"              # 或 feat/fix，按实际内容
 git push origin main
 ```
@@ -66,6 +66,5 @@ npm view pi-claude-code version   # 核验 registry 已更新
 ## 7. 铁律
 
 - 同扩展**禁止双版本同载**（本地路径 + npm 版），补丁互踩，问题难查。测本地用 test.bat，测 npm 版先 `pi remove` 本地。
-- `themes/cc-dark.bak.json` 是本地备份，不提交、不进包（要彻底可删文件，暂留）。
 - `preversion` 钩子（format+lint+typecheck+test+docs）发版时**不要整跑**，手动分步做；`npm version` 命令一律不用。
 - 发版 token 只放本机 `~/.npmrc`，不进仓库、不截图外传；泄漏了去网页 Revoke 后重建。

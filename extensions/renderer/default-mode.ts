@@ -7,6 +7,7 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type CompactStyleMode, config, getToolDisplayConfig } from "../config/config.ts";
+import { fitSegmentsByPriority } from "../utils/fit-segments.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
 	GLOBAL_TOOL_RENDER_PATCH,
@@ -359,9 +360,29 @@ function createCcstyleTool(
 					if (cachedBody === undefined || cachedWidth !== width) {
 						cachedWidth = width;
 						const callWidth = Math.max(0, viewportWidth - TOOL_GUTTER_WIDTH - (expanded ? 0 : 1));
-						const mainWidth = Math.max(0, callWidth - visibleWidth(fullExtraText));
+						// 三段式（fitSegmentsByPriority）：正文优先，detail（offset/参数计数/
+						// live 后缀）先整体让路，再按现有规则截正文。宽屏能装下时与旧逻辑逐字一致。
+						const fitted = fitSegmentsByPriority(
+							[
+								{
+									text: summary.main,
+									priority: 2,
+									truncate: (text, budget) =>
+										fitToolCallSummary({ ...summary, main: text }, budget),
+								},
+								{
+									text: fullExtraText,
+									priority: 1,
+									compactText: "",
+									truncate: (text, budget) => (visibleWidth(text) <= budget ? text : ""),
+								},
+							],
+							callWidth,
+							"…",
+							0,
+						);
 						// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-						cachedBody = `${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
+						cachedBody = `${theme.fg("toolTitle", fitted[0] ?? "")}${fitted[1] ? fullExtraStyled : ""}`;
 					}
 					const titleLine = truncateToWidth(`${lead}${liveIcon} ${cachedBody}`, viewportWidth, "");
 					// write 参数流式行：renderResult 只有 result 存在才跑，参数流式阶段

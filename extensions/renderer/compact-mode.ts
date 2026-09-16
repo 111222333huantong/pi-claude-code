@@ -50,7 +50,12 @@ import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts
 import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { formatDisplayPath } from "./tool/names.ts";
-import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
+import {
+	clearAnimation,
+	insetComponent,
+	renderExpandedToolResult,
+	scheduleAnimation,
+} from "./tool/result.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 
@@ -1205,8 +1210,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		const name = String(this.toolName ?? "");
 		if (EDIT_WRITE_TOOLS.has(name)) {
-			if (this.executionStarted && (!this.result || this.isPartial === true))
-				scheduleAnimation(this);
+			// 同 default-mode：pending 即上臂，不门控 executionStarted。
+			if (!this.result || this.isPartial === true) scheduleAnimation(this);
+			else clearAnimation(this);
 			return compactEditWriteLines(this, width, deps.writeMetadata);
 		}
 		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。

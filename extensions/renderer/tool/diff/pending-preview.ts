@@ -176,8 +176,38 @@ export type PendingPreviewRenderInput = {
 };
 
 /**
+ * 流式防抖窗口：指纹连变时两次重算的最小间隔。只影响流式中的中间帧
+ * （预告片最多滞后这么久），首帧/慢速流/落定态行为与原来逐像素一致。
+ */
+export const PENDING_PREVIEW_DEBOUNCE_MS = 150;
+
+const DEBOUNCE_KEY = "__ccPendingPreviewDebounce";
+
+type DebounceRecord = {
+	timer: ReturnType<typeof setTimeout> | null;
+	computedAt: number;
+};
+
+function getDebounceRecord(state: Record<string, any>): DebounceRecord {
+	const record = state[DEBOUNCE_KEY] as DebounceRecord | undefined;
+	if (record) return record;
+	const fresh: DebounceRecord = { timer: null, computedAt: 0 };
+	state[DEBOUNCE_KEY] = fresh;
+	return fresh;
+}
+
+function clearDebounceTimer(record: DebounceRecord): void {
+	if (record.timer) {
+		clearTimeout(record.timer);
+		record.timer = null;
+	}
+}
+
+/**
  * 流式预览组件：`Pending…` 动画行 + 内存投影 diff。
- * 参数指纹（含 expanded）命中 `context.state` 缓存即复用，不重跑 LCS。
+ * 参数指纹（含 expanded）命中 `context.state` 缓存即复用，不重跑 Myers。
+ * 指纹未命中且距上次重算不足窗口时返回旧组件（若有），并单飞起一个
+ * trailing 定时器促发重算——流式停下后屏上一定是最新内容。
  * 失败返回 undefined，由调用方降级为原 Pending 行。
  */
 export function renderPendingDiffPreview(
@@ -205,6 +235,27 @@ export function renderPendingDiffPreview(
 	const cached = state[cacheKey];
 	if (cached && cached.fingerprint === fingerprint && cached.component) return cached.component;
 
+	const debounce = getDebounceRecord(state);
+	const now = Date.now();
+	if (cached?.component && now - debounce.computedAt < PENDING_PREVIEW_DEBOUNCE_MS) {
+		// 流式风暴中：返回旧组件，单飞 trailing 定时器促发重算。
+		// 显示效果不变：最终停下来的那一帧一定是最新内容（见测试“最终一致”）。
+		clearDebounceTimer(debounce);
+		if (typeof input.invalidate === "function") {
+			const invalidate = input.invalidate;
+			debounce.timer = setTimeout(() => {
+				debounce.timer = null;
+				try {
+					invalidate();
+				} catch {
+					/* 组件已卸载时空转，不干扰 */
+				}
+			}, PENDING_PREVIEW_DEBOUNCE_MS);
+			(debounce.timer as any)?.unref?.();
+		}
+		return cached.component;
+	}
+
 	const plan = planPendingPreview(toolName, args, context?.cwd);
 	if ("reason" in plan) return undefined;
 	const component = renderWriteDiffResult(
@@ -224,5 +275,7 @@ export function renderPendingDiffPreview(
 		"",
 	);
 	state[cacheKey] = { fingerprint, component };
+	debounce.computedAt = Date.now();
+	clearDebounceTimer(debounce);
 	return component;
 }

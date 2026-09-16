@@ -224,3 +224,64 @@ test("grouped bash glance row shows live line count while running", () => {
 		defaultHooks.shutdown();
 	}
 });
+
+test("pending 标题盲文逐 paint 更新，不冻在宽度缓存里", (t) => {
+	// 回归：renderCall 曾把墙钟盲文烤进宽度缓存，标题只随参数块跳动
+	//（真机 beat 日志 188/29/63ms）。现在图标逐 render 取新鲜值。
+	t.mock.timers.enable({ apis: ["Date"] });
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const bash = startedBash("braille-beat");
+		partial(bash, rows(3));
+		const first = render(bash).join("\n");
+		t.mock.timers.tick(100);
+		const second = render(bash).join("\n");
+		assert.notEqual(first, second, "同一宽度二次 render，盲文必须推进（跨过 80ms 格必换帧）");
+	} finally {
+		t.mock.timers.reset();
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});
+
+test("renderCall partial 未 start 也上臂（参数流式阶段不断拍）", (t) => {
+	// 回归：门控曾要求 executionStarted，参数流式时（partial 但未 start）
+	// 只渲染不上臂，节拍跟着网络块走（beat 日志 187ms 量化）。
+	// 用 ui.requestRender 计数观测驱动开火（不依赖诊断槽）。
+	t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		// 注意：故意不 markExecutionStarted，模拟参数流式阶段。
+		let renderRequests = 0;
+		const countingUi = {
+			theme: ui.theme,
+			requestRender() {
+				renderRequests++;
+			},
+			setStatus() {},
+		} as any;
+		const bash = new ToolExecutionComponent(
+			"bash",
+			"pre-start",
+			{ command: "npm test" },
+			{},
+			undefined,
+			countingUi,
+			process.cwd(),
+		) as any;
+		partial(bash, rows(3));
+		render(bash);
+		t.mock.timers.tick(100);
+		assert.ok(renderRequests >= 1, "无块时 tick 也要开火到组件（requestRender 计数）");
+	} finally {
+		t.mock.timers.reset();
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});

@@ -23,6 +23,7 @@ import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 import {
+	clearAnimation,
 	countLines,
 	hasExpandableDetail,
 	insetComponent,
@@ -249,13 +250,12 @@ function createCcstyleTool(
 			const isPending =
 				visualState === "pending" ||
 				(!visualState && (context?.isPartial || context?.executionStarted));
-			if (isPending && context?.executionStarted) scheduleAnimation(context);
-			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
-			// 成功色走主题 success 语义色（浅色主题自动适配，不过曝）。
-			const icon = theme.fg(
-				visualState === "success" ? "success" : toolIconColor(context),
-				rawIcon,
-			);
+			// 动画跟随 pending 本身，不跟 executionStarted：参数流式阶段
+			//（partial 但还没 start）行已经在转，不上臂节拍就跟着网络块走。
+			if (isPending) scheduleAnimation(context);
+			else clearAnimation(context);
+			// 图标配色（静态部分）：字形逐 paint 取新鲜值，见下方 render。
+			const iconColor = visualState === "success" ? "success" : toolIconColor(context);
 			const summary = toolCallSummary(toolName, args, {
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
@@ -305,23 +305,31 @@ function createCcstyleTool(
 			const fullExtraText = `${extraText}${liveElapsedText}${liveCountText}`;
 			const fullExtraStyled = `${extraStyled}${theme.fg("dim", liveElapsedText)}${theme.fg("dim", liveCountText)}`;
 			let cachedWidth: number | undefined;
-			let cachedLine: string | undefined;
+			let cachedBody: string | undefined;
 			const expanded = Boolean(context?.expanded);
 			return {
 				render(width: number) {
-					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
+					// 动画字形逐 paint 取新鲜值（墙钟推导），不进宽度缓存：
+					// 否则 pending 标题的盲文冻在 renderCall 调用时刻，只随参数块跳动，
+					// 肉眼就是走走停停（beat 日志 188/29/63ms 实锤）。正文截断仍缓存。
+					const liveIcon = theme.fg(
+						iconColor,
+						isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState),
+					);
 					const viewportWidth = toolViewportWidth(width);
 					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
 					const lead = expanded ? "" : " ";
-					const callWidth = Math.max(
-						0,
-						viewportWidth - visibleWidth(icon) - 1 - (expanded ? 0 : 1),
-					);
-					const mainWidth = Math.max(0, callWidth - visibleWidth(fullExtraText));
-					cachedWidth = width;
-					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
-					return [truncateToWidth(cachedLine, viewportWidth, "")];
+					if (cachedBody === undefined || cachedWidth !== width) {
+						cachedWidth = width;
+						const callWidth = Math.max(
+							0,
+							viewportWidth - visibleWidth(liveIcon) - 1 - (expanded ? 0 : 1),
+						);
+						const mainWidth = Math.max(0, callWidth - visibleWidth(fullExtraText));
+						// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
+						cachedBody = `${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
+					}
+					return [truncateToWidth(`${lead}${liveIcon} ${cachedBody}`, viewportWidth, "")];
 				},
 				invalidate() {},
 			};
@@ -338,8 +346,9 @@ function createCcstyleTool(
 
 			const expanded = isToolExpanded(options, context);
 			if (options?.isPartial) {
-				// 流式 pending：braille 转圈 + 秒级耗时（与 renderCall 共用动画调度）。
-				if (context?.executionStarted) scheduleAnimation(context);
+				// 流式 pending：braille 转圈 + 秒级耗时（与 renderCall 共用动画调度；
+				// partial 即 pending，不门控 executionStarted，见 renderCall 处注释）。
+				scheduleAnimation(context);
 				const state = context != null ? (context.state ?? {}) : {};
 				if (context != null) context.state = state;
 				if (typeof state.ccstylePendingSince !== "number") state.ccstylePendingSince = Date.now();

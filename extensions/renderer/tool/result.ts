@@ -81,8 +81,15 @@ let sharedTickerUnsubscribe: (() => void) | null = null;
 
 /**
  * 工具 braille 动画统一走 90ms 共享 tick（spinner-ticker），不再自建定时器。
- * 调用方每 render 按需 schedule，tick 到即 invalidate 全部 pending 上下文；
- * 无订阅时共享表自动停表，空闲零开销。
+ *
+ * 集合是常驻注册表（tick 开火不清）：pending 行每 90ms 必被 invalidate 一次，
+ * 不依赖参数块到达来“回填”——否则块间隙里驱动饿死停表，盲文跟着网络包
+ * 走（beat 日志 187ms 量化实锤），肉眼就是卡顿。移除只发生在落定
+ * （setToolVisualState → clearAnimation）、shutdown（clearAllAnimations），
+ * 或 invalidate 抛错时（组件已卸载）。
+ * 同一工具只保留首次注册的 context（flag 在共享 rendererState 上，
+ * 后续新对象直接返回）；entry 里的 state/invalidate 都委托给活组件，
+ * 不会读到过期快照。
  */
 function ensureSharedAnimationTick(): void {
 	if (sharedTickerUnsubscribe) return;
@@ -93,18 +100,29 @@ function ensureSharedAnimationTick(): void {
 			return;
 		}
 		const contexts = Array.from(activeAnimationContexts);
-		activeAnimationContexts.clear();
 		for (const ctx of contexts) {
-			ctx.state.ccstyleAnimationScheduled = false;
-			ctx.invalidate?.();
+			try {
+				ctx.invalidate?.();
+			} catch {
+				// 组件已卸载：清掉，不让僵尸 entry 蹭 tick。
+				activeAnimationContexts.delete(ctx);
+			}
 		}
 	});
 }
 
-function clearAnimation(context: any) {
-	if (!context?.state?.ccstyleAnimationScheduled) return;
-	context.state.ccstyleAnimationScheduled = false;
-	activeAnimationContexts.delete(context);
+export function clearAnimation(context: any) {
+	const state = context?.state;
+	if (state) state.ccstyleAnimationScheduled = false;
+	if (!state) {
+		activeAnimationContexts.delete(context);
+		return;
+	}
+	// 按共享 state 移除：同一工具每次 updateDisplay 都换新 context 对象，
+	// 按对象身份删会漏（compact 从不调 setToolVisualState，只能靠这里）。
+	for (const ctx of activeAnimationContexts) {
+		if (ctx === context || ctx?.state === state) activeAnimationContexts.delete(ctx);
+	}
 }
 
 export function clearAllAnimations() {

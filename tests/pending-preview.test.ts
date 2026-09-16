@@ -8,6 +8,7 @@ import {
 	clearPendingPreviewFileCache,
 	hashPreviewText,
 	MAX_PENDING_PREVIEW_BYTES,
+	PENDING_PREVIEW_DEBOUNCE_MS,
 	planPendingPreview,
 	renderPendingDiffPreview,
 } from "../extensions/renderer/tool/diff/pending-preview.ts";
@@ -184,3 +185,81 @@ test("hashPreviewText: 确定性 FNV-1a，大 content 指纹不分配全文 JSON
 		clearPendingPreviewFileCache();
 	}
 });
+
+test("防抖：窗口内指纹连变返回旧组件，trailing 定时器促发最终一致", (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	try {
+		const dir = fixture({ "base.txt": "base\n" });
+		try {
+			let invalidations = 0;
+			const input = {
+				expanded: true,
+				displayConfig: getToolDisplayConfig,
+				theme,
+				invalidate: () => {
+					invalidations++;
+				},
+			};
+			const context: any = { args: { path: "new-v1.txt", content: "v1\n" }, cwd: dir };
+			const first = renderPendingDiffPreview("write", context, input);
+			assert.ok(first && typeof first.render === "function");
+
+			// 窗口内换 content：不重算，返回同一旧实例。
+			context.args = { path: "new-v1.txt", content: "v2 with more text\n" };
+			const held = renderPendingDiffPreview("write", context, input);
+			assert.strictEqual(held, first, "窗口内必须复用旧组件，不重跑 Myers");
+			assert.ok(
+				stripAnsi(first.render(100).join("\n")).includes("v1"),
+				"旧组件内容保持 v1（显示滞后 < 150ms，落定后一致）",
+			);
+
+			// trailing 定时器到点 → 促发一次 invalidate。
+			t.mock.timers.tick(PENDING_PREVIEW_DEBOUNCE_MS + 50);
+			assert.equal(invalidations, 1, "trailing 定时器必须恰好促发一次重算");
+
+			// 下一帧指纹仍对不上（已超窗）→ 重算为新内容。
+			const second = renderPendingDiffPreview("write", context, input);
+			assert.notStrictEqual(second, first);
+			assert.ok(
+				stripAnsi(second.render(100).join("\n")).includes("v2 with more text"),
+				"最终一致：屏上落定为最新内容",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+			clearPendingPreviewFileCache();
+		}
+	} finally {
+		t.mock.timers.reset();
+	}
+});
+
+test("防抖：首帧与慢速流立刻算，无 invalidate 回调也不抛", (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	try {
+		const dir = fixture({ "base.txt": "base\n" });
+		try {
+			// 无 invalidate 回调：窗口内返回旧组件，不起定时器，不抛错。
+			const input = { expanded: true, displayConfig: getToolDisplayConfig, theme };
+			const context: any = { args: { path: "n1.txt", content: "one\n" }, cwd: dir };
+			const first = renderPendingDiffPreview("write", context, input);
+			assert.ok(first && typeof first.render === "function");
+			context.args = { path: "n1.txt", content: "two\n" };
+			assert.strictEqual(renderPendingDiffPreview("write", context, input), first);
+
+			// 超窗后立刻重算（行为与防抖前一致）。
+			t.mock.timers.tick(PENDING_PREVIEW_DEBOUNCE_MS + 50);
+			const second = renderPendingDiffPreview("write", context, input);
+			assert.notStrictEqual(second, first);
+			assert.ok(stripAnsi(second.render(100).join("\n")).includes("two"));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+			clearPendingPreviewFileCache();
+		}
+	} finally {
+		t.mock.timers.reset();
+	}
+});
+
+function stripAnsi(text: string): string {
+	return text.replace(/\x1b\[[0-9;]*m/g, "");
+}

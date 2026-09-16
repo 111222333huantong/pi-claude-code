@@ -26,7 +26,17 @@ import {
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
+import {
+	fitToolCallSummary,
+	humanizeMcpToolName,
+	humanizeToolLabel,
+	isLikelyQuietCommand,
+	toolCallSummary,
+} from "./tool/names.ts";
+
+/** humanizeMcpToolName 主实现在 names.ts；此处转出保对外签名不变。 */
+export { humanizeMcpToolName };
+
 import {
 	classifyToolFailure,
 	clearAnimation,
@@ -106,16 +116,6 @@ export function isMcpToolDefinition(definition: any, toolName: string): boolean 
 	if (label) return false;
 	const description = typeof definition?.description === "string" ? definition.description : "";
 	return /\bModel Context Protocol\b/i.test(description);
-}
-
-export function humanizeMcpToolName(toolName: string): string {
-	const words = toolName
-		.replace(/^mcp(?:[_:-]+)+/i, "")
-		.split(/[_:-]+/)
-		.filter(Boolean);
-	return words.length
-		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
-		: "MCP";
 }
 
 /** 排除名单内且自带 renderer 的工具保留原渲染。 */
@@ -571,7 +571,9 @@ function createCcstyleTool(
 					? failureSummaryText(text)
 					: outputLines
 						? `${outputLines} ${lineWord} ${action}`
-						: "Done";
+						: toolName === "bash" && isLikelyQuietCommand(args?.command)
+							? "command completed (no output)"
+							: "Done";
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
 			const hintText = showMoreHintText();
 			const hintPrefix = expandable ? theme.fg("dim", " • ") : "";

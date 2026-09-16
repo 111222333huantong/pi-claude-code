@@ -3,6 +3,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { resolveAgentTitle } from "../../feature/reference/agent-titles.ts";
 import { oneLine } from "../../utils/format.ts";
+import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 function clip(value: unknown): string {
 	return oneLine(value, config.inputClip);
@@ -77,6 +78,87 @@ function agentIdSummary(
 function shortAgentId(id: string): string {
 	return id.length > 12 ? id.slice(0, 8) : id;
 }
+
+/**
+ * MCP 工具名人性化（与 default-mode 同名函数同实现，收敛到此共享）。
+ * 去 mcp 前缀分段后 Title Case；无有效分段回 "MCP"。
+ */
+export function humanizeMcpToolName(toolName: string): string {
+	const words = toolName
+		.replace(/^mcp(?:[_:-]+)+/i, "")
+		.split(/[_:-]+/)
+		.filter(Boolean);
+	return words.length
+		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
+		: "MCP";
+}
+
+/** 仅凭名字/title 的 MCP 判定（definition 版见 default-mode isMcpToolDefinition）。 */
+export function isMcpToolName(toolName: string, title?: string): boolean {
+	if (toolName === "mcp" || /^mcp[_:-]/i.test(toolName) || /[_:-]mcp[_:-]/i.test(toolName)) {
+		return true;
+	}
+	if (toolName.includes(":")) return true;
+	if (/^ctx_/i.test(toolName)) return true;
+	if (title && /^MCP(?::|\s)/.test(title.trim())) return true;
+	return false;
+}
+
+function mcpArgText(value: unknown): string {
+	return typeof value === "string" && value ? value : "";
+}
+
+/** name==="mcp" 代理工具按实参解析调用目标（思想重写自 pi-tool-display）。 */
+function mcpProxyTarget(args: any): string {
+	const tool = mcpArgText(args?.tool);
+	const connect = mcpArgText(args?.connect);
+	const describe = mcpArgText(args?.describe);
+	const search = mcpArgText(args?.search);
+	const server = mcpArgText(args?.server);
+	if (tool) return server ? `call ${server}:${tool}` : `call ${tool}`;
+	if (connect) return `connect ${connect}`;
+	if (describe) return server ? `describe ${describe} @${server}` : `describe ${describe}`;
+	if (search) return server ? `search "${search}" @${server}` : `search "${search}"`;
+	if (server) return `tools ${server}`;
+	return "status";
+}
+
+function mcpWithArgCount(main: string, args: any): ToolCallSummary {
+	const count = args && typeof args === "object" ? Object.keys(args).length : 0;
+	// detail 自带前导空格：标题行直接拼接 main + detail（与 read 的 offset detail 同约定）。
+	return { main, detail: count === 0 ? " (no args)" : ` (${count} arg${count === 1 ? "" : "s"})` };
+}
+
+/**
+ * MCP 调用摘要（`MCP <target> + (N args)`），非 MCP 回 undefined。
+ * target 优先代理实参解析，其次名字人性化，最后回落 "MCP " 标题去前缀。
+ */
+export function mcpCallSummary(
+	toolName: string,
+	title: string,
+	args: any,
+): ToolCallSummary | undefined {
+	if (toolName === "mcp" && args && typeof args === "object") {
+		return mcpWithArgCount(`MCP ${mcpProxyTarget(args)}`, args);
+	}
+	if (
+		/^mcp[_:-]/i.test(toolName) ||
+		/[_:-]mcp[_:-]/i.test(toolName) ||
+		toolName.includes(":") ||
+		/^ctx_/i.test(toolName)
+	) {
+		return mcpWithArgCount(`MCP ${humanizeMcpToolName(toolName)}`, args);
+	}
+	const bareTitle = title.replace(/^MCP(?::|\s)+/i, "").trim();
+	if (bareTitle !== title.trim()) {
+		return mcpWithArgCount(`MCP ${bareTitle || "MCP"}`, args);
+	}
+	return undefined;
+}
+
+/** 首个实操行判定：跳过注释/set/cd/export/赋值/块关键字（思想重写自 pi-cc-tools）。 */
+const BASH_HEADLINE_SKIP_RE =
+	/^(?:#|set(?:\s|$)|cd(?:\s|$)|export(?:\s|$)|(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=|(?:\{|\}|\bdo\b|\bdone\b|\bthen\b|\bfi\b|\besac\b)$)/;
 
 /**
  * arhen `subagent` 派生摘要：人名优先，无 UUID。
@@ -185,6 +267,83 @@ export function formatDisplayPath(value: unknown, cwd: string | undefined, width
 	return truncatePathToWidth(displayPath(value, cwd), Math.min(width, config.inputClip));
 }
 
+/** 头尾保留式摘要（65% 头 + … + 尾），CJK 按列宽算。 */
+function summarizeHeadTail(text: string, max: number): string {
+	if (visibleWidth(text) <= max) return text;
+	if (max <= 1) return "…";
+	const headWidth = Math.max(1, Math.ceil(((max - 1) * 65) / 100));
+	const tailWidth = Math.max(0, max - 1 - headWidth);
+	return `${headToWidth(text, headWidth)}…${tailToWidth(text, tailWidth)}`;
+}
+
+/**
+ * bash 标题 headline：去控制字符/多空白后取首个实操行，超长头尾保留；
+ * 多行脚本缀 `· N lines`。空命令回 undefined（调用方回落默认标题）。
+ */
+export function bashHeadline(command: unknown): string | undefined {
+	if (typeof command !== "string" || !command.trim()) return undefined;
+	const lines = command
+		.replace(/\r\n?/g, "\n")
+		.split("\n")
+		.map((line) => sanitizeToolResultText(line, 4096).replace(/\s+/g, " ").trim())
+		.filter((line) => line.length > 0);
+	if (lines.length === 0) return undefined;
+	const operative = lines.find((line) => !BASH_HEADLINE_SKIP_RE.test(line)) ?? lines[0]!;
+	const head = summarizeHeadTail(operative, config.inputClip);
+	return lines.length > 1 ? `${head} · ${lines.length} lines` : head;
+}
+
+/**
+ * 大概率无输出的命令前缀（cd/mkdir/安装类…；含 PowerShell 同义 cmdlet）。
+ * 落定无输出时收敛为 `command completed (no output)`（思想重写自 pi-tool-display）。
+ */
+const QUIET_COMMAND_PREFIXES = [
+	"cd",
+	"mkdir",
+	"rmdir",
+	"rm",
+	"mv",
+	"cp",
+	"touch",
+	"chmod",
+	"chown",
+	"git add",
+	"git checkout",
+	"git switch",
+	"git restore",
+	"git reset",
+	"git clean",
+	"npm install",
+	"pnpm install",
+	"yarn install",
+	"bun install",
+	"pip install",
+	"poetry install",
+	"cargo fetch",
+	"go mod tidy",
+	"Set-Location",
+	"New-Item",
+	"Remove-Item",
+	"Move-Item",
+	"Copy-Item",
+] as const;
+
+/** 首个 && / || / ; 分段命中 quiet 前缀即判 quiet（大小写不敏感）。 */
+export function isLikelyQuietCommand(command: unknown): boolean {
+	if (typeof command !== "string") return false;
+	const normalized = command.trim().toLowerCase();
+	if (!normalized) return false;
+	const primary =
+		normalized
+			.split(/&&|\|\||;/)
+			.map((segment) => segment.trim())
+			.find((segment) => segment.length > 0) ?? "";
+	if (!primary) return false;
+	return QUIET_COMMAND_PREFIXES.some(
+		(prefix) => primary === prefix.toLowerCase() || primary.startsWith(`${prefix.toLowerCase()} `),
+	);
+}
+
 /** 按最终终端宽度渲染摘要；路径摘要不会再被整行头部截断。 */
 export function fitToolCallSummary(summary: ToolCallSummary, width: number): string {
 	if (!summary.path) return headToWidth(summary.main, width, "…");
@@ -261,6 +420,16 @@ export function toolCallSummary(
 	if (name === "enterplanmode" || name === "enter_plan_mode") {
 		return { main: `${title} enable read-only planning`, detail: "" };
 	}
+	const mcp = mcpCallSummary(toolName, title, args);
+	if (mcp) return mcp;
+	if (name === "bash") {
+		const headline = bashHeadline(args.command);
+		if (headline !== undefined) return { main: `${title} ${headline}`, detail: "" };
+		// 空命令：default 回标题独行，grouping 保留旧 `Bash ...` 占位。
+		return variant === "grouping"
+			? { main: `${title} ...`, detail: "" }
+			: { main: title, detail: "" };
+	}
 	if (name === "exitplanmode" || name === "exit_plan_mode") {
 		return { main: `${title} present plan`, detail: "" };
 	}
@@ -298,7 +467,6 @@ export function toolCallSummary(
 		};
 	}
 	if (variant === "grouping") {
-		if (toolName === "bash") return { main: `Bash ${clip(args.command || "...")}`, detail: "" };
 		if (toolName === "grep") {
 			const pattern = clip(args.pattern || "...");
 			return {

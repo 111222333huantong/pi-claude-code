@@ -110,4 +110,6 @@
 
 - [ ] §2 pin 一个 cc-my-pi 版本（git tag/commit）
 - [ ] §4 找到 `pi-compact-thinking` 后继或宣告 FORKED
-- [ ] §6 上游 pending BOM/换行归一可选抄入
+- [x] §6 上游 pending BOM/换行归一可选抄入（2026-09-16 P2.3 已做：BOM 去除 + CRLF 经
+  `splitWriteContentLines` 归一 + `~` 展开 + `realpath` 工作区逃逸检查，见
+  `extensions/renderer/tool/diff/pending-preview.ts`）

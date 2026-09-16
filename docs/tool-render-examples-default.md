@@ -8,13 +8,13 @@
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠇ Bash rg -n 'renderCall' extensions/ --type ts
+ ● Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
 
  ✗ Read missing.ts
-   ↳ ENOENT: no such…en 'missing.ts' • click to show more
+   ↳ Error: ENOENT: …en 'missing.ts' • click to show more
 ```
 
 - 运行中：call 行使用 Braille 转轮。
@@ -159,7 +159,7 @@ write 新建 / 覆盖：
 ## 8. MCP / 自定义工具
 
 ```text
- ✓ Github Search pi
+ ✓ MCP Github Search (1 arg)
    ↳ 1 line returned • click to show more
 
  ✓ Custom Translate
@@ -172,9 +172,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠏ Read extensions/index.ts
- ├ ⠏ Bash npm test
- └ ⠏ Ffgrep extensions/
+ ├ ⠹ Read extensions/index.ts
+ ├ ⠹ Bash npm test
+ └ ⠸ Ffgrep extensions/
 ```
 
 ### 收起：完成/失败

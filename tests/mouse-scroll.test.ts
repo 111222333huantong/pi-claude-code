@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { config } from "../extensions/config/config.ts";
 import {
 	disableOfficialScrollToEnd,
 	renderScrollButton,
 	resetScrollButtonState,
+	restoreOfficialScrollToEnd,
 	scheduleScrollButtonSync,
 	setToolMouseTui,
+	syncOfficialScrollToEnd,
 } from "../extensions/renderer/mouse/scroll.ts";
 
 /** 伪造官方 fullscreen 惰性 Proxy TUI：requestRender 每次 get 返回新函数。 */
@@ -80,4 +83,33 @@ test("scroll button: disable official overlay keeps dock button", async () => {
 
 	resetScrollButtonState();
 	setToolMouseTui(null);
+});
+
+// /ccstyle off：还回官方 overlay，不画本仓库 dock 按钮。
+test("scroll button: off mode restores official overlay", () => {
+	const previousMode = config.mode;
+	const { tui } = lazyFullscreenTui();
+	const indicator = () => "Jump to latest message";
+	tui.scrollToEndIndicator = indicator;
+	try {
+		config.mode = "on";
+		disableOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, undefined);
+
+		config.mode = "off";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, indicator);
+		assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
+
+		config.mode = "on";
+		syncOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, undefined);
+
+		restoreOfficialScrollToEnd(tui);
+		assert.equal(tui.scrollToEndIndicator, indicator);
+	} finally {
+		config.mode = previousMode;
+		resetScrollButtonState();
+		setToolMouseTui(null);
+	}
 });

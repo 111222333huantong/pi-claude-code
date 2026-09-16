@@ -17,6 +17,10 @@ import {
 	renderEditDiffResult,
 	renderWriteDiffResult,
 } from "../extensions/renderer/tool/diff/diff-renderer.ts";
+import {
+	buildStreamingWritePreview,
+	STREAMING_WRITE_PREVIEW_LINES,
+} from "../extensions/renderer/tool/diff/diff-write-render.ts";
 import { isAbortedResultText } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
@@ -667,4 +671,30 @@ test("default-mode 中断的工具结果收敛为 dim 的 Operation aborted", ()
 		config.mode = previousMode;
 		hooks.shutdown();
 	}
+});
+
+test("流式头预览：头部钉死 6 行 + more 计数 + 空回落", () => {
+	const content = Array.from({ length: 8 }, (_, i) => `l${i + 1}`).join("\n");
+	const preview = buildStreamingWritePreview(content, 100, theme, "", "   ↳");
+	assert.ok(preview);
+	assert.equal(preview.head, "   ↳ Writing 8 lines…");
+	// 头部钉死：前 6 行 + more 尾，只往下长不重写。
+	assert.equal(preview.rows.length, STREAMING_WRITE_PREVIEW_LINES + 1);
+	assert.equal(preview.rows[0], "▌  1 │ l1");
+	assert.ok(preview.rows[5]?.includes("l6"));
+	assert.ok(preview.rows[6]?.includes("+2 more lines"));
+	assert.ok(!preview.rows.some((row) => row.includes("l7")));
+	for (const row of [preview.head, ...preview.rows]) {
+		assert.ok(visibleWidth(row) <= 100);
+	}
+	// timing 透传。
+	const timed = buildStreamingWritePreview(content, 100, theme, " · 2s", "↳ ");
+	assert.ok(timed?.head.endsWith("lines… · 2s"));
+	// 空内容/零宽回落 Pending（返回 undefined）。
+	assert.equal(buildStreamingWritePreview("", 100, theme, "", "   ↳"), undefined);
+	assert.equal(buildStreamingWritePreview("   \n  ", 100, theme, "", "   ↳"), undefined);
+	assert.equal(buildStreamingWritePreview(content, 0, theme, "", "   ↳"), undefined);
+	// 短内容无 more 尾。
+	const short = buildStreamingWritePreview("a\nb", 100, theme, "", "   ↳");
+	assert.ok(short && short.rows.length === 2);
 });

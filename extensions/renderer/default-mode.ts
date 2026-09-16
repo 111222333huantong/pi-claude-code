@@ -17,7 +17,12 @@ import {
 import { formatElapsedShort } from "../utils/tool-metrics.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { BASH_LIVE_PREVIEW_LINES, bashLivePreview } from "./tool/bash-preview.ts";
-import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
+import {
+	buildStreamingWritePreview,
+	countWriteDiffStats,
+	STREAMING_WRITE_PREVIEW_LINES,
+	STREAMING_WRITE_PREVIEW_LINES_EXPANDED,
+} from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
@@ -329,7 +334,33 @@ function createCcstyleTool(
 						// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
 						cachedBody = `${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
 					}
-					return [truncateToWidth(`${lead}${liveIcon} ${cachedBody}`, viewportWidth, "")];
+					const titleLine = truncateToWidth(`${lead}${liveIcon} ${cachedBody}`, viewportWidth, "");
+					// write 参数流式行：renderResult 只有 result 存在才跑，参数流式阶段
+					//（可长达几十秒）到不了；renderCall 跟 updateArgs 走，块到必调。
+					// 与 result 侧用 argsComplete 互斥，不 double 显示。
+					if (
+						toolName === "write" &&
+						isPending &&
+						context?.argsComplete !== true &&
+						typeof args?.content === "string"
+					) {
+						const streamLead = expanded ? "↳ " : "   ↳ ";
+						const preview = buildStreamingWritePreview(
+							args.content,
+							width,
+							theme,
+							"",
+							streamLead,
+							expanded ? STREAMING_WRITE_PREVIEW_LINES_EXPANDED : STREAMING_WRITE_PREVIEW_LINES,
+						);
+						if (preview) {
+							const streamRows = expanded
+								? [preview.head, ...preview.rows]
+								: [preview.head, ...preview.rows.map((row) => ` ${row}`)];
+							return [titleLine, ...streamRows];
+						}
+					}
+					return [titleLine];
 				},
 				invalidate() {},
 			};
@@ -373,10 +404,8 @@ function createCcstyleTool(
 						theme,
 					});
 					if (preview) {
-						const previewHead = theme.fg(
-							"muted",
-							`${lead} ${pendingIcon(toolName)} Preview…${timing}`,
-						);
+						// 单盲文规矩：头不带转圈（标题在转就够了）， timing 保留。
+						const previewHead = theme.fg("muted", `${lead} Preview…${timing}`);
 						const body = {
 							render(innerWidth: number): string[] {
 								return [previewHead, ...preview.render(innerWidth)];
@@ -387,6 +416,37 @@ function createCcstyleTool(
 						};
 						return expanded ? body : insetComponent(body);
 					}
+				}
+				// write 流式头预览（兜底）：参数已齐但预告片失败（缺文件/超限/不匹配）时，
+				// 给 incoming 原文前 N 行。参数流式阶段走 renderCall（必经之路），
+				// 这里只处理 argsComplete，与那边互斥，不 double 显示。
+				// 轻量（只 split 前缀），块到即刷，不进 Myers/指纹/防抖。
+				if (
+					toolName === "write" &&
+					context?.argsComplete === true &&
+					typeof context?.args?.content === "string" &&
+					!options?.isError &&
+					!context?.isError
+				) {
+					const streamingArgs = context.args;
+					const streamingBody = {
+						render(innerWidth: number): string[] {
+							const preview = buildStreamingWritePreview(
+								streamingArgs.content,
+								innerWidth,
+								theme,
+								timing,
+								lead,
+								expanded ? STREAMING_WRITE_PREVIEW_LINES_EXPANDED : STREAMING_WRITE_PREVIEW_LINES,
+							);
+							if (!preview) {
+								return [theme.fg("muted", `${lead} ${pendingIcon(toolName)} Pending…${timing}`)];
+							}
+							return [preview.head, ...preview.rows];
+						},
+						invalidate() {},
+					};
+					return expanded ? streamingBody : insetComponent(streamingBody);
 				}
 				// bash live 尾预览：执行中取输出尾部窗口；空输出回落 Pending…。
 				if (
@@ -407,6 +467,15 @@ function createCcstyleTool(
 					}
 				}
 				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题
+				// write 参数流式中已由 renderCall 展示头预览（updateArgs 必经），
+				// result 侧回空行：不重复，不蹭第二个盲文。
+				if (
+					toolName === "write" &&
+					typeof context?.args?.content === "string" &&
+					context?.argsComplete !== true
+				) {
+					return new Text("", 0, 0);
+				}
 				const pending = `${lead} ${pendingIcon(toolName)} Pending…${timing}`;
 				return new Text(theme.fg("muted", pending), 0, 0);
 			}

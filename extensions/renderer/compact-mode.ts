@@ -45,7 +45,11 @@ import {
 	countWriteDiffStats,
 	isRichDiffComponent,
 } from "./tool/diff/diff-renderer.ts";
-import { renderRichToolResult } from "./tool/diff/index.ts";
+import {
+	buildStreamingWritePreview,
+	renderRichToolResult,
+	STREAMING_WRITE_PREVIEW_LINES,
+} from "./tool/diff/index.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
@@ -632,6 +636,22 @@ function compactEditWriteLines(
 
 	const title = compactEditWriteLine(component, width, writeMetadata, { hint: !hasRich });
 	if (!hasRich && !expanded) {
+		// pending write 流式头：与 on 模式同形（`↳ Writing N lines…` + 中性 gutter 行）。
+		if (
+			isPending &&
+			String(component.toolName ?? "") === "write" &&
+			typeof component.args?.content === "string"
+		) {
+			const preview = buildStreamingWritePreview(
+				component.args.content,
+				width,
+				theme,
+				"",
+				"   ↳",
+				STREAMING_WRITE_PREVIEW_LINES,
+			);
+			if (preview) return [...title, preview.head, ...preview.rows.map((row) => ` ${row}`)];
+		}
 		return title;
 	}
 

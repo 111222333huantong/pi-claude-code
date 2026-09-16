@@ -1083,6 +1083,24 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 	}
 });
 
+test("compact pending write 流式头与 on 模式同形", () => {
+	const { restore } = installHooks();
+	try {
+		const content = Array.from({ length: 8 }, (_, i) => `c${i + 1}`).join("\n");
+		const write = tool("write", "csw1", { path: "s.ts", content });
+		write.markExecutionStarted();
+		write.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
+		const text = renderText(write).join("\n");
+		assert.match(text, /Writing 8 lines/);
+		assert.match(text, /c1/);
+		assert.match(text, /c6/);
+		assert.doesNotMatch(text, /c7/);
+		assert.match(text, /\+2 more lines/);
+	} finally {
+		restore();
+	}
+});
+
 test("compact edit/write summaries preserve filenames for long cwd paths", () => {
 	const { restore } = installHooks();
 	try {

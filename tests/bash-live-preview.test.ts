@@ -285,3 +285,80 @@ test("renderCall partial 未 start 也上臂（参数流式阶段不断拍）", 
 		hooks.shutdown();
 	}
 });
+
+const BRAILLE_RE = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g;
+
+function countBraille(text: string): number {
+	return text.match(BRAILLE_RE)?.length ?? 0;
+}
+
+function streamingWrite(id: string, content: string) {
+	const tool = new ToolExecutionComponent(
+		"write",
+		id,
+		{ path: "stream.ts", content },
+		{},
+		undefined,
+		ui,
+		process.cwd(),
+	) as any;
+	tool.markExecutionStarted();
+	tool.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
+	return tool;
+}
+
+test("write 流式头：参数未齐时 6 行 incoming + 单盲文", () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const content = Array.from({ length: 8 }, (_, i) => `code-${i + 1}`).join("\n");
+		const tool = streamingWrite("sw-stream", content);
+		const raw = render(tool).join("\n");
+		const text = render(tool).map(strip).join("\n");
+		assert.match(text, /Writing 8 lines/);
+		assert.match(text, /code-1/);
+		assert.match(text, /code-6/);
+		assert.doesNotMatch(text, /code-7/);
+		assert.match(text, /\+2 more lines/);
+		assert.equal(countBraille(raw), 1, "标题 1 个盲文，头和行里不许再有");
+	} finally {
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});
+
+test("write 预告片头 Preview… 无盲文（单盲文规矩）", () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const store = new WriteExecutionMetadataStore();
+	const hooks = installDefaultMode(store);
+	try {
+		store.set("sw-preview", { fileExistedBeforeWrite: false });
+		const tool = new ToolExecutionComponent(
+			"write",
+			"sw-preview",
+			{ path: "new.ts", content: "hello\n" },
+			{},
+			undefined,
+			ui,
+			process.cwd(),
+		) as any;
+		tool.markExecutionStarted();
+		tool.setArgsComplete();
+		tool.updateResult({ content: [{ type: "text", text: "partial" }], isError: false }, true);
+		const raw = render(tool).join("\n");
+		const headLine =
+			render(tool)
+				.map(strip)
+				.find((line) => line.includes("Preview")) ?? "";
+		assert.match(headLine, /↳ Preview/);
+		assert.equal(countBraille(headLine), 0, "Preview 头不带转圈");
+		assert.equal(countBraille(raw), 1, "全行唯一盲文在标题");
+	} finally {
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});

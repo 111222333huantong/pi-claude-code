@@ -123,4 +123,10 @@ export {
 	type ToolDisplayConfig,
 } from "../../../config/config.ts";
 export type { DisplayConfigInput } from "./diff-renderer.ts";
+export {
+	buildStreamingWritePreview,
+	STREAMING_WRITE_PREVIEW_LINES,
+	STREAMING_WRITE_PREVIEW_LINES_EXPANDED,
+	type StreamingWritePreview,
+} from "./diff-renderer.ts";
 export { WriteExecutionMetadataStore } from "./write-execution.ts";

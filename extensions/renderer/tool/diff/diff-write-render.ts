@@ -362,6 +362,60 @@ export function countWriteDiffStats(
 	return { added, removed };
 }
 
+/** 流式头预览行数（折叠）：pending 时无视 writeDiffCollapsedLines，保证“在写”可见。 */
+export const STREAMING_WRITE_PREVIEW_LINES = 6;
+/** 流式头预览行数（展开）。 */
+export const STREAMING_WRITE_PREVIEW_LINES_EXPANDED = 20;
+
+export interface StreamingWritePreview {
+	head: string;
+	rows: string[];
+}
+
+/**
+ * write 参数流式中的轻量预告：incoming 原文前 N 行（中性 gutter，不做 diff）。
+ * 内容还没发完时 diff 无意义；只 split 前缀（大文件也便宜），块到即刷，
+ * 不进 Myers/指纹/防抖。无可见行返回 undefined，由调用方回落 Pending 行。
+ * 行框与 unified diff 同形（`▌ N │ 内容`），颜色中性：落定后自然变成红绿。
+ */
+export function buildStreamingWritePreview(
+	content: string,
+	width: number,
+	theme: DiffTheme,
+	timing: string,
+	lead: string,
+	maxLines: number = STREAMING_WRITE_PREVIEW_LINES,
+): StreamingWritePreview | undefined {
+	const safeWidth = normalizeDiffRenderWidth(width);
+	if (safeWidth === 0 || typeof content !== "string") return undefined;
+	const lines = splitWriteContentLines(sanitizeToolResultText(content));
+	if (lines.length === 0 || !lines.some((line) => line.trim())) return undefined;
+	const total = lines.length;
+	// 头部钉死：永远显示前 N 行，只往下长，不重写——视觉最稳，不闪。
+	// 流式再快也只是 more 计数涨 + 逐行冒出来（用户定稿）。
+	const shown = lines.slice(0, Math.max(1, maxLines));
+	const numberWidth = Math.max(2, String(total).length);
+	const rows = shown.map((line, index) => {
+		const number = String(index + 1).padStart(numberWidth, " ");
+		return clampDiffLineToWidth(
+			`${theme.fg("dim", "▌")} ${theme.fg("dim", number)} ${theme.fg("dim", "│")} ${line}`,
+			safeWidth,
+		);
+	});
+	if (total > shown.length) {
+		rows.push(
+			clampDiffLineToWidth(theme.fg("muted", `… +${total - shown.length} more lines`), safeWidth),
+		);
+	}
+	return {
+		head: clampDiffLineToWidth(
+			theme.fg("muted", `${lead} Writing ${total} lines…${timing}`),
+			safeWidth,
+		),
+		rows,
+	};
+}
+
 export function renderWriteDiffResult(
 	content: string | undefined,
 	options: DiffRenderOptions,

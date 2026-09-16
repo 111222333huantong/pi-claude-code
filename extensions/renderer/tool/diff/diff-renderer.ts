@@ -21,4 +21,11 @@ export type { DisplayConfigInput } from "./diff-component.ts";
 export { isRichDiffComponent } from "./diff-component.ts";
 export { countEditDiffStats, renderEditDiffResult } from "./diff-edit-render.ts";
 export { shouldHighlightCodeBlock } from "./diff-highlight.ts";
-export { countWriteDiffStats, renderWriteDiffResult } from "./diff-write-render.ts";
+export {
+	buildStreamingWritePreview,
+	countWriteDiffStats,
+	renderWriteDiffResult,
+	STREAMING_WRITE_PREVIEW_LINES,
+	STREAMING_WRITE_PREVIEW_LINES_EXPANDED,
+	type StreamingWritePreview,
+} from "./diff-write-render.ts";

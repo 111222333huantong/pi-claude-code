@@ -13,8 +13,9 @@
  * - 文件读经 `statSync` 限 1MB + UTF-8 解码 + mtime 内容缓存；
  *   组件按 `args 指纹 + expanded` 缓存在 `context.state`，流式同参复用。
  */
-import { existsSync, readFileSync, type Stats, statSync } from "node:fs";
-import { basename, isAbsolute, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, type Stats, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { DisplayConfigInput } from "./diff-renderer.ts";
 import { renderWriteDiffResult } from "./diff-write-render.ts";
 
@@ -48,6 +49,8 @@ function readPreviewFile(absolutePath: string): { content: string } | { reason: 
 	} catch {
 		return { reason: "unable to read file as UTF-8 text" };
 	}
+	// BOM 去除：否则首行 diff 会带上不可见字符（上游 pi-tool-display 同处理）。
+	if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
 	fileCache.set(absolutePath, { mtimeMs: stat.mtimeMs, size: stat.size, content });
 	while (fileCache.size > MAX_PREVIEW_FILE_CACHE) {
 		const oldest = fileCache.keys().next().value;
@@ -62,12 +65,39 @@ export function clearPendingPreviewFileCache(): void {
 	fileCache.clear();
 }
 
+/** `~` 家目录展开（上游 pi-tool-display 同处理）。 */
+function expandHome(rawPath: string): string {
+	if (rawPath === "~") return homedir();
+	if (rawPath.startsWith("~/") || rawPath.startsWith("~\\")) {
+		return resolve(homedir(), rawPath.slice(2));
+	}
+	return rawPath;
+}
+
 function resolvePreviewPath(
 	rawPath: unknown,
 	cwd: string,
 ): { absolute: string } | { reason: string } {
 	if (typeof rawPath !== "string" || !rawPath) return { reason: "missing path" };
-	const absolute = isAbsolute(rawPath) ? rawPath : resolve(cwd || process.cwd(), rawPath);
+	const expanded = expandHome(rawPath);
+	const absolute = isAbsolute(expanded) ? expanded : resolve(cwd || process.cwd(), expanded);
+	// 符号链接逃逸检查：解析后必须落在工作区内（不存在的文件查父目录，
+	// 覆盖写新建场景；解析失败不拦截，后续按缺文件降级）。
+	try {
+		const root = realpathSync(cwd || process.cwd());
+		let probe = absolute;
+		try {
+			probe = realpathSync(absolute);
+		} catch {
+			probe = realpathSync(dirname(absolute));
+		}
+		const rel = relative(root, probe);
+		if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+			return { reason: "path escapes workspace" };
+		}
+	} catch {
+		// 解析失败不断言：缺文件/无权限等走后续 reason 降级。
+	}
 	return { absolute };
 }
 

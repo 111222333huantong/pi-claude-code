@@ -62,7 +62,7 @@ export function createCodeLineHighlighter(
 	const fallbackByEntry = new WeakMap(
 		codeEntries.map((entry, index) => [entry, fallbackLines[index] ?? cleanLines[index] ?? ""]),
 	);
-	if (!shouldHighlight) return (_line, entry) => fallbackByEntry.get(entry) ?? "";
+	if (!shouldHighlight) return (line, entry) => fallbackByEntry.get(entry) ?? line;
 
 	const shikiTheme = resolveShikiTheme(theme);
 	let highlightedByEntry: WeakMap<DiffLineEntry, string> | undefined;
@@ -85,9 +85,11 @@ export function createCodeLineHighlighter(
 		}
 	};
 	resolveHighlighted();
-	return (_line, entry) => {
+	return (line, entry) => {
 		resolveHighlighted();
-		return highlightedByEntry?.get(entry) ?? fallbackByEntry.get(entry) ?? "";
+		// 未注册条目只有物化 omission（新对象）：回原文而非空行；
+		// 解析型省略 content 本来就是空串，行为不变。
+		return highlightedByEntry?.get(entry) ?? fallbackByEntry.get(entry) ?? line;
 	};
 }
 

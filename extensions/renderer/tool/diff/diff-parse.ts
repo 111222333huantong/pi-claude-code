@@ -20,6 +20,8 @@ export interface DiffOmissionEntry {
 	kind: "omission";
 	raw: string;
 	hunkIndex: number;
+	/** hunk 间藏起的未改动行数（write Myers 路径合成；解析型省略无此字段）。 */
+	gapLines?: number;
 }
 
 export interface DiffMetaEntry {

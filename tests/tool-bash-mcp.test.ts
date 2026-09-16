@@ -55,10 +55,10 @@ test("mcpCallSummary builds MCP verb plus arg count", () => {
 		mcpCallSummary("mcp__filesystem__read_file", "Filesystem Read File", { path: "a" }),
 		{ main: "MCP Filesystem Read File", detail: " (1 arg)" },
 	);
-	assert.deepEqual(
-		mcpCallSummary("mcp", "mcp", { tool: "read", server: "fs" }),
-		{ main: "MCP call fs:read", detail: " (2 args)" },
-	);
+	assert.deepEqual(mcpCallSummary("mcp", "mcp", { tool: "read", server: "fs" }), {
+		main: "MCP call fs:read",
+		detail: " (2 args)",
+	});
 	assert.deepEqual(mcpCallSummary("mcp", "mcp", { search: "diff" }), {
 		main: 'MCP search "diff"',
 		detail: " (1 arg)",

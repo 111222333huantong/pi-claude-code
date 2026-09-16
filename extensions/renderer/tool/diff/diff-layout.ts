@@ -367,14 +367,16 @@ function renderLineCell(
 }
 
 // Reuse line-cell layout without treating omissions as parsed source lines.
+// 带 gapLines 的合成省略（write Myers hunk 间）正文给 `N lines`，与 gutter ⋮ 拼成 `⋮ N lines`。
 function createOmissionRenderLine(entry: DiffOmissionEntry, compact = false): DiffLineEntry {
+	const gap = typeof entry.gapLines === "number" && entry.gapLines > 0 ? entry.gapLines : 0;
 	return {
 		kind: "line",
 		lineKind: "context",
 		oldLineNumber: null,
 		newLineNumber: null,
 		fallbackLineNumber: compact ? "" : OMISSION_GLYPH,
-		content: compact ? OMISSION_GLYPH : "",
+		content: compact ? OMISSION_GLYPH : gap > 0 ? `${gap} lines` : "",
 		raw: entry.raw,
 		hunkIndex: entry.hunkIndex,
 	};

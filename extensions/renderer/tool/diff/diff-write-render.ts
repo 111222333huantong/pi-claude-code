@@ -136,6 +136,15 @@ function buildWriteOverwriteEntries(oldLines: string[], newLines: string[]): Par
 	const entries: ParsedDiffEntry[] = [];
 	patch.hunks.forEach((hunk, hunkOrdinal) => {
 		const hunkIndex = hunkOrdinal + 1;
+		if (hunkOrdinal > 0) {
+			// hunk 间合成省略行并带藏起行数（抄 cc-tools sep+gap 思想）：
+			// old 侧跳过的未改动行数即标准 unified 语义。
+			const previous = patch.hunks[hunkOrdinal - 1]!;
+			const gap = hunk.oldStart - (previous.oldStart + previous.oldLines);
+			if (gap > 0) {
+				entries.push({ kind: "omission", raw: `... ${gap} lines ...`, hunkIndex, gapLines: gap });
+			}
+		}
 		let oldLineNumber = hunk.oldStart;
 		let newLineNumber = hunk.newStart;
 		for (const hunkLine of hunk.lines) {
@@ -180,11 +189,54 @@ interface WriteDiffData {
 interface WriteOverwriteGuard {
 	previousLineCount: number;
 	nextLineCount: number;
+	/** 熔断时仍给精确 +A -R（context:0 廉价重算；超预算回 undefined 只给行数）。 */
+	added?: number;
+	removed?: number;
 }
 
 const MAX_WRITE_OVERWRITE_DIFF_LINES = 4000;
 /** 双边字符总量封顶（超长单行同样熔断；Myers 本身线性内存，此为渲染侧保护）。 */
 const MAX_WRITE_OVERWRITE_DIFF_CHARS = 2_000_000;
+/** 熔断精确统计的独立预算（context:0 Myers；病态大 D 文件回落只给行数）。 */
+const MAX_GUARD_EXACT_STAT_LINES = 20000;
+const MAX_GUARD_EXACT_STAT_CHARS = 1_000_000;
+
+/** 熔断分支的精确加减计数：小预算 context:0 重算，失败/超限回 undefined。 */
+function tryExactOverwriteStats(
+	previousLines: string[],
+	nextLines: string[],
+): { added: number; removed: number } | undefined {
+	if (previousLines.length + nextLines.length > MAX_GUARD_EXACT_STAT_LINES) return undefined;
+	let chars = 0;
+	for (const lines of [previousLines, nextLines]) {
+		for (const line of lines) {
+			chars += line.length + 1;
+			if (chars > MAX_GUARD_EXACT_STAT_CHARS) return undefined;
+		}
+	}
+	try {
+		const patch = structuredPatch(
+			"",
+			"",
+			joinWriteLines(previousLines),
+			joinWriteLines(nextLines),
+			"",
+			"",
+			{ context: 0 },
+		);
+		let added = 0;
+		let removed = 0;
+		for (const hunk of patch.hunks) {
+			for (const hunkLine of hunk.lines) {
+				if (hunkLine[0] === "+") added++;
+				else if (hunkLine[0] === "-") removed++;
+			}
+		}
+		return { added, removed };
+	} catch {
+		return undefined;
+	}
+}
 
 function buildApproximateWriteStats(
 	lineCount: number,
@@ -226,11 +278,17 @@ function resolveWriteOverwriteGuard(
 ): WriteOverwriteGuard | undefined {
 	const previousLineCount = previousLines.length;
 	const nextLineCount = nextLines.length;
+	const withStats = (): WriteOverwriteGuard => {
+		const exact = tryExactOverwriteStats(previousLines, nextLines);
+		return exact
+			? { previousLineCount, nextLineCount, added: exact.added, removed: exact.removed }
+			: { previousLineCount, nextLineCount };
+	};
 	if (
 		previousLineCount > MAX_WRITE_OVERWRITE_DIFF_LINES ||
 		nextLineCount > MAX_WRITE_OVERWRITE_DIFF_LINES
 	) {
-		return { previousLineCount, nextLineCount };
+		return withStats();
 	}
 	if (previousLineCount === 0 || nextLineCount === 0) {
 		return undefined;
@@ -240,13 +298,13 @@ function resolveWriteOverwriteGuard(
 	for (const line of previousLines) {
 		chars += line.length + 1;
 		if (chars > MAX_WRITE_OVERWRITE_DIFF_CHARS) {
-			return { previousLineCount, nextLineCount };
+			return withStats();
 		}
 	}
 	for (const line of nextLines) {
 		chars += line.length + 1;
 		if (chars > MAX_WRITE_OVERWRITE_DIFF_CHARS) {
-			return { previousLineCount, nextLineCount };
+			return withStats();
 		}
 	}
 	return undefined;
@@ -258,8 +316,12 @@ function buildWriteOverwriteGuardText(guard: WriteOverwriteGuard, width: number)
 		return "";
 	}
 
+	const statsPart =
+		guard.added !== undefined && guard.removed !== undefined
+			? `+${guard.added} -${guard.removed} · `
+			: "";
 	const candidates = [
-		`↳ overwrite diff omitted (${guard.previousLineCount} → ${guard.nextLineCount} lines)`,
+		`↳ overwrite diff omitted (${statsPart}${guard.previousLineCount} → ${guard.nextLineCount} lines)`,
 		`↳ overwrite diff omitted (${guard.previousLineCount}→${guard.nextLineCount})`,
 		"↳ overwrite diff omitted",
 		"diff omitted",

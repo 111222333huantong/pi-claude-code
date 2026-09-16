@@ -148,6 +148,7 @@ test("settled bash falls back to single-line summary without count", () => {
 	config.mode = "on";
 	config.liveToolPreview = true;
 	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	const realNow = Date.now;
 	try {
 		const bash = startedBash("bash-settled");
 		partial(bash, rows(8));
@@ -156,12 +157,16 @@ test("settled bash falls back to single-line summary without count", () => {
 		settled(bash, rows(8));
 		render(bash);
 		bash.updateDisplay();
+		// 最小可读窗口（700ms）内仍呈 running 态：拨过窗口并重建闭包再断言落定摘要。
+		Date.now = () => realNow() + 5000;
+		bash.updateDisplay();
 		const text = render(bash).map(strip).join("\n");
 		// 落定：单行摘要，无尾块，无计数（只执行时才有）。
 		assert.match(text, /8 lines returned/);
 		assert.doesNotMatch(text, /earlier lines/);
 		assert.doesNotMatch(text, /· 8 lines/);
 	} finally {
+		Date.now = realNow;
 		config.mode = previousMode;
 		config.liveToolPreview = previousFlag;
 		clearAllAnimations();
@@ -247,16 +252,16 @@ test("pending 标题盲文逐 paint 更新，不冻在宽度缓存里", (t) => {
 	}
 });
 
-test("renderCall partial 未 start 也上臂（参数流式阶段不断拍）", (t) => {
-	// 回归：门控曾要求 executionStarted，参数流式时（partial 但未 start）
-	// 只渲染不上臂，节拍跟着网络块走（beat 日志 187ms 量化）。
+test("renderCall queued 未 start 不上臂，起跑后上臂", (t) => {
+	// P0 四态：queued 排队行静态 dim 点，不蹭共享 tick（省拍）；
+	// 起跑（markExecutionStarted）后才 braille + tick 开火。
 	// 用 ui.requestRender 计数观测驱动开火（不依赖诊断槽）。
 	t.mock.timers.enable({ apis: ["setInterval", "Date"] });
 	const previousMode = config.mode;
 	config.mode = "on";
 	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
 	try {
-		// 注意：故意不 markExecutionStarted，模拟参数流式阶段。
+		// 注意：故意不 markExecutionStarted，模拟排队阶段。
 		let renderRequests = 0;
 		const countingUi = {
 			theme: ui.theme,
@@ -275,9 +280,18 @@ test("renderCall partial 未 start 也上臂（参数流式阶段不断拍）", 
 			process.cwd(),
 		) as any;
 		partial(bash, rows(3));
-		render(bash);
-		t.mock.timers.tick(100);
-		assert.ok(renderRequests >= 1, "无块时 tick 也要开火到组件（requestRender 计数）");
+		const queuedText = render(bash).map(strip).join("\n");
+		assert.doesNotMatch(queuedText, BRAILLE_RE, "queued 标题静态，无盲文");
+		const before = renderRequests;
+		t.mock.timers.tick(500);
+		assert.equal(renderRequests, before, "queued 时 tick 不开火到组件");
+		bash.markExecutionStarted();
+		bash.updateDisplay();
+		const runningText = render(bash).map(strip).join("\n");
+		assert.match(runningText, BRAILLE_RE, "起跑后标题转圈");
+		const afterStart = renderRequests;
+		t.mock.timers.tick(200);
+		assert.ok(renderRequests > afterStart, "起跑后 tick 开火到组件（requestRender 计数）");
 	} finally {
 		t.mock.timers.reset();
 		config.mode = previousMode;

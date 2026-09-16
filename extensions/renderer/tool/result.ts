@@ -2,6 +2,7 @@ import { inspect } from "node:util";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { subscribeTicker } from "../../feature/shell/spinner-ticker.ts";
+import { oneLine } from "../../utils/format.ts";
 import {
 	pendingDotColor,
 	TOOL_LOADING_INTERVAL_MS,
@@ -128,15 +129,49 @@ export function clearAnimation(context: any) {
 export function clearAllAnimations() {
 	for (const ctx of activeAnimationContexts) {
 		ctx.state.ccstyleAnimationScheduled = false;
+		clearStateTimer(ctx?.state, "ccstyleMinDisplayTimer");
+		clearStateTimer(ctx?.state, "ccstyleQueuedHintTimer");
 	}
 	activeAnimationContexts.clear();
 	sharedTickerUnsubscribe?.();
 	sharedTickerUnsubscribe = null;
 }
 
+/** 清掉挂在共享 state 上的单发定时器（超时/卸载路径防泄漏）。 */
+function clearStateTimer(state: any, key: string): void {
+	const handle = state?.[key];
+	if (handle !== undefined) {
+		try {
+			clearTimeout(handle);
+		} catch {
+			// ignore: timer already fired or unusable
+		}
+		if (state && typeof state === "object") state[key] = undefined;
+	}
+}
+
+/** 单发刷新定时器（带 unref，不阻塞进程退出；已 armed 则不再重复）。 */
+function armStateTimer(context: any, key: string, delayMs: number): void {
+	if (!context || typeof context !== "object" || !(delayMs > 0)) return;
+	if (!context.state || typeof context.state !== "object") context.state = {};
+	const state = context.state as Record<string, unknown>;
+	if (state[key] !== undefined) return;
+	const timer = setTimeout(() => {
+		state[key] = undefined;
+		try {
+			context.invalidate?.();
+		} catch {
+			// 组件已卸载：静默丢弃。
+		}
+	}, delayMs);
+	(timer as unknown as { unref?: () => void })?.unref?.();
+	state[key] = timer;
+}
+
 export function scheduleAnimation(context: any, _intervalMs = TOOL_LOADING_INTERVAL_MS) {
 	const state = context.state ?? {};
 	context.state = state;
+	if (typeof state.ccstylePendingSince !== "number") state.ccstylePendingSince = Date.now();
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);
@@ -145,6 +180,96 @@ export function scheduleAnimation(context: any, _intervalMs = TOOL_LOADING_INTER
 
 export function pendingIcon(_name: string): string {
 	return toolLoadingIcon();
+}
+
+/**
+ * 快工具最小可读时长：loader 至少展示 700ms（思想重写自 Claude Code
+ * useMinDisplayTime），防快工具一闪而过。窗口从首次 pending  paints 起算。
+ */
+export const MIN_TOOL_DISPLAY_MS = 700;
+/** 失败展开正文默认上限（与 expandedOutputMaxLines 默认值对齐，错误不漫屏）。 */
+export const MAX_ERROR_PREVIEW_LINES = 10;
+/** 排队超过此时长才显示 Waiting… 第二行（短排队零噪音）。 */
+export const QUEUED_HINT_AFTER_MS = 2000;
+
+/** 四态：queued（静态 dim 点，无动画）/ running / success / error。 */
+export type ToolActivityPhase = "queued" | "running" | "success" | "error";
+
+/** 失败种类：用户动作（取消/拒绝/中断，dim 色）与真错误（红）分流。 */
+export type ToolFailureKind = "cancelled" | "rejected" | "interrupted" | "error";
+
+const FAILURE_CANCELLED_RE =
+	/operation was aborted|request was aborted|aborted by user|cancelled by user|user cancelled|\bcancelled\b|\bcanceled\b/i;
+const FAILURE_REJECTED_RE =
+	/permission (denied|rejected)|rejected by user|did not approve|approval (was )?(denied|rejected)|not approved/i;
+const FAILURE_INTERRUPTED_RE =
+	/interrupt requested|execution interrupted|interrupted by user|\binterrupted\b/i;
+const FAILURE_PREFIX_RE = /^(error|failed|failure|cancelled|canceled|rejected|interrupted)\s*:/i;
+
+/** 四态推导（组合判定，不靠单字段）：已决>终态；未决按 executionStarted 分 running/queued。 */
+export function resolveToolActivityPhase(context: any): ToolActivityPhase {
+	const visualState = getToolVisualState(context);
+	if (visualState === "success" || visualState === "error") return visualState;
+	if (context?.isPartial === false) return context?.isError ? "error" : "success";
+	return context?.executionStarted ? "running" : "queued";
+}
+
+/** 失败文本分类（仅在 isError 时调用）。 */
+export function classifyToolFailure(text: unknown): ToolFailureKind {
+	const value = String(text ?? "");
+	if (FAILURE_CANCELLED_RE.test(value)) return "cancelled";
+	if (FAILURE_REJECTED_RE.test(value)) return "rejected";
+	if (FAILURE_INTERRUPTED_RE.test(value)) return "interrupted";
+	return "error";
+}
+
+/** 去 <error> 标签与首尾空白（Claude Code FallbackToolUseErrorMessage 思想）。 */
+export function stripFailureTags(text: unknown): string {
+	return String(text ?? "")
+		.replace(/<\/?error[^>]*>/gi, "")
+		.replace(/^[ \t]+|[ \t]+$/g, "");
+}
+
+/** 错误归一化：去标签 + 缺前缀补 Error:（取消/拒绝/中断走专用短文案，不经此）。 */
+export function normalizeFailureText(text: unknown): string {
+	const clean = stripFailureTags(text).trim();
+	if (!clean) return "";
+	return FAILURE_PREFIX_RE.test(clean) ? clean : `Error: ${clean}`;
+}
+
+/** 折叠单行失败文案：用户动作为 dim 短语，真错误归一化后按 72 列单行化。 */
+export function failureSummaryText(text: unknown): string {
+	const kind = classifyToolFailure(text);
+	if (kind === "cancelled" || kind === "interrupted") return "Operation aborted";
+	if (kind === "rejected") return "Permission rejected";
+	const normalized = normalizeFailureText(text);
+	if (!normalized) return "Failed";
+	return oneLine(normalized, 72);
+}
+
+/** 是否仍在最小可读窗口内（落定 700ms 内继续转圈）。 */
+export function isInMinDisplayWindow(state: any, now = Date.now()): boolean {
+	const until = state?.ccstyleMinDisplayUntil;
+	return typeof until === "number" && now < until;
+}
+
+/** 排队 Waiting… 是否可见（排队超 2s 才提示）。 */
+export function queuedHintVisible(state: any, now = Date.now()): boolean {
+	const since = state?.ccstyleQueuedSince;
+	return typeof since === "number" && now - since >= QUEUED_HINT_AFTER_MS;
+}
+
+/** 排队计时起点（首次见到 queued 时打点；离开 queued 后由调用方清理）。 */
+export function stampQueuedSince(context: any, now = Date.now()): number {
+	if (!context.state || typeof context.state !== "object") context.state = {};
+	const state = context.state as Record<string, unknown>;
+	if (typeof state.ccstyleQueuedSince !== "number") state.ccstyleQueuedSince = now;
+	return state.ccstyleQueuedSince as number;
+}
+
+/** 排队提示单发刷新：到 2s 阈值时重绘一次以挂出 Waiting… 行。 */
+export function scheduleQueuedHintRefresh(context: any, delayMs: number): void {
+	armStateTimer(context, "ccstyleQueuedHintTimer", delayMs);
 }
 
 type ToolVisualState = "pending" | "success" | "error";
@@ -159,7 +284,20 @@ export function settledIcon(_name: string, state: ToolVisualState | undefined): 
 export function setToolVisualState(context: any, visualState: ToolVisualState) {
 	const state = context.state ?? {};
 	context.state = state;
-	if (visualState !== "pending") clearAnimation(context);
+	if (visualState !== "pending") {
+		// 最小可读窗口：pending 不足 700ms 即落定时，图标多转剩余时长再翻 ✓/✗。
+		const since = state.ccstylePendingSince;
+		const now = Date.now();
+		if (typeof since === "number" && now - since < MIN_TOOL_DISPLAY_MS) {
+			state.ccstyleMinDisplayUntil = since + MIN_TOOL_DISPLAY_MS;
+			scheduleAnimation(context);
+			armStateTimer(context, "ccstyleMinDisplayTimer", since + MIN_TOOL_DISPLAY_MS - now);
+		} else {
+			state.ccstyleMinDisplayUntil = undefined;
+			clearStateTimer(state, "ccstyleMinDisplayTimer");
+			clearAnimation(context);
+		}
+	}
 	if (state.ccstyleToolVisualState === visualState) return;
 	state.ccstyleToolVisualState = visualState;
 	// Do not invalidate synchronously from renderResult. Pi is already rendering
@@ -182,13 +320,16 @@ export function resolveToolVisualState(context: any): ToolVisualState | undefine
 }
 
 export function toolIconColor(context: any): "accent" | "dim" | "error" | "success" | "muted" {
+	const state = context?.state;
 	const visualState = getToolVisualState(context);
+	// 最小可读窗口内：即使已落定也继续呼吸，直到翻牌。
+	if (isInMinDisplayWindow(state)) return pendingDotColor();
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
 	if (context?.isPartial || context?.executionStarted || visualState === "pending") {
-		// 执行中呼吸（accent↔dim，由调用方动画 tick 驱动重绘）；排队未起跑保持 accent 常亮。
+		// 执行中呼吸（accent↔dim，由调用方动画 tick 驱动重绘）；排队未起跑静态 dim。
 		if (context?.executionStarted) return pendingDotColor();
-		return "accent";
+		return "dim";
 	}
 	return "muted";
 }
@@ -706,11 +847,13 @@ export function renderExpandedToolResult(
 	context?: any,
 	/** mode=on 展开卡贴左；compact 等保持默认前导空格 */
 	flushLeft = false,
+	maxOutputLines?: number,
+	maxInputLines?: number,
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
 	const inputBody = formatToolInputArgs(args);
 	const outputBody = body;
-	const maxOutputLines = config.expandedOutputMaxLines;
-	const maxInputLines = config.expandedInputMaxLines;
+	const effectiveMaxOutput = maxOutputLines ?? config.expandedOutputMaxLines;
+	const effectiveMaxInput = maxInputLines ?? config.expandedInputMaxLines;
 
 	// Prefer structured Input/Output when we have args or non-empty output.
 	if (inputBody.trim() || outputBody.trim()) {
@@ -720,8 +863,8 @@ export function renderExpandedToolResult(
 				inputBody,
 				outputBody,
 				isError,
-				maxOutputLines,
-				maxInputLines,
+				effectiveMaxOutput,
+				effectiveMaxInput,
 				flushLeft,
 			);
 			view = lastComponent;
@@ -731,8 +874,8 @@ export function renderExpandedToolResult(
 				inputBody,
 				outputBody,
 				isError,
-				maxOutputLines,
-				maxInputLines,
+				effectiveMaxOutput,
+				effectiveMaxInput,
 				flushLeft,
 			);
 		}

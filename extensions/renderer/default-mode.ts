@@ -7,13 +7,13 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type CompactStyleMode, config, getToolDisplayConfig } from "../config/config.ts";
-import { oneLine } from "../utils/format.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
 	GLOBAL_TOOL_RENDER_PATCH,
 	patchRegistry,
 	TOOL_EXPANDED_BACKGROUND_PATCH,
 } from "../utils/patch-keys.ts";
+import { queuedToolGlyph, TOOL_GUTTER_WIDTH, toolStatusGlyph } from "../utils/tool-loading-icon.ts";
 import { formatElapsedShort } from "../utils/tool-metrics.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { BASH_LIVE_PREVIEW_LINES, bashLivePreview } from "./tool/bash-preview.ts";
@@ -28,20 +28,26 @@ import { renderPendingDiffPreview } from "./tool/diff/pending-preview.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 import {
+	classifyToolFailure,
 	clearAnimation,
 	countLines,
+	failureSummaryText,
 	hasExpandableDetail,
 	insetComponent,
-	isAbortedResultText,
+	isInMinDisplayWindow,
 	isToolExpanded,
+	MAX_ERROR_PREVIEW_LINES,
 	outputLineCount,
-	pendingIcon,
+	QUEUED_HINT_AFTER_MS,
+	queuedHintVisible,
 	renderCollapsedToolResultToWidth,
 	renderExpandedToolResult,
+	resolveToolActivityPhase,
 	resolveToolVisualState,
 	scheduleAnimation,
+	scheduleQueuedHintRefresh,
 	setToolVisualState,
-	settledIcon,
+	stampQueuedSince,
 	textFromResult,
 	toolIconColor,
 	toolViewportWidth,
@@ -252,15 +258,33 @@ function createCcstyleTool(
 			}
 
 			const visualState = resolveToolVisualState(context);
-			const isPending =
-				visualState === "pending" ||
-				(!visualState && (context?.isPartial || context?.executionStarted));
-			// 动画跟随 pending 本身，不跟 executionStarted：参数流式阶段
-			//（partial 但还没 start）行已经在转，不上臂节拍就跟着网络块走。
-			if (isPending) scheduleAnimation(context);
+			// 四态：queued（静态 dim 点，无动画）/ running / success / error。
+			// 落定 700ms 内仍按 running 呈现（最小可读时长），防快工具一闪而过。
+			const phase = resolveToolActivityPhase(context);
+			const inMinWindow = isInMinDisplayWindow(context?.state);
+			const displayRunning = phase === "running" || inMinWindow;
+			const isQueued = !displayRunning && phase === "queued";
+			// 动画只跟 running：排队行静态，不蹭共享 tick。
+			if (displayRunning) scheduleAnimation(context);
 			else clearAnimation(context);
-			// 图标配色（静态部分）：字形逐 paint 取新鲜值，见下方 render。
-			const iconColor = visualState === "success" ? "success" : toolIconColor(context);
+			if (isQueued && context != null) {
+				const queuedSince = stampQueuedSince(context);
+				scheduleQueuedHintRefresh(context, QUEUED_HINT_AFTER_MS - (Date.now() - queuedSince));
+			} else if (context?.state) {
+				// 离开 queued 即清提示计时（单发定时器自带 unref，见 armStateTimer）。
+				const queuedTimer = context.state.ccstyleQueuedHintTimer;
+				if (queuedTimer !== undefined) {
+					try {
+						clearTimeout(queuedTimer);
+					} catch {
+						// ignore
+					}
+					context.state.ccstyleQueuedHintTimer = undefined;
+				}
+				if (context.state.ccstyleQueuedSince !== undefined) {
+					context.state.ccstyleQueuedSince = undefined;
+				}
+			}
 			const summary = toolCallSummary(toolName, args, {
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
@@ -288,13 +312,13 @@ function createCcstyleTool(
 			}
 			const extraText = writeStatsText || summary.detail;
 			const extraStyled = writeStatsStyled || theme.fg("dim", summary.detail);
-			// bash live 行数 + 执行耗时：只在执行中显示（isPending 熄灭即隐藏，
-			// 落定同拍生效；仅 bash，避免改动 edit/write 标题）。
+			// bash live 行数 + 执行耗时：只在执行中显示（落定同拍隐藏，
+			// 仅 bash，避免改动 edit/write 标题）。
 			const liveState = (context?.state ?? {}) as {
 				_liveLineCount?: unknown;
 				ccstylePendingSince?: unknown;
 			};
-			const showLive = toolName === "bash" && isPending && context?.executionStarted;
+			const showLive = toolName === "bash" && displayRunning && context?.executionStarted;
 			const liveCountText =
 				showLive && typeof liveState._liveLineCount === "number" && liveState._liveLineCount > 0
 					? ` · ${liveState._liveLineCount} lines`
@@ -317,19 +341,24 @@ function createCcstyleTool(
 					// 动画字形逐 paint 取新鲜值（墙钟推导），不进宽度缓存：
 					// 否则 pending 标题的盲文冻在 renderCall 调用时刻，只随参数块跳动，
 					// 肉眼就是走走停停（beat 日志 188/29/63ms 实锤）。正文截断仍缓存。
-					const liveIcon = theme.fg(
-						iconColor,
-						isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState),
-					);
+					// gutter 恒占 2 列（字形 1 + 空格 1），各状态同宽，标题不抖。
+					// 状态亦逐 paint 重算：最小可读窗口结束即翻 ✓/✗，不等下一次 updateDisplay。
+					const freshPhase = resolveToolActivityPhase(context);
+					const freshRunning = freshPhase === "running" || isInMinDisplayWindow(context?.state);
+					const freshQueued = !freshRunning && freshPhase === "queued";
+					const freshColor = freshQueued ? "dim" : toolIconColor(context);
+					const glyph = freshQueued
+						? queuedToolGlyph()
+						: freshRunning
+							? toolStatusGlyph("running")
+							: toolStatusGlyph(freshPhase === "error" ? "error" : "success");
+					const liveIcon = theme.fg(freshColor, glyph);
 					const viewportWidth = toolViewportWidth(width);
 					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
 					const lead = expanded ? "" : " ";
 					if (cachedBody === undefined || cachedWidth !== width) {
 						cachedWidth = width;
-						const callWidth = Math.max(
-							0,
-							viewportWidth - visibleWidth(liveIcon) - 1 - (expanded ? 0 : 1),
-						);
+						const callWidth = Math.max(0, viewportWidth - TOOL_GUTTER_WIDTH - (expanded ? 0 : 1));
 						const mainWidth = Math.max(0, callWidth - visibleWidth(fullExtraText));
 						// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
 						cachedBody = `${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${fullExtraStyled}`;
@@ -340,7 +369,7 @@ function createCcstyleTool(
 					// 与 result 侧用 argsComplete 互斥，不 double 显示。
 					if (
 						toolName === "write" &&
-						isPending &&
+						(isQueued || displayRunning) &&
 						context?.argsComplete !== true &&
 						typeof args?.content === "string"
 					) {
@@ -360,6 +389,11 @@ function createCcstyleTool(
 							return [titleLine, ...streamRows];
 						}
 					}
+					// 排队超 2s 且无流式预览可看时，挂 dim 的 Waiting… 第二行。
+					if (isQueued && queuedHintVisible(context?.state)) {
+						const hintLead = expanded ? "↳ " : "   ↳ ";
+						return [titleLine, theme.fg("dim", `${hintLead}Waiting…`)];
+					}
 					return [titleLine];
 				},
 				invalidate() {},
@@ -377,12 +411,14 @@ function createCcstyleTool(
 
 			const expanded = isToolExpanded(options, context);
 			if (options?.isPartial) {
-				// 流式 pending：braille 转圈 + 秒级耗时（与 renderCall 共用动画调度；
-				// partial 即 pending，不门控 executionStarted，见 renderCall 处注释）。
-				scheduleAnimation(context);
+				// 流式态：running（executionStarted）才 braille 转圈 + 秒级耗时；
+				// queued 排队行静态，不蹭共享 tick（标题行同理）。
+				const running = Boolean(context?.executionStarted);
 				const state = context != null ? (context.state ?? {}) : {};
 				if (context != null) context.state = state;
 				if (typeof state.ccstylePendingSince !== "number") state.ccstylePendingSince = Date.now();
+				if (running) scheduleAnimation(context);
+				else clearAnimation(context);
 				const elapsedSec = Math.max(0, Math.floor((Date.now() - state.ccstylePendingSince) / 1000));
 				const timing = elapsedSec > 0 ? ` · ${elapsedSec}s` : "";
 				const lead = expanded ? "↳" : "   ↳";
@@ -440,7 +476,12 @@ function createCcstyleTool(
 								expanded ? STREAMING_WRITE_PREVIEW_LINES_EXPANDED : STREAMING_WRITE_PREVIEW_LINES,
 							);
 							if (!preview) {
-								return [theme.fg("muted", `${lead} ${pendingIcon(toolName)} Pending…${timing}`)];
+								if (!running) {
+									return [theme.fg("dim", `${lead} ${queuedToolGlyph()} Queued…`)];
+								}
+								return [
+									theme.fg("muted", `${lead} ${toolStatusGlyph("running")} Pending…${timing}`),
+								];
 							}
 							return [preview.head, ...preview.rows];
 						},
@@ -476,7 +517,12 @@ function createCcstyleTool(
 				) {
 					return new Text("", 0, 0);
 				}
-				const pending = `${lead} ${pendingIcon(toolName)} Pending…${timing}`;
+				// 排队态无预览可看时回静态 Queued…（dim，不转）；起跑后才 braille Pending…。
+				if (!running) {
+					const queued = `${lead} ${queuedToolGlyph()} Queued…`;
+					return new Text(theme.fg("dim", queued), 0, 0);
+				}
+				const pending = `${lead} ${toolStatusGlyph("running")} Pending…${timing}`;
 				return new Text(theme.fg("muted", pending), 0, 0);
 			}
 
@@ -513,19 +559,16 @@ function createCcstyleTool(
 			const outputLines = outputLineCount(result) || countLines(text);
 			const lineWord = outputLines === 1 ? "line" : "lines";
 			const action = toolName === "read" ? "loaded" : "returned";
-			// 用户中断（esc 等）：与 compact-mode 同词收敛为 `Operation aborted`，
-			// dim 着色，不再复读 `This operation was aborted` 原文。
-			const aborted = Boolean(isError) && isAbortedResultText(text);
-			const detailColor = aborted ? "dim" : isError ? "error" : "muted";
+			// 失败三级分流：取消/拒绝/中断是用户动作（dim 短语），真错误归一化
+			// 前缀 + 去 <error> 标签（红）。中断与 compact-mode 同词。
+			const failureKind = isError && tasks.length === 0 ? classifyToolFailure(text) : undefined;
+			const isUserHalt =
+				failureKind === "cancelled" || failureKind === "rejected" || failureKind === "interrupted";
+			const detailColor = isUserHalt ? "dim" : isError ? "error" : "muted";
 			const rendered = tasks.length
 				? taskListSummary(tasks)
 				: isError
-					? aborted
-						? "Operation aborted"
-						: text
-							? // 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
-								oneLine(text, 72)
-							: "Failed"
+					? failureSummaryText(text)
 					: outputLines
 						? `${outputLines} ${lineWord} ${action}`
 						: "Done";
@@ -535,6 +578,9 @@ function createCcstyleTool(
 			const hint = expandable ? hintPrefix + theme.fg("dim", hintText) : "";
 			const hoveredHint = expandable ? hintPrefix + theme.fg("text", hintText) : "";
 			if (expanded) {
+				// 错误展开正文钳制到 MAX_ERROR_PREVIEW_LINES（默认 10，与配置默认值对齐），
+				// 超限走 … +N more lines，不漫屏；正常输出仍尊重用户配置。
+				const errorClamp = Boolean(isError);
 				return renderExpandedToolResult(
 					text || "",
 					theme,
@@ -543,6 +589,8 @@ function createCcstyleTool(
 					args,
 					context,
 					true, // mode=on：贴左，由外层 Box(1,1) 提供 1 格 padding
+					errorClamp ? Math.min(config.expandedOutputMaxLines, MAX_ERROR_PREVIEW_LINES) : undefined,
+					undefined,
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;

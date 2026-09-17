@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Loader, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { formatDuration, formatTokens } from "../../utils/format.ts";
+import { interruptShortcutText } from "../../utils/key-hints.ts";
 import { hexToFgAnsi, RESET } from "./spinner-color.ts";
 import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
 import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinner-shimmer.ts";
@@ -325,7 +326,7 @@ export default function (pi: ExtensionAPI): void {
 		const elapsed = Date.now() - (agentStartTime || turnStartTime);
 		const tokens = tokenCount();
 		// Claude Code shape: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens · 1m 2s)`
-		const statusParts: string[] = ["esc to interrupt"];
+		const statusParts: string[] = [`${interruptShortcutText()} to interrupt`];
 
 		if (tokens > 0) {
 			statusParts.push(`↓ ${formatTokenCount(tokens)} tokens`);

@@ -11,6 +11,7 @@ import { createQuietStartupFile } from "../feature/shell/quiet-startup.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import { readStatuslineConfig, writeStatuslineConfig } from "../feature/statusline/config.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
+import { capitalizeKey, expandShortcutText, selectCancelShortcutText } from "../utils/key-hints.ts";
 import {
 	COMPLETION_BELL_AFTER_SEC_VALUES,
 	type CompactStyleMode,
@@ -308,8 +309,7 @@ export async function showCcstylePanel(
 		const diffCollapsedSetting = {
 			id: "editDiffCollapsedLines",
 			label: "Edit collapsed lines",
-			description:
-				"How many edit/diff body lines to show before the expand hint (Ctrl+O / click). Write uses its own setting below.",
+			description: `How many edit/diff body lines to show before the expand hint (${expandShortcutText()} / click). Write uses its own setting below.`,
 			currentValue: String(config.editDiffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -880,7 +880,7 @@ export async function showCcstylePanel(
 					truncateToWidth(
 						theme.fg(
 							"dim",
-							"  Enter/Space to change · Enter on numbers types a custom value · Tab/Shift+Tab to switch sections · Esc to close",
+							`  Enter/Space to change · Enter on numbers types a custom value · Tab/Shift+Tab to switch sections · ${capitalizeKey(selectCancelShortcutText())} to close`,
 						),
 						safeWidth,
 					),

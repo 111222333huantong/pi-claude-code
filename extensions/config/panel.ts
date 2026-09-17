@@ -521,6 +521,20 @@ export async function showCcstylePanel(
 			"Clipboard paste disabled.",
 			config.enableClipboardPaste,
 		);
+		const escSteerToggle = featureToggleSetting(
+			"enableEscSteer",
+			"Esc steer",
+			"Empty-draft Esc aborts the run and auto-continues queued input. Next restart applies.",
+			"Esc steer disabled, native Esc behavior only.",
+			config.enableEscSteer,
+		);
+		const doubleEscClearToggle = featureToggleSetting(
+			"enableDoubleEscClear",
+			"Double-Esc clear",
+			"Double Esc within 2s clears a non-empty draft. Next restart applies.",
+			"Double-Esc clear disabled.",
+			config.enableDoubleEscClear,
+		);
 		const livePreviewToggle = featureToggleSetting(
 			"liveToolPreview",
 			"Live bash preview",
@@ -544,6 +558,8 @@ export async function showCcstylePanel(
 			enableAliases: aliasesToggle,
 			enableImagePaster: imagePasterToggle,
 			enableClipboardPaste: clipboardPasteToggle,
+			enableEscSteer: escSteerToggle,
+			enableDoubleEscClear: doubleEscClearToggle,
 			liveToolPreview: livePreviewToggle,
 		};
 
@@ -808,6 +824,8 @@ export async function showCcstylePanel(
 					aliasesToggle.setting,
 					imagePasterToggle.setting,
 					clipboardPasteToggle.setting,
+					escSteerToggle.setting,
+					doubleEscClearToggle.setting,
 					statuslineToggle.setting,
 				],
 			},

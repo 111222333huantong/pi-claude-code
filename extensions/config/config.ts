@@ -76,6 +76,8 @@ export type Config = {
 	enableAliases: boolean;
 	enableImagePaster: boolean;
 	enableClipboardPaste: boolean;
+	enableEscSteer: boolean;
+	enableDoubleEscClear: boolean;
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -150,6 +152,8 @@ export const DEFAULT_CONFIG: Config = {
 	enableAliases: true,
 	enableImagePaster: true,
 	enableClipboardPaste: true,
+	enableEscSteer: true,
+	enableDoubleEscClear: true,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -271,6 +275,8 @@ export function normalizeConfig(input: unknown): Config {
 		enableAliases: source.enableAliases !== false,
 		enableImagePaster: source.enableImagePaster !== false,
 		enableClipboardPaste: source.enableClipboardPaste !== false,
+		enableEscSteer: source.enableEscSteer !== false,
+		enableDoubleEscClear: source.enableDoubleEscClear !== false,
 	};
 }
 
@@ -331,6 +337,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`imagePaster=${source.enableImagePaster ? "on" : "off"}`,
 		`clipboardPaste=${source.enableClipboardPaste ? "on" : "off"}`,
+		`escSteer=${source.enableEscSteer ? "on" : "off"}`,
+		`doubleEscClear=${source.enableDoubleEscClear ? "on" : "off"}`,
 	].join(" · ");
 }
 

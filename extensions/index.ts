@@ -4,6 +4,8 @@ import agentSummary from "./feature/agent-summary/index.ts";
 import clipboardPaste from "./feature/clipboard-paste.ts";
 import { installCompactThinking } from "./feature/compact-thinking.ts";
 import context from "./feature/context.ts";
+import registerDoubleEscClear from "./feature/double-esc-clear.ts";
+import registerEscSteer from "./feature/esc-steer.ts";
 import imagePaster from "./feature/image-paster.ts";
 import { registerAgentTitles } from "./feature/reference/agent-titles.ts";
 import sessionReference from "./feature/reference/index.ts";
@@ -41,6 +43,10 @@ export default function (pi: ExtensionAPI): void {
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。
 		workingRow(pi);
 	}
+	// Esc 双件套：链式包裹 handleInput，注册在 working-row 之后、
+	// promptGlyph（纯 render）之前；两者按草稿空/非空互斥，顺序无关。
+	if (config.enableEscSteer) registerEscSteer(pi);
+	if (config.enableDoubleEscClear) registerDoubleEscClear(pi);
 	// 输入框 ❯ 包最外层：working-row 等链式包裹先注册，本 handler 后执行。
 	registerPromptGlyph(pi);
 

@@ -3,9 +3,9 @@
  *
  * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
  * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
- * 失败单独累计；另记回合耗时。
+ * 失败单独累计；另记回合耗时与输出 tokens（tok/s = output ÷ 回合耗时）。
  *
- * 呈现：`summaryLine` 纯文本，`summaryMarkdown` Markdown（可 box 引用块）。
+ * 呈现：`summaryMarkdown` Markdown（可 box 引用块），尾段 `· 52.5s · 30.4 tok/s`。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -23,6 +23,8 @@ export type AgentSummaryData = {
 	others: number;
 	failed: number;
 	durationMs: number;
+	/** 本回合 assistant 输出 tokens 总和；旧持久化 entry 无此字段（省略 tok/s 段）。 */
+	outputTokens?: number;
 };
 
 export function classifyTool(toolName: string): AgentToolCategory {
@@ -52,6 +54,7 @@ export class AgentRunSummary {
 	writeFiles = new Set<string>();
 	otherCount = 0;
 	failedCount = 0;
+	outputTokens = 0;
 
 	readonly startedAt: number;
 
@@ -86,6 +89,11 @@ export class AgentRunSummary {
 		if (isError) this.failedCount++;
 	}
 
+	/** agent_end 时一次性记入本回合 assistant 输出 tokens。 */
+	recordUsage(outputTokens: number): void {
+		if (Number.isFinite(outputTokens) && outputTokens > 0) this.outputTokens += outputTokens;
+	}
+
 	snapshot(now = Date.now()): AgentSummaryData {
 		return {
 			commands: this.commandCount,
@@ -95,6 +103,7 @@ export class AgentRunSummary {
 			others: this.otherCount,
 			failed: this.failedCount,
 			durationMs: now - this.startedAt,
+			outputTokens: this.outputTokens,
 		};
 	}
 }
@@ -113,6 +122,44 @@ function summaryParts(data: AgentSummaryData): string[] {
 	return parts;
 }
 
+/**
+ * 本回合 assistant 消息的 output usage 求和。
+ * agent_end.messages 是本 run 的 newMessages（非全历史），按 assistant 角色过滤；
+ * usage/output 缺失或非法按 0 跳过。
+ */
+function sumUsageOutput(messages: readonly unknown[] | undefined): number {
+	let total = 0;
+	for (const raw of messages ?? []) {
+		const message = raw as { role?: unknown; usage?: { output?: unknown } } | null;
+		if (message?.role !== "assistant") continue;
+		const output = Number(message.usage?.output);
+		if (Number.isFinite(output) && output > 0) total += Math.round(output);
+	}
+	return total;
+}
+
+/** 毫秒 → 精确时长（秒保留 1 位小数）：`52.5s` / `1m 2.5s` / `1h 3m 2.5s`。统计行专用，不动共享 formatDuration。 */
+function formatDurationPrecise(ms: number): string {
+	const totalSec = ms / 1000;
+	const hours = Math.floor(totalSec / 3600);
+	const minutes = Math.floor((totalSec % 3600) / 60);
+	const seconds = totalSec - hours * 3600 - minutes * 60;
+	if (hours > 0) return `${hours}h ${minutes}m ${seconds.toFixed(1)}s`;
+	if (minutes > 0) return `${minutes}m ${seconds.toFixed(1)}s`;
+	return `${seconds.toFixed(1)}s`;
+}
+
+/**
+ * tok/s = output tokens ÷ 回合墙钟秒数（与展示时长同分母，整回合平均口径）。
+ * tokens 缺失/为 0、时长 <1s、或速率过小（toFixed 后为 0.0）时返回 null 省略该段。
+ */
+function tokenRate(data: AgentSummaryData): number | null {
+	const tokens = data.outputTokens ?? 0;
+	if (tokens <= 0 || data.durationMs < 1_000) return null;
+	const rate = tokens / (data.durationMs / 1000);
+	return rate < 0.05 ? null : rate;
+}
+
 export function summaryMarkdown(
 	data: AgentSummaryData,
 	colors: { success: string; failed: string } = { success: "", failed: "" },
@@ -129,8 +176,13 @@ export function summaryMarkdown(
 		.map((part, index) => capitalizeFirst(part, index === 0))
 		.map((part) => paintNumber(part.endsWith("failed") ? colors.failed : colors.success, part))
 		.join(", ");
-	const duration = formatDuration(data.durationMs);
-	const line = duration ? `${text} · ${duration}` : text;
+	// 尾段：有速率 → `· 52.5s · 30.4 tok/s`（精确时长 + 速率）；无速率 → 旧格式 `· 49s`（旧 entry 兼容）。
+	const rate = tokenRate(data);
+	const tail =
+		rate !== null
+			? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s`
+			: formatDuration(data.durationMs);
+	const line = tail ? `${text} · ${tail}` : text;
 	return `> *${line}*`;
 }
 
@@ -138,7 +190,7 @@ export function summaryMarkdown(
  * 绑定 pi 事件到摘要统计：
  * - agent_start 重置
  * - tool_execution_start / end 累计
- * - agent_end 回调（toolCount < minToolCount 跳过）
+ * - agent_end 从 event.messages 求和 assistant output usage 后回调（toolCount < minToolCount 跳过）
  */
 export function bindAgentSummary(
 	pi: ExtensionAPI,
@@ -154,7 +206,10 @@ export function bindAgentSummary(
 	pi.on("tool_execution_end", async (event) => {
 		summary.recordToolResult(event.isError === true);
 	});
-	pi.on("agent_end", async () => {
+	pi.on("agent_end", async (event) => {
+		// 防御转换：测试 harness 会以无参调用；messages 只在真实 AgentEndEvent 上存在。
+		const messages = (event as { messages?: readonly unknown[] } | undefined)?.messages;
+		summary.recordUsage(sumUsageOutput(messages));
 		if (summary.toolCount >= 2) onSummary(summary.snapshot());
 	});
 }

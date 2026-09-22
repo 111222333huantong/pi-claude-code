@@ -247,7 +247,8 @@ Loader.prototype.stop = function patchedStop() {
 };
 
 // ---------------------------------------------------------------------------
-// Working message: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens · 12s)`
+// Working message: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens)`
+// 耗时与 tok/s 已收口到回合统计行（agent-summary）。
 // ---------------------------------------------------------------------------
 
 /** Format elapsed ms as compact duration; sub-second shows "0s" (working footer). */
@@ -262,33 +263,6 @@ function formatTokenCount(value: number): string {
 
 function statusText(text: string): string {
 	return `${STATUS_DIM}${text}${RESET}`;
-}
-
-/** Threshold before showing elapsed time in status parentheses (mcode patience: 1.5s 内 elapsed 是噪音). */
-const SHOW_TIMER_AFTER_MS = 1_500;
-
-/** tok/s 滑动窗口：只统计最近 10s 的样本；跨度 <1s 不出速率（防抖）。 */
-export const TOKEN_RATE_WINDOW_MS = 10_000;
-export const TOKEN_RATE_MIN_SPAN_MS = 1_000;
-/** 采样最小间隔：token 数没变时 200ms 记一帧即可（变帧即记）。 */
-const TOKEN_RATE_SAMPLE_GAP_MS = 200;
-
-type RateSample = { t: number; n: number };
-
-/**
- * 滑动窗口 tok/s（思想重写自 pi-token-speed / mcode activity-line）：
- * 取窗口内最早样本 → 最新样本的平均增量。样本不足、跨度不够或无增量返回 null。
- */
-export function tokenRateFromSamples(samples: readonly RateSample[], now: number): number | null {
-	if (samples.length < 2) return null;
-	const last = samples[samples.length - 1]!;
-	const first = samples.find((sample) => sample.t >= now - TOKEN_RATE_WINDOW_MS);
-	if (!first || first === last) return null;
-	const span = last.t - first.t;
-	if (span < TOKEN_RATE_MIN_SPAN_MS) return null;
-	const delta = last.n - first.n;
-	if (delta <= 0) return null;
-	return (delta * 1000) / span;
 }
 
 /** How long to preserve "thought for Ns" across turns. */
@@ -325,17 +299,6 @@ export default function (pi: ExtensionAPI): void {
 	let activeCtx: { ui: WorkingUi & { theme?: unknown }; hasUI: boolean } | null = null;
 	const activeTools = new Map<string, string>();
 	let startupProgress = false;
-	let rateSamples: RateSample[] = [];
-
-	/** 每次构建 working 行时记一帧速率样本；窗口外样本剪掉。 */
-	function recordRateSample(now: number, tokens: number): void {
-		const last = rateSamples[rateSamples.length - 1];
-		if (last && last.n === tokens && now - last.t < TOKEN_RATE_SAMPLE_GAP_MS) return;
-		if (last && now < last.t) return; // 时钟回拨保护（测试注入 fake now）
-		rateSamples.push({ t: now, n: tokens });
-		const cutoff = now - TOKEN_RATE_WINDOW_MS;
-		while (rateSamples.length > 2 && rateSamples[0]!.t < cutoff) rateSamples.shift();
-	}
 
 	function tokenCount(): number {
 		return providerOutputTokens || Math.max(0, Math.round(responseLength / 4));
@@ -358,25 +321,13 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	function buildWorkingMessage(): string {
-		const now = Date.now();
-		const elapsed = now - (agentStartTime || turnStartTime);
 		const tokens = tokenCount();
-		recordRateSample(now, tokens);
-		const rate = tokenRateFromSamples(rateSamples, now);
-		// Claude Code shape: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens · 1m 2s)`
+		// Claude Code shape: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens)`
+		// 耗时与 tok/s 收口到回合统计行（agent-summary），working 行保持安静。
 		const statusParts: string[] = [`${interruptShortcutText()} to interrupt`];
 
 		if (tokens > 0) {
 			statusParts.push(`↓ ${formatTokenCount(tokens)} tokens`);
-		}
-		if (rate !== null) {
-			// 速率是窗口估算：内嵌 accent 色，段尾回置 STATUS_DIM（外层整体是 dim）。
-			statusParts.push(`${CLAUDE_ORANGE}⚡ ${rate.toFixed(1)} tok/s${STATUS_DIM}`);
-		}
-
-		// 耐心阈值：1.5s 内不显示耗时（到了阈值才值得占一格）。
-		if (elapsed >= SHOW_TIMER_AFTER_MS) {
-			statusParts.push(formatWorkingDuration(elapsed));
 		}
 		const activity = activitySuffix();
 		if (activity) statusParts.unshift(activity);
@@ -615,7 +566,6 @@ export default function (pi: ExtensionAPI): void {
 		// Don't reset sharedGlyphFrame — keep glyph phase continuous.
 		currentVerb = newVerb;
 		resetResponseTracking();
-		rateSamples = [];
 		clearCompletionTimer();
 		if (typeof thinkingStatus !== "number" || Date.now() - thoughtForSetAt >= THOUGHT_DISPLAY_MS) {
 			thinkingStatus = null;
@@ -738,7 +688,6 @@ export default function (pi: ExtensionAPI): void {
 
 		responseLength = 0;
 		responseTextBlockLengths = [];
-		rateSamples = [];
 	});
 
 	pi.on("agent_end", async () => {

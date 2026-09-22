@@ -52,6 +52,7 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 		others: 1,
 		failed: 1,
 		durationMs: 60_000,
+		outputTokens: 0,
 	} satisfies AgentSummaryData);
 });
 
@@ -65,9 +66,25 @@ test("summaryMarkdown renders the agent summary entry", () => {
 		failed: 0,
 		durationMs: 42_000,
 	};
+	// 无 outputTokens（旧 entry / usage 缺失）→ 整数秒旧格式。
 	assert.equal(
 		summaryMarkdown(data),
 		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+	);
+	// 有 outputTokens → 精确时长 + tok/s（整回合平均口径）。
+	assert.equal(
+		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596 }),
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 52.5s · 30.4 tok/s*",
+	);
+	// tokens=0 → 省略速率段，退回整数秒。
+	assert.equal(
+		summaryMarkdown({ ...data, outputTokens: 0 }),
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+	);
+	// 时长 <1s → 省略速率段。
+	assert.equal(
+		summaryMarkdown({ ...data, durationMs: 400, outputTokens: 1_596 }),
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file*",
 	);
 	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
 });
@@ -100,7 +117,16 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 	await handlers.get("tool_execution_end")!({ isError: false });
 	await handlers.get("tool_execution_start")!({ toolName: "grep", args: {} });
 	await handlers.get("tool_execution_end")!({ isError: false });
-	await handlers.get("agent_end")!();
+	// agent_end.messages = 本 run 消息；只累加 assistant 的 usage.output。
+	await handlers.get("agent_end")!({
+		messages: [
+			{ role: "user", content: [] },
+			{ role: "assistant", usage: { input: 120, output: 600 } },
+			{ role: "toolResult", toolCallId: "1" },
+			{ role: "assistant", usage: { output: 996 } },
+			{ role: "assistant" }, // usage 缺失 → 跳过
+		],
+	});
 	assert.equal(calls.length, 2);
 	assert.deepEqual(calls[1], {
 		commands: 1,
@@ -110,6 +136,7 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 		others: 1,
 		failed: 0,
 		durationMs: calls[1].durationMs,
+		outputTokens: 1_596,
 	});
 });
 

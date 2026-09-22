@@ -51,9 +51,10 @@ test("working message shows a verb with esc hint while streaming", async () => {
 		ctx,
 	);
 	const working = visible(messages.at(-1) ?? "");
-	// 耐心阈值内：token 计数先出现，elapsed 压着不放（1.5s 前是噪音）。
+	// working 行永不带耗时/速率（已迁到回合统计行）。
 	assert.match(working, /↓ \d+ tokens\)$/);
 	assert.doesNotMatch(working, /· \d+s\)$/);
+	assert.doesNotMatch(working, /tok\/s/);
 
 	await events.get("turn_end")?.({}, ctx);
 	assert.match(
@@ -139,84 +140,28 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	assert.match(visible(messages.at(-1)), /… \(esc to interrupt\)$/);
 });
 
-test("elapsed reveals only after the 1.5s patience threshold", async () => {
+test("elapsed never appears in the working status（计时已迁到统计行）", async () => {
 	const { events, messages, ctx } = install();
 	await events.get("turn_start")?.({}, ctx);
 	await events.get("message_update")?.(
 		{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" } },
 		ctx,
 	);
-	const early = visible(messages.at(-1) ?? "");
-	assert.match(early, /↓ \d+ tokens\)$/, "token 计数立即出现");
-	assert.doesNotMatch(early, /· \d+s\)$/, "1.5s 内不显示耗时");
+	assert.match(visible(messages.at(-1) ?? ""), /↓ \d+ tokens\)$/, "token 计数立即出现");
 
 	const realNow = Date.now;
-	Date.now = () => realNow() + 2000;
+	Date.now = () => realNow() + 5000;
 	try {
 		await events.get("message_update")?.(
 			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "!" } },
 			ctx,
 		);
-		assert.match(visible(messages.at(-1) ?? ""), /· \d+s\)$/, "过阈值后耗时现身");
+		const later = visible(messages.at(-1) ?? "");
+		assert.doesNotMatch(later, /· \d+s\)$/, "再久也不显示耗时");
+		assert.doesNotMatch(later, /tok\/s/, "working 行不显示速率");
 	} finally {
 		Date.now = realNow;
 	}
-});
-
-test("tok/s shows a sliding-window rate once samples span enough time", async () => {
-	const { events, messages, ctx } = install();
-	const delta = (text: string) =>
-		events.get("message_update")?.(
-			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: text } },
-			ctx,
-		);
-	const usage = (output: number) =>
-		events.get("message_update")?.(
-			{
-				assistantMessageEvent: {
-					type: "done",
-					message: { content: [{ type: "text", text: "x" }], usage: { output } },
-				},
-			},
-			ctx,
-		);
-
-	await events.get("turn_start")?.({}, ctx);
-	await events.get("message_update")?.(
-		{ assistantMessageEvent: { type: "text_start", contentIndex: 0 } },
-		ctx,
-	);
-	await usage(100);
-	await delta("a"); // 触发 sync → 记样本 {t0, 100}
-	assert.doesNotMatch(visible(messages.at(-1) ?? ""), /tok\/s/, "样本跨度 <1s 不出速率");
-
-	const realNow = Date.now;
-	try {
-		// +500ms：跨度仍不足 1s，速率压着。
-		Date.now = () => realNow() + 500;
-		await usage(400);
-		await delta("b");
-		assert.doesNotMatch(visible(messages.at(-1) ?? ""), /tok\/s/);
-
-		// +2s：窗口内 (700-100) tok / 2s = 350.0 tok/s。
-		Date.now = () => realNow() + 2000;
-		await usage(700);
-		await delta("c");
-		const rated = visible(messages.at(-1) ?? "");
-		const rate = Number(/⚡ ([\d.]+) tok\/s/.exec(rated)?.[1]);
-		assert.ok(Number.isFinite(rate) && Math.abs(rate - 350) < 2, `窗口速率 ≈350，got: ${rated}`);
-	} finally {
-		Date.now = realNow;
-	}
-
-	// 新一轮 turn 重置样本，不带残留速率。
-	await events.get("turn_end")?.({}, ctx);
-	await events.get("turn_start")?.({}, ctx);
-	await events.get("message_update")?.(
-		{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "seed" } },
-		ctx,
-	);
-	assert.doesNotMatch(visible(messages.at(-1) ?? ""), /tok\/s/);
 });
 
 test("tool activity is named in the status line", async () => {

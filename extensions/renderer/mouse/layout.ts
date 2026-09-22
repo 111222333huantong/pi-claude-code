@@ -3,6 +3,7 @@ import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
+import { transcriptMappingWidth } from "../transcript-gutter.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
 import { getScrollButtonWidget } from "./scroll.ts";
 
@@ -156,9 +157,12 @@ export function componentAtLocalRow(
 	localRow: number,
 	width: number,
 ): ComponentRowHit | null {
+	// transcript 右内缩容器：行高映射与 render 用同一缩后宽度，防 y 漂移；
+	// 递归下钻沿用平移后的宽度（父容器按未缩宽度量到的子行数已被包装纠正）。
+	const mappedWidth = transcriptMappingWidth(component, width);
 	if (component instanceof ToolGroupComponent) {
 		// 展开的 group：头两行（空行 + 头行）归 group，其余行映射到内部工具。
-		const child = component.childAtRow(localRow, width);
+		const child = component.childAtRow(localRow, mappedWidth);
 		return child ? { ...child, group: component } : { component, row: localRow };
 	}
 	if (isToolExecutionComponent(component)) {
@@ -167,7 +171,7 @@ export function componentAtLocalRow(
 	if (isCompactAssistantComponent(component)) {
 		// 折叠：整行摘要。展开：先命中内部 thinking hint，其余仍归外层卡片。
 		if (component.expanded === true) {
-			const inner = nestedChildAtRow(component, localRow, width);
+			const inner = nestedChildAtRow(component, localRow, mappedWidth);
 			if (inner instanceof ThinkingPreviewBlock) {
 				return { component: inner, row: localRow };
 			}
@@ -188,14 +192,14 @@ export function componentAtLocalRow(
 	for (const child of component.children) {
 		let lines: string[] = [];
 		try {
-			const rendered = child.render?.(width);
+			const rendered = child.render?.(mappedWidth);
 			if (Array.isArray(rendered)) lines = rendered.map((line) => String(line));
 		} catch {
 			lines = [];
 		}
 		if (localRow < offset + lines.length) {
 			return (
-				componentAtLocalRow(child, localRow - offset, width) ?? {
+				componentAtLocalRow(child, localRow - offset, mappedWidth) ?? {
 					component: child,
 					row: localRow - offset,
 				}

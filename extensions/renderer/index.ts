@@ -45,6 +45,7 @@ import {
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
 import { clearAllAnimations } from "./tool/result.ts";
+import { disposeTranscriptGutter, refreshTranscriptGutter } from "./transcript-gutter.ts";
 import { installUserMessageRender, refreshUserMessages } from "./user-message.ts";
 
 /**
@@ -59,6 +60,7 @@ let compactModeHooks: CompactModeHooks | undefined;
 
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
 	const tui = getToolMouseTui();
+	refreshTranscriptGutter(tui);
 	toolGrouping?.refresh(tui);
 	refreshMessageDisplays(tui);
 	refreshUserMessages(tui);
@@ -211,6 +213,9 @@ export default function (
 	});
 
 	pi.on("message_update", async (event) => {
+		// transcript 右内缩：容器识别依赖消息组件，首条消息落树后在此补扫
+		//（已安装时浅层 BFS 命中即停，开销可忽略）。
+		refreshTranscriptGutter(getToolMouseTui());
 		// compact-thinking 在 session_start 时于 compact 补丁之上再装一层；
 		// 扩展事件先于 interactive-mode 的 updateContent 派发，此处先重新认领。
 		if (config.mode === "compact" && event.message?.role === "assistant") {
@@ -252,10 +257,16 @@ export default function (
 		ctx.ui.setStatus("ccstyle", undefined);
 		// 先收集 resume transcript，再同步 compact 补丁与全局展开状态。
 		syncCompactMode(ctx);
+		// transcript 右内缩：resume 时消息已在树上，立即补扫一次；tui 引用或
+		// 组件未就位时由下一帧的 scheduleSessionRender 兜底。
+		refreshTranscriptGutter(getToolMouseTui());
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
 		setTimeout(() => syncCompactMode(ctx), 0);
-		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
+		scheduleSessionRender(() => {
+			hooks.toolGrouping.refresh(getToolMouseTui());
+			refreshTranscriptGutter(getToolMouseTui());
+		});
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
@@ -268,9 +279,11 @@ export default function (
 		setMessageDisplayTheme(ctx.ui.theme);
 		setCodeBlockTheme(ctx.ui.theme);
 		syncCompactMode(ctx);
+		refreshTranscriptGutter(getToolMouseTui());
 		scheduleSessionRender(() => {
 			syncCompactMode(ctx);
 			hooks.toolGrouping.refresh(getToolMouseTui());
+			refreshTranscriptGutter(getToolMouseTui());
 		});
 	});
 
@@ -278,7 +291,11 @@ export default function (
 		// 会话树重建后在当前帧和下一帧各同步一次，替换旧组件引用。
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		syncCompactMode(ctx);
-		scheduleSessionRender(() => syncCompactMode(ctx));
+		refreshTranscriptGutter(getToolMouseTui());
+		scheduleSessionRender(() => {
+			syncCompactMode(ctx);
+			refreshTranscriptGutter(getToolMouseTui());
+		});
 	});
 
 	pi.on("tool_execution_start", async (_event, ctx) => {
@@ -291,6 +308,8 @@ export default function (
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);
+		// 右内缩是实例级包装，独立于渲染层所有权，在守卫前统一释放。
+		disposeTranscriptGutter();
 		const current = installation;
 		if (current?.defaultMode.isOwner() !== true) return;
 		current.defaultMode.shutdown();

@@ -56,6 +56,10 @@ export const OFFICIAL_SCROLL_TO_END_KEY = Symbol.for("pi.ccstyle.official-scroll
 export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-patch");
 export const TOOL_HOVER_STATE_KEY = Symbol.for("pi.ccstyle.tool-hover-state");
 
+// ── transcript 右缘内缩 ──
+export const TRANSCRIPT_GUTTER_PATCH_KEY = Symbol.for("pi.ccstyle.transcript-gutter-patch");
+export const TRANSCRIPT_GUTTER_SLOTS = Symbol.for("pi.ccstyle.transcript-gutter-slots");
+
 // ── rich diff 组件标记 ──
 export const RICH_DIFF_COMPONENT = Symbol.for("pi.ccstyle.rich-diff-component");
 

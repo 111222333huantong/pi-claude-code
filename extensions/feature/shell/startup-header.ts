@@ -391,7 +391,7 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 		anim.sinks.add(requestRender);
 		const component: HeaderComponent = {
 			render(width: number): string[] {
-				// 主题每次渲染现取，跟随 /theme 切换；ctx getter stale 则回退空信息。
+				// 主题每次渲染现取，跟随 /settings → Theme 切换；ctx getter stale 则回退空信息。
 				const theme = ctx.ui.theme;
 				let meta: HeaderMeta = {};
 				try {

@@ -47,7 +47,7 @@ Run `/reload` after installation.
 | Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |
 | Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
 | Statusline                | Two-line footer: model/ctx/cost/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
-| Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
+| Theme                       | Bundled CC Dark and CC Light themes                                                       | `/settings` → Theme                             |
 
 > Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
 

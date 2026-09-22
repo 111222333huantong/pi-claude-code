@@ -47,7 +47,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
 | 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
 | 状态栏                  | 两行 footer：model/ctx/cost/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
-| 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
+| 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/settings` → Theme                             |
 
 > 本包 fork 自 [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions)（MIT），状态栏及后续改动由本 fork 维护。
 

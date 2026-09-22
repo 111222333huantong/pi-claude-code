@@ -1,9 +1,10 @@
 /**
- * 状态栏纯渲染：格式化 + 优先级截断 + 两行组装。
+ * 状态栏纯渲染：格式化 + 两级降级（long→short 再剔除）+ 两行组装。
  *
  * 无 Pi 组件依赖：颜色经 `paint(color, text)` 注入；列宽用 pi-tui 纯函数
  * `visibleWidth`（CJK 计 2 列），调用方（index.ts）再用 `truncateToWidth` 做最终兜底。
- * 定稿样式：无图标纯文字，ctx 无进度条，告警靠整段变色 + `!!`。
+ * 定稿样式：无图标纯文字；ctx 进度条填充段随占比分 tone（≥70 warning / ≥90 error），
+ * 告警靠整段变色 + `!!`。
  */
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -78,6 +79,12 @@ export interface FitSegment {
 	painted: string;
 	/** 越大越先保留（抄 narumitw 保留优先级思想）。 */
 	priority: number;
+	/** 第一级降级文案（long → short）：放不下先整体换短形，仍放不下才整段剔除。 */
+	shortPlain?: string;
+	/** 短形的着色文本；缺省沿用 painted（仅适合单色段）。 */
+	shortPainted?: string;
+	/** 降级顺序：数字小的先换短形（思想重写自 mcode status-line-items shrinkPriority）。 */
+	shrinkPriority?: number;
 }
 
 function plainWidth(text: string): number {
@@ -85,19 +92,48 @@ function plainWidth(text: string): number {
 }
 
 /**
- * 按优先级逐个剔除最低段直到放得下；显示顺序保持传入顺序。
- * 全部剔光则返回空串。
+ * 两级降级装配（思想重写自 mcode status-line-items 两层降级）：
+ * ① 全形放不下 → 按 shrinkPriority 逐段换成 short 文案，任一档放下即返回；
+ * ② 仍放不下 → 从最低优先级起整段剔除。
+ * 显示顺序保持传入顺序；全部剔光返回空串。
  */
 export function fitSegments(segments: FitSegment[], width: number): string {
-	const kept = segments.filter((s) => s.plain.length > 0);
-	while (kept.length > 0) {
-		const line = kept.map((s) => s.plain).join(SEPARATOR);
-		if (plainWidth(line) <= width) return kept.map((s) => s.painted).join(SEPARATOR);
-		let dropIndex = 0;
-		for (let i = 1; i < kept.length; i++) {
-			if (kept[i]!.priority < kept[dropIndex]!.priority) dropIndex = i;
+	if (width <= 0) return "";
+	let current = segments.filter((s) => s.plain.length > 0);
+	const fits = (list: FitSegment[]): boolean =>
+		plainWidth(list.map((s) => s.plain).join(SEPARATOR)) <= width;
+	const emit = (list: FitSegment[]): string => list.map((s) => s.painted).join(SEPARATOR);
+	if (fits(current)) return emit(current);
+
+	// ① 整段降级：短形优先级小的先换，换一档试一次（未轮到的段保留全形）。
+	const shrinkables = current
+		.map((segment, index) => ({ segment, index }))
+		.filter(({ segment }) => segment.shortPlain !== undefined)
+		.sort(
+			(a, b) =>
+				(a.segment.shrinkPriority ?? 999) - (b.segment.shrinkPriority ?? 999) || a.index - b.index,
+		);
+	for (const { segment } of shrinkables) {
+		if (!fits(current)) {
+			current = current
+				.map((s) =>
+					s === segment
+						? { ...s, plain: s.shortPlain as string, painted: s.shortPainted ?? s.painted }
+						: s,
+				)
+				.filter((s) => s.plain.length > 0);
 		}
-		kept.splice(dropIndex, 1);
+		if (fits(current)) return emit(current);
+	}
+
+	// ② 剔除阶段（以降级后的文案为准）。
+	while (current.length > 0) {
+		if (fits(current)) return emit(current);
+		let dropIndex = 0;
+		for (let i = 1; i < current.length; i++) {
+			if (current[i]!.priority < current[dropIndex]!.priority) dropIndex = i;
+		}
+		current.splice(dropIndex, 1);
 	}
 	return "";
 }
@@ -106,11 +142,56 @@ function fitSingle(text: string, width: number): string {
 	return truncateByWidth(text, width);
 }
 
-/** ctx 进度条（8 格 `█░`）；null 按空条。 */
-export function ctxBar(pct: number | null, cells = 8): string {
+/** ctx 进度条填充格数（8 格）；null/越界钳制。渲染分 tone 用。 */
+export function ctxBarCells(pct: number | null, cells = 8): { filled: number; empty: number } {
 	const ratio = pct === null ? 0 : Math.max(0, Math.min(1, pct / 100));
 	const filled = Math.round(ratio * cells);
-	return "█".repeat(filled) + "░".repeat(Math.max(0, cells - filled));
+	return { filled, empty: Math.max(0, cells - filled) };
+}
+
+/** ctx 进度条（8 格 `█░`）；null 按空条。 */
+export function ctxBar(pct: number | null, cells = 8): string {
+	const { filled, empty } = ctxBarCells(pct, cells);
+	return "█".repeat(filled) + "░".repeat(empty);
+}
+
+/**
+ * ctx 段两级装配：plain 与旧版逐字一致；painted 里进度条填充段随占比走
+ * ctxColor（≥70 warning / ≥90 error），空槽固定 dim——分 tone 而非整段一色。
+ */
+function ctxSegment(snapshot: StatusSnapshot, paint: Paint): FitSegment {
+	const pct = snapshot.ctxPct;
+	const tone = ctxColor(pct);
+	const { filled, empty } = ctxBarCells(pct);
+	const barFilled = "█".repeat(filled);
+	const barEmpty = "░".repeat(empty);
+	const danger = pct !== null && pct >= 90;
+	const detailShort = pct === null ? "—" : `${Math.round(pct)}%`;
+	const detailFull =
+		pct === null
+			? "—"
+			: `${Math.round(pct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}`;
+	const wrap = (detail: string): { plain: string; painted: string } => {
+		const innerPlain = `ctx ${barFilled}${barEmpty} ${detail}`;
+		const innerPainted =
+			paint(tone, `ctx ${barFilled}`) + paint("dim", barEmpty) + paint(tone, ` ${detail}`);
+		return danger
+			? {
+					plain: `!! ${innerPlain} !!`,
+					painted: paint("error", "!! ") + innerPainted + paint("error", " !!"),
+				}
+			: { plain: innerPlain, painted: innerPainted };
+	};
+	const full = wrap(detailFull);
+	const short = detailFull === detailShort ? undefined : wrap(detailShort);
+	return {
+		plain: full.plain,
+		painted: full.painted,
+		priority: 120,
+		shortPlain: short?.plain,
+		shortPainted: short?.painted,
+		shrinkPriority: 30,
+	};
 }
 
 /** L1 段：`model (thinking) │ ctx bar pct · used/window │ $cost │ mcp │ ext`。 */
@@ -127,30 +208,40 @@ function line1Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 					paint("dim", ")")
 				: ""),
 		priority: 110,
+		// 短形丢 thinking 档位，保住模型名本身。
+		shortPlain: snapshot.model,
+		shortPainted: paint("text", snapshot.model),
+		shrinkPriority: 40,
 	});
 
-	const ctxText =
-		snapshot.ctxPct === null
-			? `ctx ${ctxBar(null)} —`
-			: `ctx ${ctxBar(snapshot.ctxPct)} ${Math.round(snapshot.ctxPct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}`;
-	const danger = snapshot.ctxPct !== null && snapshot.ctxPct >= 90;
-	const ctxPainted = danger ? `!! ${ctxText} !!` : ctxText;
-	segments.push({
-		plain: ctxPainted,
-		painted: paint(ctxColor(snapshot.ctxPct), ctxPainted),
-		priority: 120,
-	});
+	segments.push(ctxSegment(snapshot, paint));
 
 	if (snapshot.cost > 0) {
 		const costText = formatCost(snapshot.cost);
 		segments.push({ plain: costText, painted: paint("text", costText), priority: 60 });
 	}
 	if (snapshot.mcp) {
-		segments.push({ plain: snapshot.mcp, painted: paint("muted", snapshot.mcp), priority: 50 });
+		const mcpShort = snapshot.mcp.replace(/\s+enabled$/, "");
+		segments.push({
+			plain: snapshot.mcp,
+			painted: paint("muted", snapshot.mcp),
+			priority: 50,
+			shortPlain: mcpShort !== snapshot.mcp ? mcpShort : undefined,
+			shortPainted: mcpShort !== snapshot.mcp ? paint("muted", mcpShort) : undefined,
+			shrinkPriority: 10,
+		});
 	}
 	if (snapshot.extTotal !== null) {
 		const extText = `ext ${snapshot.extTotal} on`;
-		segments.push({ plain: extText, painted: paint("muted", extText), priority: 40 });
+		const extShort = `ext ${snapshot.extTotal}`;
+		segments.push({
+			plain: extText,
+			painted: paint("muted", extText),
+			priority: 40,
+			shortPlain: extShort,
+			shortPainted: paint("muted", extShort),
+			shrinkPriority: 20,
+		});
 	}
 	return segments;
 }
@@ -163,7 +254,18 @@ export function buildLine1(snapshot: StatusSnapshot, width: number, paint: Paint
 /** L2 段：`cwd │ branch … │ wt name`。 */
 function line2Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 	const segments: FitSegment[] = [];
-	segments.push({ plain: snapshot.cwd, painted: paint("dim", snapshot.cwd), priority: 80 });
+	segments.push({
+		plain: snapshot.cwd,
+		painted: paint("dim", snapshot.cwd),
+		priority: 80,
+		...(shortenCwdTail(snapshot.cwd) !== undefined
+			? {
+					shortPlain: shortenCwdTail(snapshot.cwd),
+					shortPainted: paint("dim", shortenCwdTail(snapshot.cwd) as string),
+				}
+			: {}),
+		shrinkPriority: 50,
+	});
 
 	if (snapshot.branch) {
 		const dirty = snapshot.changedFiles > 0 || snapshot.hasConflicts;
@@ -180,29 +282,57 @@ function line2Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 		const conflicts = snapshot.conflictFiles > 0 ? ` ⚠${snapshot.conflictFiles}` : "";
 		const plain = `${snapshot.branch}${sync}${conflicts}${diff}`;
 		const branchColor: ThemeColor = dirty ? "warning" : "success";
+		const basePainted =
+			paint(branchColor, snapshot.branch) +
+			paint(dirty ? "warning" : "dim", sync) +
+			(snapshot.conflictFiles > 0 ? paint("warning", conflicts) : "");
+		const diffPainted =
+			snapshot.insertions > 0 || snapshot.deletions > 0
+				? ` ${paint("success", `+${snapshot.insertions}`)} ${paint("error", `-${snapshot.deletions}`)}`
+				: "";
 		segments.push({
 			plain,
-			painted:
-				paint(branchColor, snapshot.branch) +
-				paint(dirty ? "warning" : "dim", sync) +
-				(snapshot.conflictFiles > 0 ? paint("warning", conflicts) : "") +
-				(snapshot.insertions > 0 || snapshot.deletions > 0
-					? ` ${paint("success", `+${snapshot.insertions}`)} ${paint("error", `-${snapshot.deletions}`)}`
-					: ""),
+			painted: basePainted + diffPainted,
 			priority: 100,
+			// 短形先丢 diffstat（冲突 ⚠ 保留——安全信息不让位）。
+			shortPlain: `${snapshot.branch}${sync}${conflicts}`,
+			shortPainted: basePainted,
+			shrinkPriority: 60,
 		});
 	}
 
 	if (snapshot.pr !== null) {
 		const prText = `PR #${snapshot.pr}`;
-		segments.push({ plain: prText, painted: paint("dim", prText), priority: 65 });
+		const prShort = `#${snapshot.pr}`;
+		segments.push({
+			plain: prText,
+			painted: paint("dim", prText),
+			priority: 65,
+			shortPlain: prShort,
+			shortPainted: paint("dim", prShort),
+			shrinkPriority: 15,
+		});
 	}
 
 	if (snapshot.showWorktree && snapshot.worktree) {
 		const wtText = `wt ${snapshot.worktree}`;
-		segments.push({ plain: wtText, painted: paint("dim", wtText), priority: 30 });
+		segments.push({
+			plain: wtText,
+			painted: paint("dim", wtText),
+			priority: 30,
+			shortPlain: snapshot.worktree,
+			shortPainted: paint("dim", snapshot.worktree),
+			shrinkPriority: 45,
+		});
 	}
 	return segments;
+}
+
+/** cwd 短形：≥3 段时保留末两段（`…/fork/repo`）；≤2 段无短形。 */
+function shortenCwdTail(cwd: string): string | undefined {
+	const parts = cwd.split(/[\\/]+/).filter(Boolean);
+	if (parts.length <= 2) return undefined;
+	return `…/${parts.slice(-2).join("/")}`;
 }
 
 /** L2：`cwd │ branch [ok] [↑a] [↓b] [⚠n] [+i -d] [wt name]`；非仓库时只有 cwd。 */

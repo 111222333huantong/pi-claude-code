@@ -56,6 +56,18 @@ test("terminal controls are removed before source highlighting", () => {
 	);
 });
 
+test("carriage-return progress frames collapse to the final frame", () => {
+	// npm/pip 安装条：一行被 \r 反复覆写 → 只留末帧（终端回放的视觉结果）。
+	assert.equal(sanitizeToolResultText("10%\r50%\r100%\ndone"), "100%\ndone");
+	// 尾部 \r（进度条收尾无换行）→ 取最后一个非空帧。
+	assert.equal(sanitizeToolResultText("downloading\r"), "downloading");
+	assert.equal(sanitizeToolResultText("a\r\r"), "a");
+	// 无 \r 的普通内容逐字不动；CRLF 先归一再折叠。
+	assert.equal(sanitizeToolResultText("line1\nline2"), "line1\nline2");
+	assert.equal(sanitizeToolResultText("hello\r\nworld"), "hello\nworld");
+	assert.equal(sanitizeToolResultText("a\rb\nc\r"), "b\nc");
+});
+
 test("Shiki failures degrade without caching, retry, and oversized blocks are skipped", async () => {
 	let attempts = 0;
 	const cache = new ShikiHighlightCache(async () => async (code) => {

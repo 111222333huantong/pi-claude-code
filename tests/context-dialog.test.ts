@@ -1,5 +1,5 @@
 // escCloseHitbox 的契约：
-// [esc] 按钮位于弹框标题行（box 第 2 行）右端，5 列宽；
+// [esc] 按钮位于弹框顶边（标题嵌框，box 第 1 行）右端，5 列宽；
 // bounds 为 0-based 的弹框起点（left/top）+ 宽度。
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agen
 import {
 	capParts,
 	collectContextBreakdown,
+	contextHealth,
 	escCloseHitbox,
 	hasActiveTextPreview,
 	resolveUsedTokens,
@@ -172,22 +173,36 @@ test("capParts never produces negative tokens when estimates exceed usage", () =
 	assert.ok(fitted.every((part) => part.tokens >= 0));
 });
 
-test("escCloseHitbox sits 5 columns wide at the title row's right edge", () => {
+test("escCloseHitbox sits 5 columns wide at the header row's right edge", () => {
 	assert.deepEqual(escCloseHitbox({ left: 8, top: 1, width: 64 }), {
-		row: 3,
+		row: 2,
 		startCol: 67,
 		endCol: 71,
 	});
 	assert.deepEqual(escCloseHitbox({ left: 1, top: 1, width: 38 }), {
-		row: 3,
+		row: 2,
 		startCol: 34,
 		endCol: 38,
 	});
 	assert.deepEqual(escCloseHitbox({ left: 20, top: 6, width: 50 }), {
-		row: 8,
+		row: 7,
 		startCol: 65,
 		endCol: 69,
 	});
+});
+
+test("contextHealth grades usage into mcode-aligned bands", () => {
+	assert.deepEqual(contextHealth(10), { label: "Plenty of room", color: "success" });
+	assert.deepEqual(contextHealth(44.9), { label: "Plenty of room", color: "success" });
+	assert.deepEqual(contextHealth(45), { label: "Comfortable", color: "accent" });
+	assert.deepEqual(contextHealth(69.9), { label: "Comfortable", color: "accent" });
+	assert.deepEqual(contextHealth(70), { label: "Keep an eye on it", color: "warning" });
+	assert.deepEqual(contextHealth(84.9), { label: "Keep an eye on it", color: "warning" });
+	assert.deepEqual(contextHealth(85), { label: "Running low", color: "error" });
+	assert.deepEqual(contextHealth(94.9), { label: "Running low", color: "error" });
+	assert.deepEqual(contextHealth(95), { label: "Nearly full", color: "error" });
+	assert.deepEqual(contextHealth(null), { label: "Window unavailable", color: "dim" });
+	assert.deepEqual(contextHealth(Number.NaN), { label: "Window unavailable", color: "dim" });
 });
 
 /** showTextPreview 自定义 UI 的最小 harness：捕获 component，theme 可注入，可选挂载回调。 */
@@ -229,11 +244,11 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 	const preview = showTextPreview({ ui } as any, "Output", "hello");
 	assert.equal(hasActiveTextPreview(), true);
 	assert.equal(escColor, "muted");
-	// 80×24、64 列居中、margin 2 → [esc] 命中 row=4, col=67..71。
-	ui.component.handleInput(`\x1b[<35;67;4M`);
+	// 80×24、64 列居中、margin 2 → [esc] 在顶边（box 第 1 行）row=3, col=67..71。
+	ui.component.handleInput(`\x1b[<35;67;3M`);
 	ui.component.render(64);
 	assert.equal(escColor, "text", "[esc] hover switches to text color");
-	ui.component.handleInput(`\x1b[<0;67;4M`);
+	ui.component.handleInput(`\x1b[<0;67;3M`);
 	await preview;
 	assert.equal(hasActiveTextPreview(), false);
 });
@@ -244,10 +259,10 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 	const preview = showTextPreview({ ui } as any, "Output", content);
 	const initial = ui.component.render(64).join("\n");
 	assert.match(initial, /1-13 \/ 100 lines/);
-	// scrollbar col=71，body track row=6..18；从顶部 thumb 拖到底部。
-	ui.component.handleInput(`\x1b[<0;71;6M`);
-	ui.component.handleInput(`\x1b[<32;71;18M`);
-	ui.component.handleInput(`\x1b[<0;71;18m`);
+	// scrollbar col=71，body track row=5..17（标题嵌框后 body 上移 1 行）；从顶部 thumb 拖到底部。
+	ui.component.handleInput(`\x1b[<0;71;5M`);
+	ui.component.handleInput(`\x1b[<32;71;17M`);
+	ui.component.handleInput(`\x1b[<0;71;17m`);
 	const dragged = ui.component.render(64).join("\n");
 	assert.match(dragged, /88-100 \/ 100 lines/);
 	ui.component.handleInput("\x1b");

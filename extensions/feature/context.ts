@@ -7,8 +7,9 @@ import {
 	getMarkdownTheme,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, Markdown, matchesKey } from "@earendil-works/pi-tui";
 import { formatTokens, padLine } from "../utils/format.ts";
+import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
 
 export type ContextPart = {
@@ -41,17 +42,36 @@ function normalizePreviewText(text: string): string {
 
 export type DialogBounds = { left: number; top: number; width: number };
 
-/** 1-based terminal hitbox of the [esc] close button on the dialog title row (row 2 of the box). */
+/** 1-based terminal hitbox of the [esc] close button —— 标题嵌框后位于弹框顶边（box 第 1 行）右端。 */
 export function escCloseHitbox(bounds: DialogBounds): {
 	row: number;
 	startCol: number;
 	endCol: number;
 } {
 	return {
-		row: bounds.top + 2,
+		row: bounds.top + 1,
 		startCol: bounds.left + bounds.width - 5,
 		endCol: bounds.left + bounds.width - 1,
 	};
+}
+
+/**
+ * /context 健康分级（阈值思想重写自 MiniMax Code context-visualization contextHealth，
+ * 文案/档位自实现）：≥95 Nearly full、≥85 Running low（error）、≥70 Keep an eye on it
+ * （warning）、≥45 Comfortable（accent）、<45 Plenty of room（success）；窗口未知 dim。
+ */
+export function contextHealth(percent: number | null): {
+	label: string;
+	color: "success" | "accent" | "warning" | "error" | "dim";
+} {
+	if (percent === null || !Number.isFinite(percent)) {
+		return { label: "Window unavailable", color: "dim" };
+	}
+	if (percent >= 95) return { label: "Nearly full", color: "error" };
+	if (percent >= 85) return { label: "Running low", color: "error" };
+	if (percent >= 70) return { label: "Keep an eye on it", color: "warning" };
+	if (percent >= 45) return { label: "Comfortable", color: "accent" };
+	return { label: "Plenty of room", color: "success" };
 }
 
 let activeContextOverlays = 0;
@@ -187,7 +207,6 @@ export async function showTextPreview(
 
 					render(width: number) {
 						const inner = Math.max(1, width - 2);
-						const escWidth = visibleWidth("[esc]");
 						const bodyInner = Math.max(1, inner - 1);
 						const bodyWidth = Math.max(1, bodyInner - 1);
 						const terminalHeight = Math.max(1, tui.terminal.rows);
@@ -219,8 +238,9 @@ export async function showTextPreview(
 						scrollbarHitbox = scrollable
 							? {
 									col: overlayLeft + width - 1,
-									startRow: overlayTop + 4,
-									endRow: overlayTop + 3 + pageSize,
+									// 标题嵌框后 box 只有 header 一行在 divider 之上，body 上移 1 行。
+									startRow: overlayTop + 3,
+									endRow: overlayTop + 2 + pageSize,
 									thumbStart,
 									thumbSize,
 									maxOffset: maxScrollOffset,
@@ -237,16 +257,19 @@ export async function showTextPreview(
 						});
 						const start = totalLines === 0 ? 0 : scrollOffset + 1;
 						const end = Math.min(totalLines, scrollOffset + pageSize);
-						const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · [esc] close`;
+						// [esc] 关闭键已由顶边 meta 按钮承担，状态行只留位置与导航键。
+						const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End`;
 
 						return [
-							border(`╭${"─".repeat(inner)}╮`),
-							`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
-							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
+							frameHeader(theme, width, title, {
+								meta: "[esc]",
+								metaColor: escHovered ? "text" : "muted",
+							}),
+							frameDivider(theme, width),
 							...bodyRows,
-							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-							`${border("│")}${padLine(theme.fg("dim", ` ${status}`), inner)}${border("│")}`,
-							border(`╰${"─".repeat(inner)}╯`),
+							frameDivider(theme, width),
+							frameRow(theme, width, theme.fg("dim", status)),
+							frameBottom(theme, width),
 						];
 					},
 				};
@@ -608,9 +631,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								},
 								render(width: number) {
 									const inner = Math.max(1, width - 2);
-									const escWidth = visibleWidth("[esc]");
 									const percent = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
-									const title = theme.bold(theme.fg("accent", "Context Usage"));
+									const title = "Context Usage";
 									const subtitle = `${formatTokens(used)} / ${formatTokens(contextWindow)} tokens (${percent.toFixed(1)}%)`;
 									const barWidth = Math.max(1, Math.min(60, inner - 2));
 									let remaining = barWidth;
@@ -640,21 +662,40 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 										const selected = part.label === selectedLabel;
 										const hoverLabel = visiblePreviews.find((p) => p.key === hoveredKey)?.label;
 										const prefix = selected ? "› " : "  ";
-										const row = padLine(`${prefix}${swatch} ${label} ${amount}`, inner);
-										if (selected) return theme.bg("selectedBg", row);
-										return part.label === hoverLabel ? theme.bg("customMessageBg", row) : row;
+										// frameRow 内容预算 width-4（= inner-2）；先 pad 再上底色，高亮铺满整段。
+										const row = padLine(
+											`${prefix}${swatch} ${label} ${amount}`,
+											Math.max(0, inner - 2),
+										);
+										const painted = selected
+											? theme.bg("selectedBg", row)
+											: part.label === hoverLabel
+												? theme.bg("customMessageBg", row)
+												: row;
+										return frameRow(theme, width, painted);
 									});
-									const border = (text: string) => theme.fg("border", text);
+									const health = contextHealth(contextWindow > 0 ? percent : null);
 									const lines = [
-										border(`╭${"─".repeat(inner)}╮`),
-										`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
-										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-										`${border("│")}${padLine(` ${segments}`, inner)}${border("│")}`,
-										`${border("│")}${" ".repeat(inner)}${border("│")}`,
-										...partRows.map((row) => `${border("│")}${row}${border("│")}`),
-										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-										`${border("│")}${padLine(theme.fg("dim", " ↑↓ select · Click / Enter to preview · [esc] close"), inner)}${border("│")}`,
-										border(`╰${"─".repeat(inner)}╯`),
+										frameHeader(theme, width, title, {
+											meta: "[esc]",
+											metaColor: escHovered ? "text" : "muted",
+										}),
+										frameRow(
+											theme,
+											width,
+											`${theme.fg("muted", subtitle)}${theme.fg(health.color, ` · ${health.label}`)}`,
+										),
+										frameDivider(theme, width),
+										frameRow(theme, width, segments),
+										frameRow(theme, width, ""),
+										...partRows,
+										frameDivider(theme, width),
+										frameRow(
+											theme,
+											width,
+											theme.fg("dim", "↑↓ select · Click / Enter to preview · [esc] close"),
+										),
+										frameBottom(theme, width),
 									];
 
 									const terminalHeight = Math.max(1, tui.terminal.rows);

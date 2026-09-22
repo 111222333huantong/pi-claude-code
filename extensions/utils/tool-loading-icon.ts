@@ -17,9 +17,9 @@ export function queuedToolGlyph(): string {
 	return process.platform === "darwin" ? "⏺" : "●";
 }
 
-export type ToolStatusGlyphKind = "running" | "queued" | "success" | "error";
+export type ToolStatusGlyphKind = "running" | "queued" | "success" | "error" | "halted";
 
-/** 四态字形（思想重写自 Claude Code ToolUseLoader：同位复用，不换列宽）。 */
+/** 五态字形（思想重写自 Claude Code ToolUseLoader：同位复用，不换列宽）。 */
 export function toolStatusGlyph(kind: ToolStatusGlyphKind, now = Date.now()): string {
 	switch (kind) {
 		case "running":
@@ -30,6 +30,9 @@ export function toolStatusGlyph(kind: ToolStatusGlyphKind, now = Date.now()): st
 			return "✓";
 		case "error":
 			return "✗";
+		// 用户动作中断（非真失败）：空心圆 dim，与 mcode cancelled 词汇一致。
+		case "halted":
+			return "○";
 	}
 }
 

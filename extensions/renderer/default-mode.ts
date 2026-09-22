@@ -352,7 +352,9 @@ function createCcstyleTool(
 						? queuedToolGlyph()
 						: freshRunning
 							? toolStatusGlyph("running")
-							: toolStatusGlyph(freshPhase === "error" ? "error" : "success");
+							: toolStatusGlyph(
+									freshPhase === "halted" ? "halted" : freshPhase === "error" ? "error" : "success",
+								);
 					const liveIcon = theme.fg(freshColor, glyph);
 					const viewportWidth = toolViewportWidth(width);
 					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
@@ -548,7 +550,13 @@ function createCcstyleTool(
 			}
 
 			const isError = options?.isError || context?.isError;
-			setToolVisualState(context, isError ? "error" : "success");
+			// 五态落定：用户动作中断（取消/拒绝/中断）→ halted（○ dim），
+			// 真错误 → error（✗ 红）——与折叠摘要 detailColor 同源分类，标题不再红dim 打架。
+			let settleState: "success" | "error" | "halted" = "success";
+			if (isError) {
+				settleState = classifyToolFailure(textFromResult(result)) === "error" ? "error" : "halted";
+			}
+			setToolVisualState(context, settleState);
 			const toolCallId = context?.toolCallId;
 			if (shouldRenderRichDiff(config.mode, toolName, Boolean(isError))) {
 				// getter 保证 Diff indicator / wrap / limits 下次绘制即更新

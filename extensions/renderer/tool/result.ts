@@ -192,8 +192,8 @@ export const MAX_ERROR_PREVIEW_LINES = 10;
 /** 排队超过此时长才显示 Waiting… 第二行（短排队零噪音）。 */
 export const QUEUED_HINT_AFTER_MS = 2000;
 
-/** 四态：queued（静态 dim 点，无动画）/ running / success / error。 */
-export type ToolActivityPhase = "queued" | "running" | "success" | "error";
+/** 五态：queued（静态 dim 点，无动画）/ running / success / error / halted（用户动作中断，dim ○）。 */
+export type ToolActivityPhase = "queued" | "running" | "success" | "error" | "halted";
 
 /** 失败种类：用户动作（取消/拒绝/中断，dim 色）与真错误（红）分流。 */
 export type ToolFailureKind = "cancelled" | "rejected" | "interrupted" | "error";
@@ -209,7 +209,9 @@ const FAILURE_PREFIX_RE = /^(error|failed|failure|cancelled|canceled|rejected|in
 /** 四态推导（组合判定，不靠单字段）：已决>终态；未决按 executionStarted 分 running/queued。 */
 export function resolveToolActivityPhase(context: any): ToolActivityPhase {
 	const visualState = getToolVisualState(context);
-	if (visualState === "success" || visualState === "error") return visualState;
+	if (visualState === "success" || visualState === "error" || visualState === "halted") {
+		return visualState;
+	}
 	if (context?.isPartial === false) return context?.isError ? "error" : "success";
 	return context?.executionStarted ? "running" : "queued";
 }
@@ -272,11 +274,16 @@ export function scheduleQueuedHintRefresh(context: any, delayMs: number): void {
 	armStateTimer(context, "ccstyleQueuedHintTimer", delayMs);
 }
 
-type ToolVisualState = "pending" | "success" | "error";
+/**
+ * settled 字形：成功 ✓、真错误 ✗、用户动作中断（取消/拒绝/中断）○。
+ * 与折叠摘要的 detailColor 分级同源——标题 marker 和摘要颜色不再互相打架。
+ */
+export type ToolVisualState = "pending" | "success" | "error" | "halted";
 
 export function settledIcon(_name: string, state: ToolVisualState | undefined): string {
 	if (state === "success") return "✓";
 	if (state === "error") return "✗";
+	if (state === "halted") return "○";
 	// toolIcon(name) 曾恒返回 "●"，已内联；name 保留以稳定导出签名。
 	return "●";
 }
@@ -324,6 +331,8 @@ export function toolIconColor(context: any): "accent" | "dim" | "error" | "succe
 	const visualState = getToolVisualState(context);
 	// 最小可读窗口内：即使已落定也继续呼吸，直到翻牌。
 	if (isInMinDisplayWindow(state)) return pendingDotColor();
+	// 用户动作中断（取消/拒绝/中断）先于 isError 判定：dim 非红。
+	if (visualState === "halted") return "dim";
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
 	if (context?.isPartial || context?.executionStarted || visualState === "pending") {
@@ -588,23 +597,42 @@ export class ExpandedToolIoView {
 			// Prefer source-line count so plain multi-line dumps always cap, even when
 			// theme/wrap measurements disagree slightly.
 			const truncated = wrapped.length > opts.limit || sourceLines.length > opts.limit;
-			const visible = truncated ? wrapped.slice(0, Math.min(opts.limit, wrapped.length)) : wrapped;
-			for (const line of visible) pushRailLine(line, opts.continued);
-			if (truncated) {
-				const hidden = Math.max(0, wrapped.length - visible.length);
-				if (hidden > 0) {
-					// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
-					const more =
-						theme.fg("dim", " •") +
-						theme.fg(
-							this.hoveredSection === opts.section ? "text" : "dim",
-							` ${showMoreHintText()}`,
-						);
-					pushRailLine(theme.fg("dim", `… +${hidden} more lines`) + more, opts.continued);
-					this.showMoreHeaderRows[opts.section] = lines.length - 1;
+			if (!truncated) {
+				for (const line of wrapped) pushRailLine(line, opts.continued);
+				return false;
+			}
+			const hidden = Math.max(0, wrapped.length - opts.limit);
+			// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
+			const pushFooter = () => {
+				if (hidden <= 0) return;
+				const more =
+					theme.fg("dim", " •") +
+					theme.fg(this.hoveredSection === opts.section ? "text" : "dim", ` ${showMoreHintText()}`);
+				pushRailLine(theme.fg("dim", `… +${hidden} more lines`) + more, opts.continued);
+				this.showMoreHeaderRows[opts.section] = lines.length - 1;
+			};
+			if (opts.input) {
+				// Input 保头部（head-only）：参数/命令从头读起。
+				for (const line of wrapped.slice(0, opts.limit)) pushRailLine(line, opts.continued);
+				pushFooter();
+			} else if (this.isError) {
+				// 失败证据保尾部：错误在末尾——先提示再给最后 limit 行
+				//（思想重写自 mcode failure evidence tail window）。
+				pushFooter();
+				for (const line of wrapped.slice(Math.max(0, wrapped.length - opts.limit))) {
+					pushRailLine(line, opts.continued);
+				}
+			} else {
+				// 成功输出 head-tail：前 limit-1 行 + 末行，中间藏起
+				//（思想重写自 mcode selectOutputLines head-tail 参数）。
+				const headCount = Math.max(1, opts.limit - 1);
+				for (const line of wrapped.slice(0, headCount)) pushRailLine(line, opts.continued);
+				pushFooter();
+				if (opts.limit >= 2) {
+					for (const line of wrapped.slice(-1)) pushRailLine(line, opts.continued);
 				}
 			}
-			return truncated;
+			return true;
 		};
 
 		const hasInput = this.inputBody.trim().length > 0;

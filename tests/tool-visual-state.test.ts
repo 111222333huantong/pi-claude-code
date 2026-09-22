@@ -290,6 +290,51 @@ test("collapsed failures shorten halts and normalize errors end to end", () => {
 	}
 });
 
+test("user halts settle to a dim ○ instead of a red ✗", () => {
+	assert.equal(
+		resolveToolActivityPhase({
+			state: { ccstyleToolVisualState: "halted" },
+			isPartial: false,
+			isError: true,
+		}),
+		"halted",
+		"halted 视觉态优先于 isError 兜底",
+	);
+	assert.equal(toolStatusGlyph("halted"), "○");
+	assert.equal(
+		toolIconColor({
+			state: { ccstyleToolVisualState: "halted" },
+			isPartial: false,
+			isError: true,
+		}),
+		"dim",
+		"用户动作中断 dim，不吃 error 红",
+	);
+
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const halted = makeBash("bash-halted-glyph");
+		halted.markExecutionStarted();
+		settled(halted, "Command cancelled by user.", true);
+		withNow(Date.now() + 5000, () => {
+			halted.render(100); // 首帧落定视觉态
+			const lines = halted
+				.render(100)
+				.map(stripAnsi)
+				.filter((line: string) => line.trim());
+			const title = lines.find((line: string) => line.includes("Bash")) ?? "";
+			assert.match(title, /○/, `用户中断用 ○，got: ${title}`);
+			assert.doesNotMatch(lines.join("\n"), /✗/);
+		});
+	} finally {
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});
+
 test("expanded errors clamp to 10 lines with a more hint", () => {
 	assert.equal(MAX_ERROR_PREVIEW_LINES, 10);
 	const previousMode = config.mode;
@@ -304,9 +349,13 @@ test("expanded errors clamp to 10 lines with a more hint", () => {
 		settled(failed, rows, true);
 		failed.setExpanded(true);
 		const failedText = failed.render(100).map(stripAnsi).join("\n");
-		assert.match(failedText, /row-10/);
-		assert.doesNotMatch(failedText, /row-11/);
+		// 失败证据保尾部：先 `+N more lines` 提示，再给最后 10 行（row-11..20）。
 		assert.match(failedText, /\+10 more lines/);
+		assert.match(failedText, /row-11/);
+		assert.match(failedText, /row-20/);
+		assert.doesNotMatch(failedText, /row-10/);
+		const footerAt = failedText.indexOf("+10 more lines");
+		assert.ok(footerAt < failedText.indexOf("row-11"), "错误尾窗：提示在尾行之前");
 		const ok = makeBash("bash-ok-full");
 		ok.markExecutionStarted();
 		settled(ok, rows, false);
@@ -314,6 +363,37 @@ test("expanded errors clamp to 10 lines with a more hint", () => {
 		const okText = ok.render(100).map(stripAnsi).join("\n");
 		assert.match(okText, /row-20/);
 		assert.doesNotMatch(okText, /more lines/);
+	} finally {
+		config.expandedOutputMaxLines = previousLimit;
+		config.mode = previousMode;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});
+
+test("success output truncation keeps head and tail (head-tail)", () => {
+	const previousMode = config.mode;
+	const previousLimit = config.expandedOutputMaxLines;
+	config.mode = "on";
+	config.expandedOutputMaxLines = 10;
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const rows = Array.from({ length: 20 }, (_, i) => `row-${i + 1}`).join("\n");
+		const ok = makeBash("bash-ok-headtail");
+		ok.markExecutionStarted();
+		settled(ok, rows, false);
+		ok.setExpanded(true);
+		const lines = ok.render(100).map(stripAnsi);
+		const text = lines.join("\n");
+		// head-tail：头 9 行（row-1..9）+ footer（藏 row-10..19 共 10 行）+ 尾 1 行。
+		assert.match(text, /row-1\b/);
+		assert.match(text, /row-9/);
+		assert.match(text, /\+10 more lines/);
+		assert.match(text, /row-20/, "末行保留");
+		assert.doesNotMatch(text, /row-15/, "中段藏起");
+		const footerAt = lines.findIndex((line: string) => line.includes("+10 more lines"));
+		const tailAt = lines.findIndex((line: string) => line.includes("row-20"));
+		assert.ok(footerAt >= 0 && tailAt > footerAt, "末行在 footer 之后");
 	} finally {
 		config.expandedOutputMaxLines = previousLimit;
 		config.mode = previousMode;

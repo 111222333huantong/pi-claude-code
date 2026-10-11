@@ -652,7 +652,7 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 		assert.equal(rows[1], " ├ ✓ Bash npm test · 12.4s");
 		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · 300ms");
 
-		// 失败仍报错误首行。
+		// 失败也不带输出：错误正文在展开后看，行上只留 ✗ 和耗时。
 		const parent3 = new Container() as any;
 		const bad = started("bash", "sh-bad", { command: "false" });
 		bad.updateResult({
@@ -665,7 +665,7 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 		parent3.addChild(bad);
 		parent3.addChild(ok);
 		const rows3 = plain((parent3.children[0] as ToolGroupComponent).render(140));
-		assert.equal(rows3[1], " ├ ✗ Bash false · ENOENT: no such file second line · 20ms");
+		assert.equal(rows3[1], " ├ ✗ Bash false · 20ms");
 		assert.equal(rows3[2], " └ ✓ Bash true · 5ms");
 
 		// 非 shell 工具不补尾巴。

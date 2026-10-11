@@ -36,6 +36,7 @@
 - abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。
 - 行末 `click to show more`；摘要永不换行。
 - 展开后：摘要行隐藏，助手文本按原生渲染（不进面板），thinking 与工具卡进面板；展开的 thinking 再套一层更深的内卡，工具卡只用外卡底色。
+- 点击展开前先停住底部跟随：内容变高不会把点的那行顶出屏幕（工具卡与摘要行同一口径，收起时还原展开前的视口）。
 
 纯函数口径（`buildMessageSummary`）：
 
@@ -117,6 +118,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 ## 5. 回合聚合规则
 
 - 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。
+- 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合就地收口、后续消息另起一回合。区间里的用户消息不会被当成外来行挪走，摘要行与展开面板都留在自己回合的位置上。
 - 运行时长跨消息累加（thinking query + 回合挂钟 floor）。
 - 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。
 - mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。

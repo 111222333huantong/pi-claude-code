@@ -6,6 +6,9 @@
  * renderer）。edit/write 复用 mode=on 的 rich diff
  * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
+ * 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合
+ * 就地收口、后续消息另起一回合，区间里的用户消息不会被当成外来行挪走（摘要行、
+ * 展开面板因此留在自己回合的位置上）。
  * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
  *
  * live 围观态（回合进行中 / 收尾静默期）：正文跟折叠态同形；摘要行与单一槽位卡
@@ -26,7 +29,9 @@
  */
 import {
 	AssistantMessageComponent,
+	SkillInvocationMessageComponent,
 	ToolExecutionComponent,
+	UserMessageComponent,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
@@ -1372,6 +1377,54 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		return found;
 	};
 
+	/** 回合成员判定：本回合的 assistant 组件，或归属本回合的工具（含分组容器）。 */
+	const roundMemberMatcher = (round: CompactRound): ((value: any) => boolean) => {
+		const ids = roundToolCallIds(round);
+		const matchesTool = (value: any): boolean =>
+			typeof value?.toolCallId === "string" && ids.has(value.toolCallId);
+		return (value: any): boolean =>
+			round.messages.has(value) ||
+			matchesTool(value) ||
+			(Array.isArray(value?.children) && value.children.some(matchesTool));
+	};
+
+	/** 用户消息（含 skill 调用块）是回合的硬边界。 */
+	const isUserMessageComponent = (value: any): boolean =>
+		value instanceof UserMessageComponent || value instanceof SkillInvocationMessageComponent;
+
+	/**
+	 * 新组件与回合已有成员之间是否隔着一条用户消息。隔着就说明这是下一回合的内容：
+	 * steer 消息插进了回合中间，或上一回合没有正文就收尾、用户又问了新问题。
+	 * 组件还没挂进容器时判断不了，按不隔开处理（会话重放的 refresh 会再求值一次）。
+	 */
+	const crossesUserMessage = (round: CompactRound, component: any): boolean => {
+		const container = tailContainerOf(round.anchor);
+		const children = container?.children;
+		if (!Array.isArray(children)) return false;
+		const index = children.indexOf(component);
+		if (index < 0) return false;
+		const isMember = roundMemberMatcher(round);
+		for (let i = index - 1; i >= 0; i--) {
+			if (isMember(children[i])) return false;
+			if (isUserMessageComponent(children[i])) return true;
+		}
+		return false;
+	};
+
+	/**
+	 * 可以并入的活动回合。被用户消息隔开时返回 undefined，调用方收掉旧回合另起一个，
+	 * 保证回合不跨用户消息——否则区间里的用户消息会被当成外来行挪到回合末尾之后。
+	 */
+	const joinableActiveRound = (component: any): CompactRound | undefined =>
+		activeRound && !crossesUserMessage(activeRound, component) ? activeRound : undefined;
+
+	/** 取并入目标；旧回合被用户消息隔开时先收尾（静默期一转场，新回合立即接手）。 */
+	const joinOrCreateRound = (component: any, message: any): CompactRound => {
+		const joinable = joinableActiveRound(component);
+		if (!joinable && activeRound) finishRound(activeRound);
+		return joinable ?? createRound(component, message);
+	};
+
 	/** 尾行实际所在容器；缓存的 container 过期时按树找回来。 */
 	const tailHostContainer = (tail: MountedRoundTail): any =>
 		containerOfHost(tail.host) ??
@@ -1454,13 +1507,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		const children = container.children as any[];
 		const current = children.indexOf(tail.host);
 		if (current >= 0) children.splice(current, 1);
-		const ids = roundToolCallIds(round);
-		const matchesTool = (value: any): boolean =>
-			typeof value?.toolCallId === "string" && ids.has(value.toolCallId);
-		const isMember = (value: any): boolean =>
-			round.messages.has(value) ||
-			matchesTool(value) ||
-			(Array.isArray(value?.children) && value.children.some(matchesTool));
+		const isMember = roundMemberMatcher(round);
 		let first = -1;
 		let last = -1;
 		for (let i = 0; i < children.length; i++) {
@@ -1471,7 +1518,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		const lastMember = last >= 0 ? children[last] : undefined;
 		const intruders: any[] = [];
 		for (let i = last - 1; i > first; i--) {
-			if (!isMember(children[i])) intruders.unshift(children.splice(i, 1)[0]);
+			// 用户消息永远留在原地：挪走会把别人的消息挪到用户消息下面去。
+			if (isMember(children[i]) || isUserMessageComponent(children[i])) continue;
+			intruders.unshift(children.splice(i, 1)[0]);
 		}
 		if (lastMember) last = children.indexOf(lastMember);
 		const insertAt = last < 0 ? children.length : last + 1;
@@ -1983,7 +2032,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				round = createRound(this, message);
 				roundByComponent.set(this, round);
 			} else if (!round) {
-				round = activeRound ?? createRound(this, message);
+				// 中间隔着用户消息就另起一回合，不并进上一个回合。
+				round = joinOrCreateRound(this, message);
 				roundByComponent.set(this, round);
 			}
 			round.messages.set(this, message);
@@ -2019,7 +2069,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (hasThinking) {
 			let round = roundByComponent.get(this);
 			if (!round) {
-				round = activeRound ?? createRound(this, message);
+				round = joinOrCreateRound(this, message);
 				roundByComponent.set(this, round);
 			}
 			round.messages.set(this, message);

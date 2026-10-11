@@ -7,6 +7,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
 	ToolExecutionComponent,
+	UserMessageComponent,
 	createBashToolDefinition,
 	createEditToolDefinition,
 	createGrepToolDefinition,
@@ -1203,6 +1204,122 @@ test("compact 尾行：运行中外来提示行压在计数行之上，收尾后
 							: "tool",
 		);
 		assert.deepEqual(settled, ["anchor", "tool", "tool", "tail", "tip", "tip", "final"]);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 回合不跨用户消息：steer 留在原位，前后各一条摘要", () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const first = {
+		role: "assistant",
+		timestamp: 1,
+		content: [
+			{ type: "text", text: "好的，我先跑一下 bash。" },
+			{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+		],
+	};
+	const second = {
+		role: "assistant",
+		timestamp: 2,
+		content: [{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "Y" } }],
+	};
+	const third = {
+		role: "assistant",
+		timestamp: 3,
+		content: [{ type: "toolCall", id: "r1", name: "read", arguments: { path: "src/z.ts" } }],
+	};
+	// 直播顺序：pi 先 addChild 再 updateContent（message_start → 挂载 → 流式）。
+	try {
+		const anchor = new AssistantMessageComponent(undefined, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(first);
+
+		// 回合进行中插入 steer 用户消息。
+		const steer = new UserMessageComponent("顺便也看看 Y") as any;
+		chat.addChild(steer);
+
+		// steer 之后模型接着跑 grep：这条 assistant 消息没有正文。
+		const next = new AssistantMessageComponent(undefined, true) as any;
+		const grep = tool("grep", "g1", { pattern: "Y" });
+		chat.addChild(next);
+		chat.addChild(grep);
+		next.updateContent(second);
+		grep.updateDisplay?.();
+
+		// steer 排在旧回合之后、新回合之前：没被当成外来行挪到回合末尾。
+		const order = chat.children as any[];
+		assert.ok(order.indexOf(steer) > order.indexOf(bash), "steer 在旧回合之后");
+		assert.ok(order.indexOf(steer) < order.indexOf(next), "steer 在新回合之前");
+
+		const summaries = renderText(chat).filter((line) => /Ran for|Running\.\.\./.test(line));
+		assert.equal(summaries.length, 2, `两个回合各一条摘要: ${renderText(chat).join(" | ")}`);
+		assert.match(summaries[0]!, /Ran for .+bash×1/);
+		assert.doesNotMatch(summaries[0]!, /grep/);
+		assert.match(summaries[1]!, /Running\.\.\..*grep×1/);
+		assert.doesNotMatch(summaries[1]!, /bash/);
+
+		// 回合 2 还在跑时用户又提了新问题：新回合同样不把这条消息卷进来。
+		const prompt = new UserMessageComponent("再看看 Z") as any;
+		chat.addChild(prompt);
+		const later = new AssistantMessageComponent(undefined, true) as any;
+		const read = tool("read", "r1", { path: "src/z.ts" });
+		chat.addChild(later);
+		chat.addChild(read);
+		later.updateContent(third);
+
+		const after = chat.children as any[];
+		assert.ok(after.indexOf(prompt) > after.indexOf(grep), "新问题排在上一段工具之后");
+		assert.ok(after.indexOf(prompt) < after.indexOf(later), "新问题排在下一回合之前");
+		assert.ok(after.indexOf(steer) < after.indexOf(later), "steer 没被后一轮挪走");
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 回合不跨用户消息：重放后 refresh 重新分组，边界同样成立", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const first = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "好的，我先跑一下 bash。" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const second = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "Y" } }],
+		};
+		// 会话重放顺序：组件构造时就带消息（updateContent 发生在挂载之前），
+		// 那一刻看不到容器里的用户消息，边界由 refresh 重新分组时补上。
+		const prompt = new UserMessageComponent("把 X 改一下") as any;
+		const anchor = new AssistantMessageComponent(first as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		const steer = new UserMessageComponent("顺便也看看 Y") as any;
+		const next = new AssistantMessageComponent(second as any, true) as any;
+		const grep = tool("grep", "g1", { pattern: "Y" });
+		for (const child of [prompt, anchor, bash, steer, next, grep]) chat.addChild(child);
+
+		hooks.refresh();
+
+		const order = chat.children as any[];
+		assert.ok(order.indexOf(steer) > order.indexOf(bash), "steer 在旧回合之后");
+		assert.ok(order.indexOf(steer) < order.indexOf(next), "steer 在新回合之前");
+		const summaries = renderText(chat).filter((line) => /Ran for|Running\.\.\./.test(line));
+		assert.equal(summaries.length, 2, `两个回合各一条摘要: ${renderText(chat).join(" | ")}`);
+		assert.match(summaries[0]!, /Ran for .+bash×1/);
+		assert.match(summaries[1]!, /Running\.\.\..*grep×1/);
 	} finally {
 		setToolMouseTui(null);
 		restore();

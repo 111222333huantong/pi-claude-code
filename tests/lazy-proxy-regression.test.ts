@@ -9,6 +9,7 @@ import {
 	ToolExecutionComponent,
 	type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
@@ -1532,4 +1533,81 @@ test("lazy-proxy frame capture rolls back partial render wrappers on failure", (
 	assert.equal(first.render, originalRender, "earlier component render is restored after failure");
 	assert.ok(first.render().every((line) => !line.includes("\x1b_cc:")));
 	installToolMouseInteraction({});
+});
+
+test("compact 摘要行展开前停住跟随：点的那行不随内容长高被顶走", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const chat: any = new Container();
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(chat, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "好的，我先跑一下 bash。" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(undefined, true) as any;
+		chat.addChild(anchor);
+		anchor.updateContent(message);
+		assert.ok(chat.children.at(-1) !== anchor, "摘要行挂在回合尾行");
+		renderer.currentLayout = fullscreenLayout(chat, null);
+
+		const view: any = renderer.currentLayout.primaryScrollView;
+		view.scrollTop = 40;
+		view.isFollowingEnd = true;
+		const calls: any[] = [];
+		view.scrollTo = (next: number, options?: any) => {
+			// 调用时点的那行是否已经展开：摘要行走「先展开、后停跟随」（快照才记得到跟随态）。
+			calls.push([next, options?.disableFollow === true, anchor.expanded === true]);
+			view.isFollowingEnd = false;
+		};
+
+		const lines: string[] = chat.render(80).map((line: string) => String(line));
+		const hint = "click to show more";
+		const row = lines.findIndex((line) => line.includes(hint));
+		assert.ok(row >= 0, `摘要行带展开入口: ${lines.join(" | ")}`);
+		const col = lines[row]!.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").indexOf(hint) + 1;
+		tui.handleViewportInput(`\x1b[<0;${col};${row + 1}M`);
+
+		assert.equal(anchor.expanded, true, "摘要行单击展开整回合");
+		assert.deepEqual(calls, [[40, true, true]], "摘要行先展开、展开前停住跟随");
+		assert.equal(view.isFollowingEnd, false, "展开后不再把视口拖到底");
+	} finally {
+		installToolMouseInteraction({});
+		hooks.shutdown();
+		config.mode = previousMode;
+	}
+});
+
+test("工具卡展开仍在展开前停住跟随：摘要行的例外不改变工具路径", () => {
+	const tool = createTool("tool-viewport");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	try {
+		const view: any = renderer.currentLayout.primaryScrollView;
+		view.scrollTop = 30;
+		view.isFollowingEnd = true;
+		const calls: any[] = [];
+		view.scrollTo = (next: number, options?: any) => {
+			calls.push([next, options?.disableFollow === true, tool.expanded]);
+			view.isFollowingEnd = false;
+		};
+		const hintCol = tool.render()[1]!.indexOf("(ctrl+o expand / click)") + 1;
+		tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+		assert.equal(tool.expanded, true, "hint 单击展开工具卡");
+		assert.deepEqual(calls, [[30, true, false]], "工具卡先停跟随、再展开");
+	} finally {
+		installToolMouseInteraction({});
+	}
 });

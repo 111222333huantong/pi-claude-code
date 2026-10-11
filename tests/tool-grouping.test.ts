@@ -629,7 +629,7 @@ test("group headers share the single-card viewport limit without stretching shor
 	}
 });
 
-test("组头列表用人性化名并恒带次数；组内 shell 行报结果计数与耗时", () => {
+test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时", () => {
 	const hooks = installToolGrouping(() => true);
 	const plain = (lines: string[]) =>
 		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
@@ -648,9 +648,25 @@ test("组头列表用人性化名并恒带次数；组内 shell 行报结果计�
 		const rows = plain((parent.children[0] as ToolGroupComponent).render(140));
 		// 单组标题用 toolTitle，列表跟子行同一套写法；各跑一次也报 ×1。
 		assert.equal(rows[0], " ● Multiple Tools: 2 done · Bash×1, PowerShell×1 · click to show more");
-		// 与单卡折叠行同口径：结果计数 + pi 记在结果上的 durationMs。
-		assert.equal(rows[1], " ├ ✓ Bash npm test · 1 line returned · 12.4s");
-		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · Done · 300ms");
+		// 只报耗时：行数在折叠卡里冗余，展开就能看到。
+		assert.equal(rows[1], " ├ ✓ Bash npm test · 12.4s");
+		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · 300ms");
+
+		// 失败仍报错误首行。
+		const parent3 = new Container() as any;
+		const bad = started("bash", "sh-bad", { command: "false" });
+		bad.updateResult({
+			content: [{ type: "text", text: "ENOENT: no such file\nsecond line" }],
+			isError: true,
+			durationMs: 20,
+		});
+		const ok = started("bash", "sh-ok", { command: "true" });
+		ok.updateResult({ content: [{ type: "text", text: "ok" }], isError: false, durationMs: 5 });
+		parent3.addChild(bad);
+		parent3.addChild(ok);
+		const rows3 = plain((parent3.children[0] as ToolGroupComponent).render(140));
+		assert.equal(rows3[1], " ├ ✗ Bash false · ENOENT: no such file second line · 20ms");
+		assert.equal(rows3[2], " └ ✓ Bash true · 5ms");
 
 		// 非 shell 工具不补尾巴。
 		const parent2 = new Container() as any;

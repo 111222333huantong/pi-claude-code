@@ -312,7 +312,7 @@ write 新建 / 覆盖：
 ```text
  ● Multiple Tools: 2 done · 1 failed · click to show more
  ├ ✓ Read extensions/index.ts
- ├ ✓ Bash npm test · 1 line returned · 12.4s
+ ├ ✓ Bash npm test · 12.4s
  └ ✗ Ffgrep "renderCall" in extensions/
 ```
 
@@ -357,7 +357,7 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - 组头始终使用状态色圆点 `●`。
 - 组头工具列表用与子行同一套人性化标题，次数一律带上（`Bash×1, PowerShell×1`）；宽度不够时先截列表，保住行尾的展开提示。
 - 内部工具使用 `✓`、`✗` 或 Braille loading spinner。
-- 组内 shell 行的结果计数与耗时与单卡折叠行同口径（`1 line returned · 12.4s`）；非 shell 工具不补。
+- 组内 shell 行只报耗时（`· 12.4s`），行数是冗余信息；失败另报错误首行。
 - 展开区统一绘制完整状态背景，左右和底部各 1 格 padding，无顶部 padding。
 - 外层树在收起/展开时位置不变；Input/Output 树线与上方状态图标对齐。
 - Input/Output 之间各有一个空白 rail 行。

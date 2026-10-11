@@ -263,7 +263,8 @@ function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
 }
 
 /**
- * 组内 shell 行的结果尾巴：与单卡折叠行同一口径（`1 line returned · 12.4s`）。
+ * 组内 shell 行的尾巴：只报耗时（`· 12.4s`）。行数是冗余信息，展开就能看到；
+ * 失败另报错误首行，那条不该只在展开后可见。
  * 耗时取 pi 记在结果上的 durationMs（单卡渲染上下文里的同一个值），运行中还拿不到就不报。
  */
 function shellResultTail(
@@ -273,19 +274,21 @@ function shellResultTail(
 ): string {
 	if (!SHELL_TOOL_NAMES.has(toolName(tool)) || toolStatus === "pending" || !tool?.result) return "";
 	const isError = tool.result?.isError === true;
-	const text = textFromResult(tool.result);
-	const summary = collapsedResultSummary({
-		result: tool.result,
-		toolName: toolName(tool),
-		text,
-		isError,
-	});
+	// 失败报错误首行（不该只在展开后可见）；成功只报耗时，行数是冗余信息。
+	const failure = isError
+		? collapsedResultSummary({
+				result: tool.result,
+				toolName: toolName(tool),
+				text: textFromResult(tool.result),
+				isError: true,
+			})
+		: "";
 	const durationMs = tool.result?.durationMs;
 	const duration =
 		typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
 			? formatToolDuration(durationMs)
 			: "";
-	const tail = [summary, duration].filter(Boolean).join(" · ");
+	const tail = [failure, duration].filter(Boolean).join(" · ");
 	return tail ? ` ${fg("dim", `· ${tail}`)}` : "";
 }
 

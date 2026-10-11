@@ -35,6 +35,12 @@ import {
 import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
 import {
+	ASK_USER_QUESTION_TOOL_NAME,
+	askUserExpandedBody,
+	askUserQuestionCount,
+	createAskUserResultComponent,
+} from "./tool/ask-user-question.ts";
+import {
 	CODEMODE_TOOL_NAME,
 	codemodeExpandedBody,
 	createCodemodeResultComponent,
@@ -96,6 +102,9 @@ type GlobalToolRenderPatch = {
 	renderPaint?: (width: number) => string[];
 	invalidatePaint?: () => void;
 	paintCache?: WeakMap<object, ToolPaintHit>;
+	/** 给渲染上下文补 result；卸下时还原。 */
+	originalGetRenderContext?: (...args: any[]) => any;
+	getRenderContext?: (this: any, ...args: any[]) => any;
 };
 
 type ToolExpandedBackgroundPatch = {
@@ -255,6 +264,15 @@ function createCcstyleTool(
 				variant: "default",
 				cwd: context?.cwd,
 			});
+			// ask_user_question：问题原文在折叠结果树里逐条列出，标题只留工具名和问题数，
+			// 否则第一个问题会在标题和树里各出现一次。
+			if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
+				// Pi 的渲染上下文不带 result，问题数从这里取。
+				const questionCount = askUserQuestionCount(context?.result, args);
+				summary.main = title;
+				summary.detail = questionCount === undefined ? "" : ` (+${questionCount})`;
+				summary.payload = undefined;
+			}
 			let writeStatsText = "";
 			let writeStatsStyled = "";
 			if (toolName === "write" && visualState === "success") {
@@ -336,6 +354,33 @@ function createCcstyleTool(
 					result,
 					theme,
 					running: Boolean(options?.isPartial),
+					isError,
+					isHovered: () => isToolCallHovered(toolCallId),
+				});
+			}
+			// ask_user_question：折叠态摊成问答树，展开态按问题逐条列出选择。
+			if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
+				if (!options?.isPartial) setToolVisualState(context, isError ? "error" : "success");
+				if (options?.isPartial) {
+					const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
+					return new Text(theme.fg("muted", pending), 0, 0);
+				}
+				if (expanded) {
+					return renderExpandedToolResult(
+						askUserExpandedBody(result),
+						theme,
+						isError,
+						context?.lastComponent,
+						context?.args,
+						context,
+						true,
+					);
+				}
+				if (context?.state) context.state.ccstyleIoView = undefined;
+				const toolCallId = context?.toolCallId;
+				return createAskUserResultComponent({
+					result,
+					theme,
 					isError,
 					isHovered: () => isToolCallHovered(toolCallId),
 				});
@@ -570,6 +615,10 @@ function installGlobalToolRendering(
 		previous?.originalInvalidate && prototype.invalidate === previous.invalidatePaint
 			? previous.originalInvalidate
 			: prototype.invalidate;
+	const originalGetRenderContext =
+		previous?.originalGetRenderContext && prototype.getRenderContext === previous.getRenderContext
+			? previous.originalGetRenderContext
+			: prototype.getRenderContext;
 	if (isOwnershipAwarePatch(previous)) disconnectGlobalToolRenderPatch(previous);
 
 	const patch: GlobalToolRenderPatch = {
@@ -585,6 +634,7 @@ function installGlobalToolRendering(
 		installed: undefined as any,
 		originalRender,
 		originalInvalidate,
+		originalGetRenderContext,
 		paintCache: new WeakMap(),
 	};
 
@@ -622,6 +672,13 @@ function installGlobalToolRendering(
 	prototype.getRenderShell = patch.installed.getRenderShell;
 	prototype.getCallRenderer = patch.installed.getCallRenderer;
 	prototype.getResultRenderer = patch.installed.getResultRenderer;
+	// 渲染上下文没有 result。ask_user_question 的标题要报问题数，只能从这里补。
+	patch.getRenderContext = function (this: any, ...args: any[]) {
+		const context = originalGetRenderContext.apply(this, args);
+		if (context && typeof context === "object") context.result = this.result;
+		return context;
+	};
+	prototype.getRenderContext = patch.getRenderContext;
 	// fullscreen 滚动/选区每帧整树 render；内容未变时复用上一帧行，避免重做 diff/Box。
 	patch.renderPaint = function (this: any, width: number): string[] {
 		if (!patch.active || patch.mode() === "off") {
@@ -689,6 +746,13 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 		patch.originalInvalidate
 	) {
 		prototype.invalidate = patch.originalInvalidate;
+	}
+	if (
+		patch.getRenderContext &&
+		prototype.getRenderContext === patch.getRenderContext &&
+		patch.originalGetRenderContext
+	) {
+		prototype.getRenderContext = patch.originalGetRenderContext;
 	}
 }
 

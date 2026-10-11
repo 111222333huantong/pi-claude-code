@@ -9,6 +9,12 @@ import {
 import { config } from "../../config/config.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import {
+	ASK_USER_QUESTION_TOOL_NAME,
+	askUserAnswerText,
+	askUserAnswers,
+	type AskUserAnswer,
+} from "./ask-user-question.ts";
+import {
 	CODEMODE_TOOL_NAME,
 	codemodeCalls,
 	codemodeOutputLineCount,
@@ -205,6 +211,39 @@ function toolSummary(tool: any): ToolCallSummary {
  * codemode 的折叠行：有结果就报该次调用的统计（与单卡汇总行同一套口径），
  * 免得一张卡里几行长代码预览互相看不出区别。还没结果时退回代码预览。
  */
+/**
+ * ask_user_question 的折叠行：有结果就报「问题 -> 回答」，
+ * 多题压成一行并标注剩余条数。还没结果时退回问题预览。
+ */
+function askUserResultSummary(tool: any): ToolCallSummary | undefined {
+	if (toolName(tool) !== ASK_USER_QUESTION_TOOL_NAME || !tool?.result) return undefined;
+	const answers = askUserAnswers(tool.result)
+		.map((answer: AskUserAnswer, index: number) => ({ answer, index }))
+		.sort((left, right) => {
+			const leftIndex = Number(left.answer.questionIndex);
+			const rightIndex = Number(right.answer.questionIndex);
+			const leftMissing = !Number.isFinite(leftIndex);
+			const rightMissing = !Number.isFinite(rightIndex);
+			if (leftMissing || rightMissing) {
+				if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+				return left.index - right.index;
+			}
+			return leftIndex - rightIndex;
+		})
+		.map((entry) => entry.answer);
+	if (answers.length === 0) {
+		const label = tool.result?.details?.cancelled === true ? "Declined" : "Done";
+		return { main: `${toolTitle(tool)} ${label}`, detail: "" };
+	}
+	const first = answers[0]!;
+	const question = String(first.question ?? "").trim() || "Question";
+	const more = answers.length > 1 ? ` (+${answers.length - 1})` : "";
+	return {
+		main: `${toolTitle(tool)} ${question} -> ${askUserAnswerText(first)}${more}`,
+		detail: "",
+	};
+}
+
 function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
 	if (toolName(tool) !== CODEMODE_TOOL_NAME || !tool?.result) return undefined;
 	const parts = codemodeSummaryParts(
@@ -432,7 +471,8 @@ export class ToolGroupComponent extends Container {
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
 			if (!this._expanded) {
-				const summary = codemodeResultSummary(tool) ?? toolSummary(tool);
+				const summary =
+					askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
 				const prefix = ` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `;
 				const detail = fg("dim", summary.detail);
 				// 与单工具卡标题同宽，宽屏右侧留白一致

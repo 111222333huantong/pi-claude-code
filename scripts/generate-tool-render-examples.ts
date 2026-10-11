@@ -426,7 +426,83 @@ async function generateDefault() {
 		);
 	}
 
-	// 9. codemode（内置）
+	// 9. ask_user_question（第三方）
+	{
+		const questions = [
+			{ question: "Which library should we use?", header: "Library" },
+			{ question: "Which paths should the change cover?", header: "Scope" },
+			{ question: "Which checks should run?", header: "Checks", multiSelect: true },
+		];
+		const answered = {
+			content: [
+				{
+					type: "text",
+					text: 'User has answered your questions: "Which library should we use?"="Read". "Which paths should the change cover?"="src and tests". "Which checks should run?"="typecheck, unit tests, lint". You can now continue with the user\'s answers in mind.',
+				},
+			],
+			details: {
+				cancelled: false,
+				answers: [
+					{
+						questionIndex: 0,
+						question: questions[0]!.question,
+						kind: "option",
+						answer: "Read",
+					},
+					{
+						questionIndex: 1,
+						question: questions[1]!.question,
+						kind: "custom",
+						answer: "src and tests",
+						notes: "renderer only",
+					},
+					{
+						questionIndex: 2,
+						question: questions[2]!.question,
+						kind: "multi",
+						answer: null,
+						selected: ["typecheck", "unit tests", "lint"],
+					},
+				],
+				globalNote: "keep the diff small",
+			},
+			isError: false,
+		};
+
+		const running = tool("ask_user_question", "ask-run", { questions });
+		running.updateResult({ content: [], details: { answers: [], cancelled: false } }, true);
+
+		const done = tool("ask_user_question", "ask-done", { questions });
+			done.markExecutionStarted();
+		done.updateResult(answered);
+
+		const expanded = tool("ask_user_question", "ask-exp", { questions });
+		expanded.markExecutionStarted();
+		expanded.updateResult(answered);
+		expanded.setExpanded(true);
+
+		const declined = tool("ask_user_question", "ask-declined", { questions });
+		declined.markExecutionStarted();
+		declined.updateResult({
+			content: [{ type: "text", text: "User declined to answer questions" }],
+			details: { answers: [], cancelled: true },
+			isError: false,
+		});
+
+		chunks.push(
+			section(
+				"9. ask_user_question（第三方）",
+				`${fence([
+					...renderLines(running),
+					...renderLines(done),
+					...renderLines(expanded),
+					...renderLines(declined),
+				])}\n\n标题只留工具名和问题数（调用期间就从入参数起，不先闪出第一个问题）；问题原文与所选在折叠态逐条列出，问题行全用 \`├\`、最后一行用 \`└\` 收 \`N answered\` 并挂展开入口，多选把标签用 \`, \` 拼在一行。展开态按「问题 / 所选 / 备注」分组，并带上总备注。没有作答（用户取消、校验失败）时不画树，只有一行 \`Declined\`。分组卡里空间只够一行，压成 \`问题 -> 回答 (+N)\`。`,
+			),
+		);
+	}
+
+	// 10. codemode（内置）
 	{
 		const codeArgs = {
 			code: `// @options: {"max_output_tokens": 1000}
@@ -489,7 +565,7 @@ return g + f`,
 
 		chunks.push(
 			section(
-				"9. codemode（内置）",
+				"10. codemode（内置）",
 				`${fence([
 					...renderLines(running),
 					...renderLines(done),
@@ -499,7 +575,7 @@ return g + f`,
 		);
 	}
 
-	// 10. tool grouping
+	// 11. tool grouping
 	{
 		const hooks = installToolGrouping(() => true);
 		try {
@@ -539,7 +615,7 @@ return g + f`,
 
 			chunks.push(
 				section(
-					"10. 工具组（tool-grouping）",
+					"11. 工具组（tool-grouping）",
 					[
 						"### 收起：运行中",
 						fence(running),
@@ -566,10 +642,10 @@ return g + f`,
 		}
 	}
 
-	// 11. working footer
+	// 12. working footer
 	chunks.push(
 		section(
-			"11. Working footer",
+			"12. Working footer",
 			[
 				"保留 Pi 原生 spinner，仅扩展文本：",
 				fence(["⠋ Working...", "⠋ Working... (↓ 1,234 tokens · 12s)"]),

@@ -68,7 +68,7 @@ export type CcstylePanelHooks = {
 
 function modeSettingDescription(mode: CompactStyleMode): string {
 	if (mode === "compact") {
-		return "(Experimental) One summary line per assistant round; edit/write reuse the same Diff preview settings as on.";
+		return "One summary line per assistant round; edit/write reuse the same Diff preview settings as on.";
 	}
 	if (mode === "off") {
 		return "Pi native tool rendering. Diff options below still apply independently.";
@@ -422,8 +422,8 @@ export async function showCcstylePanel(
 			id: "mode",
 			label: "Mode",
 			description: modeSettingDescription(config.mode),
-			currentValue: config.mode === "compact" ? "compact (Experimental)" : config.mode,
-			values: ["on", "compact (Experimental)", "off"],
+			currentValue: config.mode,
+			values: ["on", "compact", "off"],
 		};
 		// Tracks whether a nested submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
@@ -828,9 +828,7 @@ export async function showCcstylePanel(
 					toolLabelClipSetting.currentValue = String(config.toolLabelClip);
 					break;
 				case "mode": {
-					// 选项值带 Experimental 标记，选择后还原为真实 mode 值。
-					const mode: CompactStyleMode =
-						value === "compact (Experimental)" ? "compact" : (value as CompactStyleMode);
+					const mode = value as CompactStyleMode;
 					modeSetting.description = modeSettingDescription(mode);
 					hooks.applyStyleMode(mode, ctx, toolGrouping);
 					return;

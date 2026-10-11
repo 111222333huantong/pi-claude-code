@@ -65,6 +65,8 @@ export type Config = {
 	animationIntervalMs: number;
 	dimThinkingText: boolean;
 	showStartupHeader: boolean;
+	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
+	stickyUserMessage: boolean;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -153,6 +155,7 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	dimThinkingText: false,
 	showStartupHeader: true,
+	stickyUserMessage: true,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -282,6 +285,7 @@ export function normalizeConfig(input: unknown): Config {
 		),
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
+		stickyUserMessage: source.stickyUserMessage !== false,
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -344,6 +348,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
+		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,

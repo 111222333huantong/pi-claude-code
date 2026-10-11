@@ -31,6 +31,11 @@ import {
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
 import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
+import {
+	disposeStickyPromptPatches,
+	installStickyPromptPatches,
+	setStickyPromptTheme,
+} from "./mouse/sticky-prompt.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import {
 	clearAllAnimations,
@@ -123,6 +128,8 @@ export default function (
 		if (installation) return installation;
 		// regular 主屏的差分渲染补丁：视口上方变化不再触发清回滚的 fullRender。
 		installMainScreenDoRenderPatch();
+		// 粘性用户消息头：标记注入 + fullscreen 帧合成。
+		installStickyPromptPatches();
 		const defaultMode = installDefaultMode(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
 		const compactMode = installCompactMode({
@@ -236,6 +243,7 @@ export default function (
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
+		setStickyPromptTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
 		// 先收集 resume transcript，再同步 compact 补丁与全局展开状态。
 		syncCompactMode(ctx);
@@ -253,6 +261,7 @@ export default function (
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
+		setStickyPromptTheme(ctx.ui.theme);
 		syncCompactMode(ctx);
 		scheduleSessionRender(() => {
 			syncCompactMode(ctx);
@@ -295,6 +304,7 @@ export default function (
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
+		disposeStickyPromptPatches();
 		clearAllAnimations();
 		installation = undefined;
 	});

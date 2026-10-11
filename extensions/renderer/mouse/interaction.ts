@@ -75,6 +75,11 @@ import {
 	setHoveredToolIo,
 	type FullscreenHoverTarget,
 } from "./hover.ts";
+import {
+	handleStickyPromptClick,
+	resetStickyPromptState,
+	updateStickyPromptHover,
+} from "./sticky-prompt.ts";
 
 type FrameToolRender = {
 	component: any;
@@ -611,12 +616,17 @@ function patchFullscreenViewportInput(tui: any): void {
 						}
 					} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet))
 						clearPendingCollapsePressOnMove(packet);
+					if (isSgrLeftPress(packet) && handleStickyPromptClick(tui, packet)) {
+						return { consume: true };
+					}
 					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
 						return { consume: true };
 					}
 					// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区，避免每像素命中+重绘。
 					if (isSgrIdleMotion(packet)) {
-						handleFullscreenToolHover(tui, packet);
+						// 粘性行命中时不进工具 hover：同一行只能有一个高亮。
+						if (updateStickyPromptHover(tui, packet)) applyFullscreenHover(tui, null);
+						else handleFullscreenToolHover(tui, packet);
 					}
 				}
 			}
@@ -1021,6 +1031,7 @@ export function resetToolHoverState(): void {
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);
+	resetStickyPromptState();
 	restoreOfficialScrollToEnd(getToolMouseTui());
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }

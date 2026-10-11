@@ -63,6 +63,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "expandedCardBackground": "userMessageBg", // expanded card background slot: userMessageBg (same as user prompts) / toolPendingBg (neutral) etc.
   "toolLabelClip": 0, // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true, // startup header (logo + tips) toggle
+  "stickyUserMessage": true, // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
 
   // diff
   "diffViewMode": "auto", // layout: auto / split / unified

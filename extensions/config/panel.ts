@@ -595,6 +595,15 @@ export async function showCcstylePanel(
 			currentValue: config.showStartupHeader ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const stickyUserMessageSetting = {
+			id: "stickyUserMessage",
+			label: "Sticky user message",
+			description: config.stickyUserMessage
+				? "Fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over."
+				: "User messages scroll normally.",
+			currentValue: config.stickyUserMessage ? "on" : "off",
+			values: ["on", "off"],
+		};
 
 		// 额外功能开关：注册于扩展加载期，切换后需重启（/reload）生效。
 		const sessionReferenceToggle = featureToggleSetting(
@@ -930,6 +939,13 @@ export async function showCcstylePanel(
 						? "Thinking text uses the theme's dim color."
 						: "Keep the default thinking text color.";
 					break;
+				case "stickyUserMessage": {
+					updateConfig({ stickyUserMessage: value === "on" });
+					stickyUserMessageSetting.description = config.stickyUserMessage
+						? "Fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over."
+						: "User messages scroll normally.";
+					break;
+				}
 				case "showStartupHeader": {
 					const enabled = value === "on";
 					updateConfig({ showStartupHeader: enabled });
@@ -975,6 +991,7 @@ export async function showCcstylePanel(
 					expandedMaxSetting,
 					expandedCardBgSetting,
 					toolLabelClipSetting,
+					stickyUserMessageSetting,
 					startupHeaderSetting,
 				],
 			},

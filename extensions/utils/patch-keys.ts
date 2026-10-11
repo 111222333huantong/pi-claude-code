@@ -43,6 +43,11 @@ export const TOOL_GROUPING_GENERATION_KEY = Symbol.for("pi.ccstyle.tool-grouping
 // ── regular 主屏渲染补丁 ──
 export const MAIN_SCREEN_DO_RENDER_PATCH = Symbol.for("pi.ccstyle.main-screen-do-render-patch");
 
+// ── fullscreen 粘性用户消息头 ──
+export const STICKY_PROMPT_MARKER_PATCH = Symbol.for("pi.ccstyle.sticky-prompt-marker-patch");
+export const STICKY_PROMPT_FRAME_PATCH = Symbol.for("pi.ccstyle.sticky-prompt-frame-patch");
+export const STICKY_PROMPT_STATE_SLOT = Symbol.for("pi.ccstyle.sticky-prompt-state");
+
 // ── 鼠标交互 ──
 export const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 export const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");

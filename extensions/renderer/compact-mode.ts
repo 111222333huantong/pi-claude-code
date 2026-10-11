@@ -46,7 +46,12 @@ import { displayConfigCacheKey } from "./tool/diff/diff-component.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
-import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
+import {
+	insetComponent,
+	isLiveToolCall,
+	renderExpandedToolResult,
+	scheduleAnimation,
+} from "./tool/result.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { formatDisplayPath } from "./tool/names.ts";
 import {
@@ -2041,7 +2046,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		const name = String(this.toolName ?? "");
 		if (EDIT_WRITE_TOOLS.has(name)) {
-			if (this.executionStarted && (!this.result || this.isPartial === true))
+			const pending = !this.result || this.isPartial === true;
+			// 等待窗口（声明流式中或等待派发）也要转，否则这一行冻在第一帧。
+			if (pending && (this.executionStarted || isLiveToolCall(this.toolCallId)))
 				scheduleAnimation(this);
 			return compactEditWriteLines(this, width, deps.writeMetadata);
 		}

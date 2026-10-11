@@ -32,7 +32,12 @@ import {
 } from "./mouse/interaction.ts";
 import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
-import { clearAllAnimations } from "./tool/result.ts";
+import {
+	clearAllAnimations,
+	clearLiveToolCalls,
+	noteStreamingToolCalls,
+	retireLiveToolCall,
+} from "./tool/result.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import {
 	installMessageDisplayRendering,
@@ -184,6 +189,9 @@ export default function (
 	});
 
 	pi.on("message_update", async (event) => {
+		// 声明期（assistant 消息结束前）就记住工具 id：这段工具行已在等启动，
+		// spinner 该转，但 Pi 还没跑 markExecutionStarted。
+		if (event.message?.role === "assistant") noteStreamingToolCalls(event.message);
 		// compact-thinking 在 session_start 时于 compact 补丁之上再装一层；
 		// 扩展事件先于 interactive-mode 的 updateContent 派发，此处先重新认领。
 		if (config.mode === "compact" && event.message?.role === "assistant") {
@@ -199,6 +207,7 @@ export default function (
 	});
 
 	pi.on("tool_execution_end", async (event) => {
+		retireLiveToolCall(event?.toolCallId);
 		if (config.mode !== "compact") return;
 		// Agent 等工具收尾后延迟刷新，让 compact-thinking 先落最终态。
 		const toolCallId: string | undefined = event?.toolCallId;
@@ -263,8 +272,18 @@ export default function (
 		noteNewTranscriptItem();
 	});
 
+	pi.on("turn_end", async () => {
+		clearLiveToolCalls();
+	});
+
+	pi.on("agent_end", async () => {
+		clearLiveToolCalls();
+	});
+
 	pi.on("session_shutdown", async () => {
 		writeExecutionMetadata.clear();
+		// 会话结束就清空，不能等 installation 早退判断；残留的 id 会让下一会话误转。
+		clearLiveToolCalls();
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);

@@ -18,6 +18,7 @@ import {
 	countLines,
 	hasExpandableDetail,
 	insetComponent,
+	isLiveToolCall,
 	isToolExpanded,
 	outputLineCount,
 	pendingIcon,
@@ -236,7 +237,10 @@ function createCcstyleTool(
 			const isPending =
 				visualState === "pending" ||
 				(!visualState && (context?.isPartial || context?.executionStarted));
-			const animating = isPending && Boolean(context?.executionStarted);
+			// 等待窗口（声明流式中或等待派发）也要转：Pi 要到 assistant 消息结束
+			// 才派发执行，这段只靠 executionStarted 会一直冻在第一帧。
+			const animating =
+				isPending && (Boolean(context?.executionStarted) || isLiveToolCall(context?.toolCallId));
 			if (animating) scheduleAnimation(context, { light: true });
 			const settledRawIcon = isPending ? "" : settledIcon(toolName, visualState);
 			const settledIconStyled =
@@ -626,8 +630,11 @@ function installGlobalToolRendering(
 		const cache = patch.paintCache;
 		// A running partial tool owns a time-varying spinner. Light animation ticks
 		// request a repaint without invalidating the component, so settled-content
-		// caching must not intercept those paints.
-		const cacheable = !(this.executionStarted && this.isPartial);
+		// caching must not intercept those paints. The waiting window before the
+		// tool is dispatched animates too, so it must bypass the cache as well.
+		const animatingRow =
+			this.isPartial && (this.executionStarted || isLiveToolCall(this.toolCallId));
+		const cacheable = !animatingRow;
 		const hit = cacheable ? cache?.get(this) : undefined;
 		if (hit && toolPaintMatches(hit, this, width)) return hit.lines;
 		const lines = originalRender.call(this, width);

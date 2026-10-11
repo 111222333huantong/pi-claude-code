@@ -26,7 +26,7 @@ import {
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
-import { toolViewportWidth } from "./result.ts";
+import { isLiveToolCall, toolViewportWidth } from "./result.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
@@ -108,6 +108,12 @@ function statusIcon(value: ToolStatus): string {
 	return toolLoadingIcon();
 }
 
+/** 等待窗口或运行中的行：spinner 逐帧变化，分组卡要跟着跳帧。 */
+function isAnimatingTool(tool: any): boolean {
+	if (status(tool) !== "pending") return false;
+	return Boolean(tool?.executionStarted) || isLiveToolCall(tool?.toolCallId);
+}
+
 function scheduleGroupAnimation(patch: Patch): void {
 	if (patch.animationTimer || !patch.active) return;
 	patch.animationTimer = setTimeout(() => {
@@ -115,11 +121,7 @@ function scheduleGroupAnimation(patch: Patch): void {
 		if (!patch.active) return;
 		let needsRender = false;
 		for (const group of patch.groups) {
-			if (
-				(group.children as any[]).some(
-					(tool) => tool?.executionStarted && status(tool) === "pending",
-				)
-			) {
+			if ((group.children as any[]).some(isAnimatingTool)) {
 				group.invalidate();
 				// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
 				// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
@@ -389,10 +391,7 @@ export class ToolGroupComponent extends Container {
 		const names = new Set(this.children.map(toolName));
 		const label = names.size === 1 ? toolTitle(this.children[0]) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
-		if (
-			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")
-		)
-			scheduleGroupAnimation(this.patch);
+		if ((this.children as any[]).some(isAnimatingTool)) scheduleGroupAnimation(this.patch);
 		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `· ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。

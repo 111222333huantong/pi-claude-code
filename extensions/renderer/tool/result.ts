@@ -135,6 +135,36 @@ export function scheduleAnimation(
 	}
 }
 
+/**
+ * 本回合流式消息里出现过的工具调用。Pi 要等整条 assistant 消息结束才派发执行，
+ * 这段窗口工具行已经在等启动，spinner 该逐帧转。
+ * 恢复或翻历史重建的旧行不在这个集合里，保持静止。
+ */
+const liveToolCalls = new Set<string>();
+
+/** 收下当前流式 assistant 消息里的工具调用 id。 */
+export function noteStreamingToolCalls(message: any): void {
+	const content = Array.isArray(message?.content) ? message.content : [];
+	for (const block of content) {
+		const id = block?.type === "toolCall" ? block.id : undefined;
+		if (typeof id === "string" && id) liveToolCalls.add(id);
+	}
+}
+
+/** 工具收尾后移出等待窗口。 */
+export function retireLiveToolCall(toolCallId: unknown): void {
+	if (typeof toolCallId === "string") liveToolCalls.delete(toolCallId);
+}
+
+export function clearLiveToolCalls(): void {
+	liveToolCalls.clear();
+}
+
+/** 工具行是否处于等待窗口（流式声明中或等待派发）。 */
+export function isLiveToolCall(toolCallId: unknown): boolean {
+	return typeof toolCallId === "string" && liveToolCalls.has(toolCallId);
+}
+
 export function pendingIcon(_name: string): string {
 	return toolLoadingIcon();
 }

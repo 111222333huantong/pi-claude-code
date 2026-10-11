@@ -6,6 +6,7 @@
  * renderer）。edit/write 复用 mode=on 的 rich diff
  * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
+ * edit/write 与 ask_user_question 留在外层：不进摘要计数，折叠态也单独成行。
  * 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合
  * 就地收口、后续消息另起一回合，区间里的用户消息不会被当成外来行挪走（摘要行、
  * 展开面板因此留在自己回合的位置上）。
@@ -36,6 +37,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
+import { ASK_USER_QUESTION_TOOL_NAME } from "./tool/ask-user-question.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
@@ -91,6 +93,13 @@ export type CompactThinkingQuery = {
 };
 
 const EDIT_WRITE_TOOLS = new Set(["edit", "write"]);
+
+/**
+ * 留在外层的工具：不进摘要计数，折叠态也单独成行。
+ * edit/write 走 compact 自己的 rich diff；ask_user_question 走 default 模式的专用渲染
+ *（标题 (+N) 加折叠问答树）。
+ */
+const OUTER_TOOLS = new Set([...EDIT_WRITE_TOOLS, ASK_USER_QUESTION_TOOL_NAME]);
 
 /**
  * 回合收尾后延迟收拢的静默期（ms）。正文 token 往往先于 toolCall 到达，
@@ -216,7 +225,7 @@ function buildMessagesSummary(
 		for (const item of content) {
 			if (item?.type !== "toolCall") continue;
 			const rawName = typeof item.name === "string" ? item.name : "tool";
-			if (EDIT_WRITE_TOOLS.has(rawName)) continue;
+			if (OUTER_TOOLS.has(rawName)) continue;
 			const name = sanitizeToolResultText(rawName);
 			if (rawName.split(".").pop() === "read") {
 				const args = item.arguments ?? item.args ?? {};
@@ -1715,7 +1724,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				if (item?.type !== "toolCall" || typeof item.id !== "string") continue;
 				const tool = toolsById.get(item.id);
 				// edit/write 保留自己的 compact 行，不进槽位。
-				if (EDIT_WRITE_TOOLS.has(String(tool?.toolName ?? item.name ?? ""))) continue;
+				if (OUTER_TOOLS.has(String(tool?.toolName ?? item.name ?? ""))) continue;
 				round.liveSlotToolIds.add(item.id);
 				liveSlotToolIds.add(item.id);
 				if (!tool) continue;
@@ -1772,8 +1781,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			for (const id of ids) explicitRoundToolIds.delete(id);
 			collapseTools(
 				(tool) =>
-					ids.has(String(tool.toolCallId ?? "")) &&
-					!EDIT_WRITE_TOOLS.has(String(tool.toolName ?? "")),
+					ids.has(String(tool.toolCallId ?? "")) && !OUTER_TOOLS.has(String(tool.toolName ?? "")),
 			);
 		}
 		for (const id of round.liveSlotToolIds) liveSlotToolIds.delete(id);
@@ -1843,7 +1851,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			const placedToolIds = new Set<string>();
 			const placeTool = (id: string, fallbackName?: string) => {
 				const tool = toolsById.get(id);
-				if (!tool || EDIT_WRITE_TOOLS.has(String(tool.toolName ?? fallbackName ?? ""))) return;
+				if (!tool || OUTER_TOOLS.has(String(tool.toolName ?? fallbackName ?? ""))) return;
 				if (placedToolIds.has(id)) return;
 				placedToolIds.add(id);
 				cardItems.push({ tool });
@@ -1909,7 +1917,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			collapseTools(
 				(tool) =>
 					ids.has(String(tool.toolCallId ?? "")) &&
-					!EDIT_WRITE_TOOLS.has(String(tool.toolName ?? "")) &&
+					!OUTER_TOOLS.has(String(tool.toolName ?? "")) &&
 					!explicitRoundToolIds.has(String(tool.toolCallId ?? "")),
 			);
 			flushPanel();
@@ -2108,12 +2116,17 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			return patch.toolOriginalRender.call(this, width);
 		}
 		const name = String(this.toolName ?? "");
-		if (EDIT_WRITE_TOOLS.has(name)) {
-			const pending = !this.result || this.isPartial === true;
-			// 等待窗口（声明流式中或等待派发）也要转，否则这一行冻在第一帧。
-			if (pending && (this.executionStarted || isLiveToolCall(this.toolCallId)))
-				scheduleAnimation(this);
-			return compactEditWriteLines(this, width, deps.writeMetadata);
+		if (OUTER_TOOLS.has(name)) {
+			// edit/write 走 compact 自己的 rich diff；ask_user_question 走 default 模式的专用渲染。
+			// 两者都留在外层，不进摘要、不进展开面板。
+			if (EDIT_WRITE_TOOLS.has(name)) {
+				const pending = !this.result || this.isPartial === true;
+				// 等待窗口（声明流式中或等待派发）也要转，否则这一行冻在第一帧。
+				if (pending && (this.executionStarted || isLiveToolCall(this.toolCallId)))
+					scheduleAnimation(this);
+				return compactEditWriteLines(this, width, deps.writeMetadata);
+			}
+			return patch.toolOriginalRender.call(this, width);
 		}
 		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。
 		if (expandedRoundToolIds.has(String(this.toolCallId ?? ""))) return [];

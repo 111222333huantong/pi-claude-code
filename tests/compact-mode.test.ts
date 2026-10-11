@@ -2060,6 +2060,62 @@ test("compact folds Agent/Task tools always; no pending outer flash", () => {
 	}
 });
 
+test("compact：ask_user_question 留在外层，不进摘要，复用默认问答树", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const writeMetadata = new WriteExecutionMetadataStore();
+	// default 先装，compact 才能把它的 renderPaint 当作 toolOriginalRender。
+	const defaultMode = installDefaultMode(writeMetadata);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+				{
+					type: "toolCall",
+					id: "ask-1",
+					name: "ask_user_question",
+					arguments: { questions: [{ question: "Which library?", header: "Library" }] },
+				},
+			],
+		} as unknown as AssistantMessage;
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const bash = tool("bash", "b1", { command: "ls" });
+		const ask = tool("ask_user_question", "ask-1", {
+			questions: [{ question: "Which library?", header: "Library" }],
+		});
+		ask.markExecutionStarted();
+		ask.updateResult({
+			content: [{ type: "text", text: "User answered" }],
+			details: {
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which library?", kind: "option", answer: "Read" }],
+			},
+		});
+
+		// 摘要只计 bash，ask_user_question 不进计数。
+		const summary = renderText(assistant).join("\n");
+		assert.match(summary, /bash×1/);
+		assert.doesNotMatch(summary, /ask_user_question/);
+
+		// bash 折叠进摘要，ask_user_question 留在外层，复用默认模式的问答树。
+		assert.deepEqual(renderText(bash), []);
+		const askLines = renderText(ask);
+		assert.match(askLines[0]!, /Ask User Question \(\+1\)/);
+		assert.ok(
+			askLines.some((line) => / -> Read/.test(line)),
+			`外层应渲染问答树: ${askLines.join(" | ")}`,
+		);
+	} finally {
+		hooks.shutdown();
+		defaultMode.shutdown();
+		config.mode = previousMode;
+	}
+});
+
 test("compact surfaces abort outside folded tools", () => {
 	const previousMode = config.mode;
 	config.mode = "compact";

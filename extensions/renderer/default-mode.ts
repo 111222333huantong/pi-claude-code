@@ -401,7 +401,8 @@ function createCcstyleTool(
 			if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
 				if (!options?.isPartial) setToolVisualState(context, isError ? "error" : "success");
 				if (options?.isPartial) {
-					const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
+					// 折叠态 1 格缩进：与完成后的 ├/└ 对齐标题行的勾。
+					const pending = expanded ? "↳ Pending…" : " ↳ Pending…";
 					return new Text(theme.fg("muted", pending), 0, 0);
 				}
 				if (expanded) {

@@ -5,7 +5,7 @@
  * 「N lines returned」，用户选了什么要展开才看得到，而且是一段给模型的英文。
  * 选择在 `result.details.answers` 里，这里直接用它。
  *
- * 折叠态摊成树（与 codemode 子调用同一套缩进和衔接符）：
+ * 折叠态摊成树（与 codemode 子调用同一套衔接符，缩进单独对齐本工具标题的勾）：
  *   ├ 问题1 -> 回答1
  *   └ 问题2（多选）-> 回答2, 回答2
  * 标题行在后面追加 (+N) 报问题数。展开态按「问题 / 所选 / 备注」逐条列出。
@@ -18,8 +18,8 @@ import { headTruncateToWidth, toolViewportWidth } from "./result.ts";
 
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 
-/** 折叠态正文缩进，与 codemode 子调用行、`   ↳ …` 对齐。 */
-const INDENT = "   ";
+/** 折叠态正文缩进：1 格，让 ├/└ 落在标题行勾号（" ✓"）的正下方。 */
+const INDENT = " ";
 /** 没选、取消、或答案为空时的占位。 */
 const NO_ANSWER = "(no answer)";
 

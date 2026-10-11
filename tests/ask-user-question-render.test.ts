@@ -107,7 +107,7 @@ test("窄宽度下问题和回答各自截断，不互相挤掉", () => {
 		isError: false,
 		width: 40,
 	}).map(stripAnsi);
-	assert.match(line!, /Which libr… -> Read/);
+	assert.match(line!, /Which libra… -> Read/);
 });
 
 test("没有作答时退回一行摘要", () => {
@@ -117,14 +117,14 @@ test("没有作答时退回一行摘要", () => {
 		isError: false,
 		width: 80,
 	}).map(stripAnsi);
-	assert.deepEqual(declined, ["   Declined"]);
+	assert.deepEqual(declined, [" Declined"]);
 	const empty = askUserCollapsedLines({
 		result: { details: { answers: [] } },
 		theme,
 		isError: false,
 		width: 80,
 	}).map(stripAnsi);
-	assert.deepEqual(empty, ["   Done"]);
+	assert.deepEqual(empty, [" Done"]);
 });
 
 test("展开正文逐条列出问题、选择、备注", () => {
@@ -168,6 +168,10 @@ test("单工具卡：标题带问题数，结果是问答树", () => {
 		const lines = tool.render(120).map(stripAnsi).filter(Boolean);
 		assert.match(lines[0]!, /Ask User Question \(\+3\)/);
 		assert.doesNotMatch(lines[0]!, /Which library/);
+		// 树线与标题行的勾同列：勾在 " ✓" 的第 2 列，├ 也在第 2 列。
+		const checkColumn = lines[0]!.indexOf("✓");
+		const branchLine = lines.find((line: string) => line.includes("├"));
+		assert.equal(branchLine?.indexOf("├"), checkColumn, "树线应与勾对齐");
 		assert.ok(lines.some((line: string) => /├ .* -> Read/.test(line)));
 		assert.ok(lines.some((line: string) => /├ .* -> typecheck, unit tests, lint$/.test(line)));
 		assert.ok(lines.some((line: string) => /└ 3 answered/.test(line)));

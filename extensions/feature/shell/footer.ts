@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { formatFooterCost } from "./footer-currency.ts";
+import { formatTokenCount } from "../../utils/format.ts";
 import {
 	PI_USAGE_KEY,
 	isSkippedFooterStatusKey,
@@ -50,6 +51,46 @@ export function footerGlyphs(nerdIcons: boolean): { git: string; cache: string; 
 	return nerdIcons
 		? { git: FOOTER_NERD_ICON_GIT, cache: FOOTER_NERD_ICON_CACHE, mcp: FOOTER_NERD_ICON_MCP }
 		: { git: "", cache: "", mcp: "" };
+}
+
+/** 思考等级的填充圆标：等级越高填得越满。 */
+const EFFORT_SYMBOL: Record<string, string> = {
+	minimal: "\u25cc",
+	low: "\u25cb",
+	medium: "\u25d4",
+	high: "\u25d1",
+	xhigh: "\u25d5",
+	max: "\u25cf",
+};
+
+/** 模型名后直接接圆标和等级，中间不用分隔点。 */
+export function modelChip(
+	theme: { fg: (color: string, text: string) => string },
+	modelLabel: string,
+	level: string,
+	thinkingColor: (text: string) => string,
+): string {
+	const symbol = EFFORT_SYMBOL[level];
+	if (!symbol) return theme.fg("accent", modelLabel);
+	return `${theme.fg("accent", modelLabel)} ${thinkingColor(symbol)} ${theme.fg("dim", level)}`;
+}
+
+/** git 状态符号按职能分色：冲突/落后 error，修改 warning，未跟踪 muted，领先 success。 */
+export function colorGitStatus(
+	theme: { fg: (color: string, text: string) => string },
+	status: string,
+): string {
+	let out = "";
+	let color = "dim";
+	for (const ch of status) {
+		if (ch === "=" || ch === "\u21e3") color = "error";
+		else if (ch === "!") color = "warning";
+		else if (ch === "?") color = "muted";
+		else if (ch === "\u21e1") color = "success";
+		else if (!/[0-9]/.test(ch)) color = "dim";
+		out += theme.fg(color, ch);
+	}
+	return out;
 }
 
 type XaiFooterReport = {
@@ -304,13 +345,7 @@ const createCustomFooterFactory =
 			tui.requestRender();
 		});
 
-		const fmt = (n: number): string => {
-			if (n < 1000) return `${n}`;
-			if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
-			if (n < 1000000) return `${Math.round(n / 1000)}k`;
-			if (n < 10000000) return `${(n / 1000000).toFixed(1)}M`;
-			return `${Math.round(n / 1000000)}M`;
-		};
+		const fmt = formatTokenCount;
 
 		// ---- pi-cc-status 风格：上下文条形图 ----
 		const BAR_WIDTH = 10;
@@ -417,8 +452,7 @@ const createCustomFooterFactory =
 						) + (usingSubscription ? theme.fg("warning", " sub") : "")
 					: "";
 			const line1 = joinChips([
-				theme.fg("accent", modelLabel),
-				model?.reasoning ? thinkingColor(thinkingLevelStr) : "",
+				modelChip(theme, modelLabel, model?.reasoning ? thinkingLevelStr : "", thinkingColor),
 				barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${fmt(contextWindow)}`),
 				cacheLabel ? theme.fg("dim", cacheLabel) : "",
 				rateChip,
@@ -437,7 +471,7 @@ const createCustomFooterFactory =
 				const s = gitStats;
 				let stats = "";
 				if (s && s.status)
-					stats = theme.fg("dim", " [") + gitColor(s.status) + theme.fg("dim", "]");
+					stats = theme.fg("dim", " [") + colorGitStatus(theme, s.status) + theme.fg("dim", "]");
 				if (s && (s.add || s.del))
 					stats +=
 						theme.fg("dim", "(") +

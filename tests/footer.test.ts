@@ -12,8 +12,10 @@ import {
 	FOOTER_NERD_ICON_MCP,
 	applyCustomFooter,
 	clearCustomFooter,
+	colorGitStatus,
 	footerGlyphs,
 	formatXaiFooterChip,
+	modelChip,
 	parseGitStats,
 } from "../extensions/feature/shell/footer.ts";
 import {
@@ -65,6 +67,29 @@ test("footerGitStatsMode defaults to working and accepts only known modes", () =
 		formatConfigStatus(normalizeConfig({ footerGitStatsMode: "branch" })),
 		/footerGitStats=branch/,
 	);
+});
+
+test("model chip joins effort with a circle instead of a separator dot", () => {
+	const theme = {
+		fg: (color: string, text: string) => `{${color}}${text}{/}`,
+	};
+	const color = (text: string) => `{think}${text}{/}`;
+	assert.equal(
+		modelChip(theme, "claude-sonnet", "high", color),
+		"{accent}claude-sonnet{/} {think}\u25d1{/} {dim}high{/}",
+	);
+	assert.equal(modelChip(theme, "claude-sonnet", "off", color), "{accent}claude-sonnet{/}");
+});
+
+test("git status symbols take a color by role", () => {
+	const theme = {
+		fg: (color: string, text: string) => `{${color}}${text}{/}`,
+	};
+	assert.equal(
+		colorGitStatus(theme, "=!\u21e12\u21e33"),
+		"{error}={/}{warning}!{/}{success}\u21e1{/}{success}2{/}{error}\u21e3{/}{error}3{/}",
+	);
+	assert.equal(colorGitStatus(theme, "?"), "{muted}?{/}");
 });
 
 test("footerGlyphs drops Nerd Font icons when disabled", () => {

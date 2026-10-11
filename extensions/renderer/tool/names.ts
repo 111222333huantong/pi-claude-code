@@ -157,7 +157,7 @@ function pathSummary(
 }
 
 /** 入参是 shell 命令的工具。 */
-const SHELL_TOOL_NAMES = new Set(["bash", "powershell", "pwsh", "sh", "zsh", "cmd"]);
+export const SHELL_TOOL_NAMES = new Set(["bash", "powershell", "pwsh", "sh", "zsh", "cmd"]);
 
 /** 内置检索工具：pattern 缺失（无效调用）时保留 "…" 占位。 */
 const SEARCH_TOOL_NAMES = new Set(["grep", "find"]);

@@ -1011,7 +1011,7 @@ function compactStopStatusLine(status: string, pad = 0): any {
 
 /**
  * 槽位卡内的展开入口：卡里是只读围观，展开走摘要行自己的 hint，卡内不再重复提示。
- * 提示有两处来源——我们的 showMoreHintText（`… +N more lines · click to show more`）与
+ * 提示有两处来源——我们的 showMoreHintText（`… N more lines · click to show more`）与
  * pi 原生工具卡（`… (N earlier lines, ctrl+o to expand)`），所以按渲染结果收尾裁剪。
  * 只去掉动作词，`(N more lines)` 这类计数保留。
  */

@@ -80,16 +80,27 @@ function fence(lines: string[] | string): string {
 /** Braille loading 帧与耗时都由挂钟推导；渲染期间固定时钟，保证快照可复现。 */
 const SNAPSHOT_NOW = 0;
 
-function renderLines(component: any, width = WIDTH): string[] {
+/**
+ * 固定时钟跑一段（含 render 之外的 setup）。
+ * 耗时的开始时间是 renderCall 里记的，不在 render 内，
+ * 不一起固定的话快照会得到一个巨大的负数。
+ */
+function withSnapshotClock<T>(fn: () => T): T {
 	const realNow = Date.now;
 	Date.now = () => SNAPSHOT_NOW;
 	try {
-		return component
-			.render(width)
-			.map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, ""));
+		return fn();
 	} finally {
 		Date.now = realNow;
 	}
+}
+
+function renderLines(component: any, width = WIDTH): string[] {
+	return withSnapshotClock(() =>
+		component
+			.render(width)
+			.map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, "")),
+	);
 }
 
 function renderBlock(component: any, width = WIDTH): string {
@@ -198,6 +209,30 @@ async function generateDefault() {
 			tool("read", "s3", { path: "missing.ts" }),
 			"ENOENT: no such file or directory, open 'missing.ts'",
 		);
+		// shell 耗时：Pi 原生会在结果底部报一行，ccstyle 接回折叠/展开两处。
+		// 快照时钟固定，运行中取不到记录值，这里固定为 0ms。
+		const shellRunning = tool("bash", "s4", { command: "sleep 30" });
+		withSnapshotClock(() => {
+			shellRunning.markExecutionStarted();
+			shellRunning.updateResult({ content: [], isError: false }, true);
+		});
+		const shellDone = tool("bash", "s5", { command: "npm test" });
+		shellDone.markExecutionStarted();
+		shellDone.updateResult({
+			content: [{ type: "text", text: "pass 369" }],
+			isError: false,
+			durationMs: 12_400,
+		});
+		const shellExpanded = tool("bash", "s6", { command: "npm test" });
+		shellExpanded.markExecutionStarted();
+		shellExpanded.setExpanded(true);
+		shellExpanded.updateResult({
+			content: [
+				{ type: "text", text: Array.from({ length: 16 }, (_, i) => `line ${i + 1}`).join("\n") },
+			],
+			isError: false,
+			durationMs: 12_400,
+		});
 		chunks.push(
 			section(
 				"1. 运行态 / 完成态 / 失败态",
@@ -207,6 +242,17 @@ async function generateDefault() {
 						"- 运行中：call 行使用 Braille 转轮。",
 						"- 完成/失败：`✓` / `✗`；结果行缩进 3 格（`   ↳`）。",
 						"- 可展开结果附带 `click to show more`（fullscreen 文案）。",
+					].join("\n"),
+					"### shell 耗时",
+					fence([
+						...renderLines(shellRunning),
+						...renderLines(shellDone),
+						...renderLines(shellExpanded),
+					]),
+					[
+						"Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的通用折叠行把它盖掉了，这里接回来。",
+						"运行中报已用时间（随动画 tick 更新，快照固定时钟所以是 `0ms`）；完成态优先用 Pi 记录的 `durationMs`，拿不到再退回渲染器自己的时钟。",
+						"折叠态接在摘要后、展开提示前；展开态同样挂在 Output 的 show-more 行上、提示前（Output 未截断时没有那一行，才单独成行）。只对 shell（bash / powershell / pwsh / sh / zsh / cmd）生效。",
 					].join("\n"),
 				].join("\n\n"),
 			),

@@ -21,6 +21,37 @@
 - 完成/失败：`✓` / `✗`；结果行缩进 3 格（`   ↳`）。
 - 可展开结果附带 `click to show more`（fullscreen 文案）。
 
+### shell 耗时
+
+```text
+ ⠋ Bash sleep 30
+   ↳ Pending… · 0ms
+
+ ✓ Bash npm test
+   ↳ 1 line returned · 12.4s · click to show more
+
+ ✓ Bash npm test
+ ├ Input
+ │ command: npm test
+ │
+ └ Output
+   line 1
+   line 2
+   line 3
+   line 4
+   line 5
+   line 6
+   line 7
+   line 8
+   line 9
+   line 10
+   … 6 more lines · 12.4s · click to show more
+```
+
+Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的通用折叠行把它盖掉了，这里接回来。
+运行中报已用时间（随动画 tick 更新，快照固定时钟所以是 `0ms`）；完成态优先用 Pi 记录的 `durationMs`，拿不到再退回渲染器自己的时钟。
+折叠态接在摘要后、展开提示前；展开态同样挂在 Output 的 show-more 行上、提示前（Output 未截断时没有那一行，才单独成行）。只对 shell（bash / powershell / pwsh / sh / zsh / cmd）生效。
+
 ## 2. read 参数详情
 
 ```text
@@ -206,7 +237,7 @@ write 新建 / 覆盖：
  │     {
  │       "question": "Which library should we use?",
  │       "header": "Library"
- │ … +12 more lines · click to show more
+ │ … 12 more lines · click to show more
  │
  └ Output
    Which library should we use?
@@ -219,7 +250,7 @@ write 新建 / 覆盖：
    Which checks should run?
      typecheck, unit tests, lint
 
-   … +1 more lines · click to show more
+   … 1 more lines · click to show more
 
  ✓ Ask User Question (+3)
    Declined
@@ -248,7 +279,7 @@ write 新建 / 覆盖：
  │     tools.ffgrep({ pattern: "mcp", path: "src/" }),
  │     tools.fffind({ pattern: "mcp" }),
  │   ])
- │ … +1 more lines · click to show more
+ │ … 1 more lines · click to show more
  │
  └ Output
    ffgrep {"pattern":"mcp","path":"src/"} 31ms
@@ -304,7 +335,7 @@ write 新建 / 覆盖：
  │   L7
  │   L8
  │   L9
- │   … +30 more lines · click to show more
+ │   … 30 more lines · click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test

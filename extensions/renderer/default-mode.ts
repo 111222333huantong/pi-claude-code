@@ -16,8 +16,10 @@ import {
 import { isToolCallHovered } from "./mouse/hover.ts";
 import {
 	countLines,
+	formatToolDuration,
 	hasExpandableDetail,
 	insetComponent,
+	isExpandedToolIoView,
 	isLiveToolCall,
 	isToolExpanded,
 	outputLineCount,
@@ -52,6 +54,7 @@ import { mcpToolTitle } from "./tool/mcp-title.ts";
 import {
 	fitToolCallSummary,
 	humanizeToolLabel,
+	SHELL_TOOL_NAMES,
 	renderToolSummary,
 	toolCallSummary,
 } from "./tool/names.ts";
@@ -223,6 +226,27 @@ function renderExpandedTaskResult(
 	return formatted ? new Text(`↳ ${formatted}`, 0, 0) : undefined;
 }
 
+/**
+ * shell 的耗时文本。Pi 原生 shell 渲染器会在结果底部报一行，ccstyle 的通用折叠行把它盖掉了。
+ *
+ * 两条路都要：新 Pi 在渲染上下文里给 `durationMs`（单调，restore 出来的行也带得到），优先用它；
+ * 拿不到（旧 Pi、无耗时的结果）再退回自己的时钟——开始时间在 renderCall 记，结束时间在结果定型时定一次。
+ * 运行中的实时计时也只能走时钟。
+ */
+function shellDurationText(toolName: string, context: any, isPartial: boolean): string {
+	if (!SHELL_TOOL_NAMES.has(toolName)) return "";
+	const recorded = context?.durationMs;
+	if (!isPartial && typeof recorded === "number" && Number.isFinite(recorded) && recorded >= 0) {
+		return formatToolDuration(recorded);
+	}
+	const startedAt = context?.state?.ccstyleShellStartedAt;
+	if (typeof startedAt !== "number") return "";
+	const endedAt = context?.state?.ccstyleShellEndedAt;
+	const end = typeof endedAt === "number" ? endedAt : Date.now();
+	// 时钟回拨时别吐负数；快照固定时钟也会走到这。
+	return formatToolDuration(Math.max(0, end - startedAt));
+}
+
 /** 用 ccstyle call/result 包装任意工具定义。 */
 function createCcstyleTool(
 	originalTool: any,
@@ -240,6 +264,16 @@ function createCcstyleTool(
 		renderCall(args: any, theme: any, context: any) {
 			if (config.mode === "off") {
 				return renderDefault(originalTool, "renderCall", [args, theme, context], String(toolName));
+			}
+
+			// shell 的耗时从执行开始算；restore 出来的行没有 executionStarted，不参与。
+			if (
+				SHELL_TOOL_NAMES.has(toolName) &&
+				context?.executionStarted &&
+				context.state &&
+				context.state.ccstyleShellStartedAt === undefined
+			) {
+				context.state.ccstyleShellStartedAt = Date.now();
 			}
 
 			const visualState = resolveToolVisualState(context);
@@ -388,8 +422,30 @@ function createCcstyleTool(
 			if (options?.isPartial) {
 				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题
 				const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
-				return new Text(theme.fg("muted", pending), 0, 0);
+				if (!SHELL_TOOL_NAMES.has(toolName)) {
+					return new Text(theme.fg("muted", pending), 0, 0);
+				}
+				// shell 运行中报已用时间：数字在 render() 内取，动画 tick 才能带上新值。
+				return {
+					render(width: number) {
+						const elapsed = shellDurationText(toolName, context, true);
+						const suffix = elapsed ? theme.fg("dim", ` · ${elapsed}`) : "";
+						return [truncateToWidth(theme.fg("muted", pending) + suffix, width, "")];
+					},
+					invalidate(): void {},
+				};
 			}
+
+			// shell：结果定型时定一次结束时间，这一行之后不再变。
+			if (
+				SHELL_TOOL_NAMES.has(toolName) &&
+				context?.state &&
+				context.state.ccstyleShellEndedAt === undefined
+			) {
+				context.state.ccstyleShellEndedAt = Date.now();
+			}
+			// 折叠行接在摘要后，展开态接在 Output 正文后（原生也是在结果底部报一行）。
+			const duration = shellDurationText(toolName, context, false);
 
 			setToolVisualState(context, isError ? "error" : "success");
 			const toolCallId = context?.toolCallId;
@@ -439,7 +495,7 @@ function createCcstyleTool(
 			const hint = expandable ? hintPrefix + theme.fg("dim", hintText) : "";
 			const hoveredHint = expandable ? hintPrefix + theme.fg("text", hintText) : "";
 			if (expanded) {
-				return renderExpandedToolResult(
+				const view = renderExpandedToolResult(
 					text || "",
 					theme,
 					Boolean(isError),
@@ -448,8 +504,14 @@ function createCcstyleTool(
 					context,
 					true, // mode=on：贴左，由外层 Box(1,1) 提供 1 格 padding
 				);
+				// 尾部附注只能挂在 IoView 上：鼠标层按对象识别它，包一层会断掉命中。
+				// 与折叠态保持同一写法：裸值，不写 Took。
+				if (isExpandedToolIoView(view)) view.setFooter(duration || undefined);
+				return view;
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
+			// 折叠态的耗时接在摘要后、展开提示前（提示必须留在行尾供鼠标层识别）。
+			const body = duration ? `${rendered}${theme.fg("dim", ` · ${duration}`)}` : rendered;
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			let cachedHoveredLine: string | undefined;
@@ -459,11 +521,11 @@ function createCcstyleTool(
 						cachedWidth = width;
 						cachedLine = theme.fg(
 							isError ? "error" : "muted",
-							renderCollapsedToolResultToWidth(rendered, hint, width),
+							renderCollapsedToolResultToWidth(body, hint, width),
 						);
 						cachedHoveredLine = theme.fg(
 							isError ? "error" : "muted",
-							renderCollapsedToolResultToWidth(rendered, hoveredHint, width),
+							renderCollapsedToolResultToWidth(body, hoveredHint, width),
 						);
 					}
 					return [isToolCallHovered(toolCallId) ? cachedHoveredLine! : cachedLine];

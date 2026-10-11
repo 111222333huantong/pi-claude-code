@@ -6,6 +6,7 @@ import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { oneLine } from "../../utils/format.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
 /** 宽屏右侧留白上限：比例留白超过这么多列时改用固定留白。 */
@@ -73,6 +74,27 @@ export function countLines(text: string): number {
 		.trim()
 		.split("\n")
 		.filter((line) => line.trim().length > 0).length;
+}
+
+/**
+ * 折叠行的结果文案：`N lines returned`（read 说 loaded）、`Done`、失败时首行错误。
+ * 单卡折叠行与工具组的子行共用这一处口径；TaskList 的树形摘要不走这里，由调用方先判。
+ */
+export function collapsedResultSummary(options: {
+	result: any;
+	toolName: string;
+	text: string;
+	isError: boolean;
+}): string {
+	const { result, toolName, text, isError } = options;
+	if (isError) {
+		// 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
+		return text ? oneLine(text, 72) : "Failed";
+	}
+	const outputLines = outputLineCount(result) || countLines(text);
+	if (!outputLines) return "Done";
+	const action = toolName === "read" ? "loaded" : "returned";
+	return `${outputLines} ${outputLines === 1 ? "line" : "lines"} ${action}`;
 }
 
 function hasExpandableResult(text: string): boolean {

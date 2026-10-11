@@ -29,10 +29,18 @@ import {
 	fitToolCallSummary,
 	humanizeToolLabel,
 	renderToolSummary,
+	SHELL_TOOL_NAMES,
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
-import { isLiveToolCall, toolViewportWidth } from "./result.ts";
+import {
+	collapsedResultSummary,
+	formatToolDuration,
+	headTruncateToWidth,
+	isLiveToolCall,
+	textFromResult,
+	toolViewportWidth,
+} from "./result.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
@@ -254,10 +262,44 @@ function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
 	return { main: `${toolTitle(tool)} ${parts.join(" · ")}`, detail: "" };
 }
 
+/**
+ * 组内 shell 行的结果尾巴：与单卡折叠行同一口径（`1 line returned · 12.4s`）。
+ * 耗时取 pi 记在结果上的 durationMs（单卡渲染上下文里的同一个值），运行中还拿不到就不报。
+ */
+function shellResultTail(
+	tool: any,
+	fg: (color: string, text: string) => string,
+	toolStatus: ToolStatus,
+): string {
+	if (!SHELL_TOOL_NAMES.has(toolName(tool)) || toolStatus === "pending" || !tool?.result) return "";
+	const isError = tool.result?.isError === true;
+	const text = textFromResult(tool.result);
+	const summary = collapsedResultSummary({
+		result: tool.result,
+		toolName: toolName(tool),
+		text,
+		isError,
+	});
+	const durationMs = tool.result?.durationMs;
+	const duration =
+		typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
+			? formatToolDuration(durationMs)
+			: "";
+	const tail = [summary, duration].filter(Boolean).join(" · ");
+	return tail ? ` ${fg("dim", `· ${tail}`)}` : "";
+}
+
+/**
+ * 组头的工具列表：名称用与单组标题、子行同一套人性化写法，次数一律带上（各跑一次也报 ×1）。
+ * 同名（同显示标题）的合并成一项，避免 `MCP call×1, MCP call×1` 这种重复。
+ */
 function toolNameList(tools: any[]): string {
 	const counts = new Map<string, number>();
-	for (const tool of tools) counts.set(toolName(tool), (counts.get(toolName(tool)) ?? 0) + 1);
-	return [...counts].map(([name, count]) => `${name}${count > 1 ? `×${count}` : ""}`).join(", ");
+	for (const tool of tools) {
+		const label = toolTitle(tool);
+		counts.set(label, (counts.get(label) ?? 0) + 1);
+	}
+	return [...counts].map(([label, count]) => `${label}×${count}`).join(", ");
 }
 
 let nextGroupId = 1;
@@ -432,18 +474,21 @@ export class ToolGroupComponent extends Container {
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if ((this.children as any[]).some(isAnimatingTool)) scheduleGroupAnimation(this.patch);
 		const overallColor = overall === "pending" ? "accent" : overall;
-		const nameList = names.size > 1 ? ` ${fg("dim", `· ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
 		const hintText = this._expanded ? collapseHintText() : showMoreHintText();
 		const hint = `${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
-		const lines = [
-			"",
-			truncateToWidth(
-				` ${fg(overallColor, "●")} ${label}: ${countText}${nameList} ${hint}`,
-				toolViewportWidth(width),
-				"…",
-			),
-		];
+		const rowWidth = toolViewportWidth(width);
+		// 工具列表让位给展开提示：提示被截断的话，鼠标层要在行尾找 `click to show more`
+		// 就找不到，整张卡在窄宽度下点不开。名字截断后子行里仍能看全。
+		const head = ` ${fg(overallColor, "●")} ${label}: ${countText}`;
+		const tail = ` ${hint}`;
+		const listRoom = rowWidth - visibleWidth(head) - visibleWidth(tail) - 3;
+		// 连一个工具名都放不下就不放列表：退化成 `· …` 只会把行撑爆。
+		const nameList =
+			names.size > 1 && listRoom >= 4
+				? ` ${fg("dim", `· ${headTruncateToWidth(toolNameList(this.children), listRoom)}`)}`
+				: "";
+		const lines = ["", truncateToWidth(`${head}${nameList}${tail}`, rowWidth, "")];
 		const total = this.children.length;
 		const childPaints = this._expanded
 			? (this.children as any[]).map((tool) => tool.render?.(Math.max(1, width - 2)))
@@ -475,12 +520,16 @@ export class ToolGroupComponent extends Container {
 					askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
 				const prefix = ` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `;
 				const detail = fg("dim", summary.detail);
+				const result = shellResultTail(tool, fg, toolStatus);
 				// 与单工具卡标题同宽，宽屏右侧留白一致
 				const rowWidth = toolViewportWidth(width);
-				const mainWidth = Math.max(0, rowWidth - visibleWidth(prefix) - visibleWidth(detail));
+				const mainWidth = Math.max(
+					0,
+					rowWidth - visibleWidth(prefix) - visibleWidth(detail) - visibleWidth(result),
+				);
 				lines.push(
 					truncateToWidth(
-						`${prefix}${renderToolSummary(summary, mainWidth, fg)}${detail}`,
+						`${prefix}${renderToolSummary(summary, mainWidth, fg)}${detail}${result}`,
 						rowWidth,
 						"",
 					),

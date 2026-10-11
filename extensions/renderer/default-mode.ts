@@ -15,14 +15,13 @@ import {
 } from "../utils/patch-keys.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import {
-	countLines,
+	collapsedResultSummary,
 	formatToolDuration,
 	hasExpandableDetail,
 	insetComponent,
 	isExpandedToolIoView,
 	isLiveToolCall,
 	isToolExpanded,
-	outputLineCount,
 	pendingIcon,
 	renderCollapsedToolResultToWidth,
 	renderExpandedToolResult,
@@ -34,7 +33,6 @@ import {
 	toolIconColor,
 	toolViewportWidth,
 } from "./tool/result.ts";
-import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
 import {
 	ASK_USER_QUESTION_TOOL_NAME,
@@ -483,19 +481,9 @@ function createCcstyleTool(
 				if (taskResult) return taskResult;
 			}
 			const tasks = !isError && toolName === "TaskList" ? parseTaskList(text) : [];
-			const outputLines = outputLineCount(result) || countLines(text);
-			const lineWord = outputLines === 1 ? "line" : "lines";
-			const action = toolName === "read" ? "loaded" : "returned";
 			const rendered = tasks.length
 				? taskListSummary(tasks)
-				: isError
-					? text
-						? // 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
-							oneLine(text, 72)
-						: "Failed"
-					: outputLines
-						? `${outputLines} ${lineWord} ${action}`
-						: "Done";
+				: collapsedResultSummary({ result, toolName, text, isError });
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
 			const hintText = showMoreHintText();
 			const hintPrefix = expandable ? theme.fg("dim", " · ") : "";

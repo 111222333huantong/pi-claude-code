@@ -65,7 +65,7 @@ test("mixed tools group across three empty separators while edit/write and conte
 			.filter((line: string) => line.trim());
 		assert.match(
 			collapsed[0],
-			/^ ● Multiple Tools: 3 running .*read, bash, grep.*click to show more/,
+			/^ ● Multiple Tools: 3 running · Read×1, Bash×1, Grep×1 · click to show more$/,
 		);
 		assert.equal(collapsed.filter((line: string) => line.trim()).length, 4);
 		assert.match(collapsed[1], /^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read /);
@@ -275,7 +275,7 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 			.filter((line: string) => line.trim());
 		assert.match(
 			agentLines[0],
-			/^ ● Multiple Tools: 2 done · Agent, get_subagent_result · click to show more$/,
+			/^ ● Multiple Tools: 2 done · Agent×1, Get Subagent Result×1 · click to show more$/,
 		);
 		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
 		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462-95d0-40b");
@@ -624,6 +624,50 @@ test("group headers share the single-card viewport limit without stretching shor
 				if (width === 200) assert.equal(header, fullHeader);
 			}
 		}
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("组头列表用人性化名并恒带次数；组内 shell 行报结果计数与耗时", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const bash = started("bash", "sh-bash", { command: "npm test" });
+		bash.updateResult({
+			content: [{ type: "text", text: "ok" }],
+			isError: false,
+			durationMs: 12_400,
+		});
+		const ps = started("powershell", "sh-ps", { command: "Get-ChildItem" });
+		ps.updateResult({ content: [], isError: false, durationMs: 300 });
+		parent.addChild(bash);
+		parent.addChild(ps);
+		const rows = plain((parent.children[0] as ToolGroupComponent).render(140));
+		// 单组标题用 toolTitle，列表跟子行同一套写法；各跑一次也报 ×1。
+		assert.equal(rows[0], " ● Multiple Tools: 2 done · Bash×1, PowerShell×1 · click to show more");
+		// 与单卡折叠行同口径：结果计数 + pi 记在结果上的 durationMs。
+		assert.equal(rows[1], " ├ ✓ Bash npm test · 1 line returned · 12.4s");
+		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · Done · 300ms");
+
+		// 非 shell 工具不补尾巴。
+		const parent2 = new Container() as any;
+		const read = started("read", "sh-read", { path: "a.ts" });
+		read.updateResult({ content: [{ type: "text", text: "x" }], isError: false, durationMs: 5 });
+		const grep = started("grep", "sh-grep", { pattern: "x" });
+		grep.updateResult({ content: [{ type: "text", text: "y" }], isError: false });
+		parent2.addChild(read);
+		parent2.addChild(grep);
+		const rows2 = plain((parent2.children[0] as ToolGroupComponent).render(140));
+		assert.equal(rows2[1], " ├ ✓ Read a.ts");
+		assert.equal(rows2[2], ' └ ✓ Grep "x"');
+
+		// 窄宽度下先让出工具列表，保住行尾展开提示（鼠标层的命中锚点）。
+		const narrow = plain((parent.children[0] as ToolGroupComponent).render(72));
+		assert.match(narrow[0]!, /· click to show more$/);
+		assert.ok(narrow[0]!.length <= Math.floor(72 * 0.8));
 	} finally {
 		hooks.shutdown();
 	}

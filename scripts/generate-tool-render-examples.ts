@@ -34,7 +34,7 @@ import {
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
 } from "../extensions/renderer/tool/diff/index.ts";
-import { config } from "../extensions/config/config.ts";
+import { config, normalizeConfig, setConfig } from "../extensions/config/config.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -43,6 +43,9 @@ const WIDTH = 72;
 
 initTheme("dark");
 setToolTuiFullscreen(true);
+// 快照必须与机器无关：本机 settings 里的显示配置（如 editDiffCollapsedLines）不能漏进示例，
+// 否则生成出来的文档随开发机变化。
+setConfig(normalizeConfig({ ...config, ...DEFAULT_TOOL_DISPLAY_CONFIG }));
 
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 
@@ -813,11 +816,12 @@ async function generateCompact() {
 							"- 摘要行挂在 transcript 容器内回合末尾（工具卡/diff 之下）：运行中恒在视口底缘可写区刷新，回合结束就地落成 `Ran for` 随 transcript 进入 scrollback；新工具卡追加时自动归位，不会越出回合。",
 							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
 							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。",
-							"- `edit` / `write` **不进**摘要计数（各自独立单行）。",
+							"- `edit` / `write` / `ask_user_question` **不进**摘要计数（各自独立单行）。",
 							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
 							"- abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。",
 							"- 行末 `click to show more`；摘要永不换行。",
 							"- 展开后：摘要行隐藏，助手文本按原生渲染（不进面板），thinking 与工具卡进面板；展开的 thinking 再套一层更深的内卡，工具卡只用外卡底色。",
+							"- 点击展开前先停住底部跟随：内容变高不会把点的那行顶出屏幕（工具卡与摘要行同一口径，收起时还原展开前的视口）。",
 						].join("\n"),
 						"纯函数口径（`buildMessageSummary`）：",
 						fence([
@@ -923,7 +927,7 @@ async function generateCompact() {
 			}
 
 			const bodyIntro = [
-				"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
+				"edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只显示一处：正文带 +A -D（diff 头行或多行预览的摘要行）时标题不重复：",
 				fence([...renderLines(edit), ...renderLines(write)]),
 				"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
 				fence(tailLayout),
@@ -934,14 +938,14 @@ async function generateCompact() {
 			chunks[chunks.length - 1] = section(
 				"3. edit / write 独立行",
 				[
-					"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
+					"edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只显示一处：正文带 +A -D（diff 头行或多行预览的摘要行）时标题不重复：",
 					fence([
 						...renderLines(succeed(tool("edit", "ce2", { path: "sample.ts" }), undefined, {
 							diff: editDiff,
 						})),
 						...renderLines(write),
 					]),
-					"`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts:",
+					"`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header:",
 					fence(renderEditSummary("ce-summary", editDiff)),
 					"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
 					fence(tailLayout),
@@ -977,6 +981,7 @@ async function generateCompact() {
 				[
 					[
 						"- 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。",
+						"- 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合就地收口、后续消息另起一回合。区间里的用户消息不会被当成外来行挪走，摘要行与展开面板都留在自己回合的位置上。",
 						"- 运行时长跨消息累加（thinking query + 回合挂钟 floor）。",
 						"- 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。",
 						"- mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。",

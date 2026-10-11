@@ -31,7 +31,7 @@
 - 摘要行挂在 transcript 容器内回合末尾（工具卡/diff 之下）：运行中恒在视口底缘可写区刷新，回合结束就地落成 `Ran for` 随 transcript 进入 scrollback；新工具卡追加时自动归位，不会越出回合。
 - 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。
 - 工具按消息内首次出现顺序；`read` 按非空路径去重。
-- `edit` / `write` **不进**摘要计数（各自独立单行）。
+- `edit` / `write` / `ask_user_question` **不进**摘要计数（各自独立单行）。
 - Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。
 - abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。
 - 行末 `click to show more`；摘要永不换行。

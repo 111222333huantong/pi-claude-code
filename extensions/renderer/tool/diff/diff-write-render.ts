@@ -1,4 +1,5 @@
 import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import type { ToolDisplayConfig } from "../../../config/config.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
 import { showMoreHintText } from "../show-more-hint.ts";
 import { splitWriteContentLines } from "./diff-text.ts";
@@ -54,6 +55,7 @@ import {
 	buildDiffSummaryText,
 	normalizeDiffRenderWidth,
 	resolveDiffPresentationMode,
+	styleDiffSummaryLine,
 	type DiffPresentationMode,
 } from "./diff-presentation.ts";
 
@@ -290,13 +292,14 @@ function renderWriteOverwriteGuardRows(
 	return renderSingleDiffRow(buildWriteOverwriteGuardText(guard, width), "warning", width, theme);
 }
 
-/** Folded write with `writeDiffCollapsedLines: 0`: `↳ created · click to show more`. */
+/** Folded write with `writeDiffCollapsedLines: 0`: `↳ diff +A -D · created · click to show more`. */
 function renderWriteCollapsedHintLine(
 	wasOverwrite: boolean,
 	width: number,
 	theme: DiffTheme,
 	hovered: boolean,
 	headerLabel?: string,
+	stats?: { added: number; removed: number },
 ): string[] {
 	const safeWidth = normalizeDiffRenderWidth(width);
 	if (safeWidth === 0) {
@@ -304,7 +307,20 @@ function renderWriteCollapsedHintLine(
 	}
 	const actionLabel = headerLabel?.trim() || (wasOverwrite ? "overwritten" : "created");
 	const clickLabel = showMoreHintText();
-	const candidates = [`↳ ${actionLabel} · ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
+	const counts = stats ? `+${stats.added} -${stats.removed}` : "";
+	const candidates = stats
+		? [
+				`↳ diff ${counts} · ${actionLabel} · ${clickLabel}`,
+				`↳ diff ${counts} · ${clickLabel}`,
+				`↳ diff ${counts} · ${actionLabel}`,
+				`↳ diff ${counts}`,
+				`↳ ${counts} · ${clickLabel}`,
+				`↳ ${actionLabel} · ${clickLabel}`,
+				`↳ ${actionLabel}`,
+				actionLabel,
+				"…",
+			]
+		: [`↳ ${actionLabel} · ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
 	let text = candidates[candidates.length - 1] ?? "…";
 	for (const candidate of candidates) {
 		if (visibleWidth(candidate) <= safeWidth) {
@@ -315,14 +331,19 @@ function renderWriteCollapsedHintLine(
 	if (visibleWidth(text) > safeWidth) {
 		text = truncateToWidth(text, safeWidth, "");
 	}
-	const clickIndex = text.lastIndexOf(clickLabel);
-	const styled =
-		hovered && clickIndex >= 0
-			? theme.fg("muted", text.slice(0, clickIndex)) +
-				theme.fg("text", clickLabel) +
-				theme.fg("muted", text.slice(clickIndex + clickLabel.length))
-			: theme.fg("muted", text);
+	const styled = styleDiffSummaryLine(text, stats, clickLabel, theme, hovered);
 	return [clampDiffLineToWidth(styled, safeWidth)];
+}
+
+/**
+ * 折叠 0 行预览时计数由正文那行显示（`↳ diff +A -D · created · click to show more`），
+ * 标题不再重复。compact 与 default 两个模式的写标题共用这条口径。
+ */
+export function writeStatsInCollapsedBody(
+	expanded: boolean,
+	display: Pick<ToolDisplayConfig, "writeDiffCollapsedLines">,
+): boolean {
+	return !expanded && resolveWriteCollapsedLimit(display) === 0;
 }
 
 /**
@@ -413,6 +434,10 @@ export function renderWriteDiffResult(
 			const hint = cache.getHintLine();
 			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
 		},
+		/** 折叠 0 行预览时正文那行自带 +A -D：标题不再重复计数。 */
+		bodyShowsStats(): boolean {
+			return writeStatsInCollapsedBody(options.expanded, resolveLiveDisplayConfig(config));
+		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -445,6 +470,7 @@ export function renderWriteDiffResult(
 					theme,
 					hovered,
 					options.headerLabel,
+					countWriteDiffStats(content, options.previousContent, options.fileExistedBeforeWrite),
 				);
 				return cache.set(
 					safeWidth,

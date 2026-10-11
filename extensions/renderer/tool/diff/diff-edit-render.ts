@@ -42,6 +42,7 @@ import {
 	buildDiffSummaryText,
 	normalizeDiffRenderWidth,
 	resolveDiffPresentationMode,
+	styleDiffSummaryLine,
 } from "./diff-presentation.ts";
 
 function safeGetDiff(details: unknown): string {
@@ -102,12 +103,7 @@ function renderEditCollapsedSummaryLine(
 		"…",
 	];
 	const text = candidates.find((candidate) => visibleWidth(candidate) <= width) ?? "";
-	const hintIndex = text.lastIndexOf(hint);
-	const styled =
-		hovered && hintIndex >= 0
-			? theme.fg("muted", text.slice(0, hintIndex)) + theme.fg("text", hint)
-			: theme.fg("muted", text);
-	return clampDiffLineToWidth(styled, width);
+	return clampDiffLineToWidth(styleDiffSummaryLine(text, stats, hint, theme, hovered), width);
 }
 
 export function renderEditDiffResult(
@@ -169,6 +165,10 @@ export function renderEditDiffResult(
 		isCollapsedHintLine(plainLine: string): boolean {
 			const hint = cache.getHintLine();
 			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
+		},
+		/** 正文首行（diff 头行/0 行摘要行）自带 +A -D：标题不再重复计数。 */
+		bodyShowsStats(): boolean {
+			return true;
 		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.

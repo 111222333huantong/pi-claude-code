@@ -58,10 +58,10 @@ bash 折叠行数: 0
 
 ## 3. edit / write 独立行
 
-edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：
+edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只显示一处：正文带 +A -D（diff 头行或多行预览的摘要行）时标题不重复：
 
 ```text
- ✓ edit sample.ts (+1 -1)
+ ✓ edit sample.ts
    ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
@@ -69,14 +69,14 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
  ▌  1 │ const x = 2
  ───────────────────────────────────────────────────────────────────────
 
- ✓ write out.ts (+1 -0)
-   ↳ created · click to show more
+ ✓ write out.ts
+   ↳ diff +1 -0 · created · click to show more
 ```
 
-`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts:
+`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header:
 
 ```text
- ✓ edit sample.ts (+1 -1)
+ ✓ edit sample.ts
    ↳ diff +1 -1 · click to show more
 ```
 
@@ -84,7 +84,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 
 ```text
  updated sample.ts
- ✓ edit sample.ts (+1 -1)
+ ✓ edit sample.ts
    ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
@@ -98,7 +98,7 @@ edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Di
 展开 edit：
 
 ```text
- ✓ edit sample.ts (+1 -1)
+ ✓ edit sample.ts
  ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ────────────────────────────────────────────
  @@ -1 +1 @@

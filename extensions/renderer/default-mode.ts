@@ -47,7 +47,7 @@ import {
 	codemodeExpandedBody,
 	createCodemodeResultComponent,
 } from "./tool/codemode.ts";
-import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
+import { countWriteDiffStats, writeStatsInCollapsedBody } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { mcpToolTitle } from "./tool/mcp-title.ts";
@@ -309,7 +309,12 @@ function createCcstyleTool(
 			}
 			let writeStatsText = "";
 			let writeStatsStyled = "";
-			if (toolName === "write" && visualState === "success") {
+			// 折叠 0 行预览时计数由正文那行（↳ diff +A -D · created …）显示，标题不重复。
+			const statsInBody = writeStatsInCollapsedBody(
+				Boolean(context?.expanded),
+				getToolDisplayConfig(),
+			);
+			if (toolName === "write" && visualState === "success" && !statsInBody) {
 				const meta = writeExecutionMetadata.get(context?.toolCallId);
 				const stats = countWriteDiffStats(
 					typeof args?.content === "string" ? args.content : undefined,

@@ -556,8 +556,9 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 		const text = output(write, 120)
 			.join("\n")
 			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-		assert.match(text, /Write out\.ts \(\+1 -0\)/);
-		assert.match(text, /created · click to show more/);
+		// 折叠 0 行预览时计数在正文那行，标题不重复。
+		assert.doesNotMatch(text, /Write out\.ts \(\+\d+ -\d+\)/);
+		assert.match(text, /↳ diff \+1 -0 · created · click to show more/);
 		assert.doesNotMatch(text, /▌/);
 	} finally {
 		config.mode = previousMode;

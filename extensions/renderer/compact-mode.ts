@@ -685,7 +685,7 @@ function compactEditWriteLine(
 	component: any,
 	width: number,
 	writeMetadata?: WriteExecutionMetadataStore,
-	options: { hint?: boolean; flushLeft?: boolean } = {},
+	options: { hint?: boolean; flushLeft?: boolean; showStats?: boolean } = {},
 ): string[] {
 	const theme = themeOf();
 	const name = String(component.toolName ?? "tool");
@@ -702,7 +702,8 @@ function compactEditWriteLine(
 	const iconColor = isError ? "error" : isPending ? "accent" : "success";
 	let statsText = "";
 	let statsStyled = "";
-	if (!isError && !isPending) {
+	// 统计只显示一处：正文自带 +A -D 时标题不再重复（showStats=false）。
+	if (!isError && !isPending && options.showStats !== false) {
 		const stats =
 			name === "edit"
 				? countEditDiffStats(component.result?.details)
@@ -738,6 +739,12 @@ function compactEditWriteLine(
 		: "";
 	const line = `${iconPart}${namePart}${theme.fg("toolTitle", pathPart)}${statsStyled}${hintPart}`;
 	return ["", truncateToWidth(line, width, "")];
+}
+
+/** 正文自带 +A -D 的声明：diff 组件自报，折叠行数/宽度这些细节由它自己判断。 */
+function richDiffBodyShowsStats(component: unknown): boolean {
+	const probe = (component as { bodyShowsStats?: () => boolean } | undefined)?.bodyShowsStats;
+	return typeof probe === "function" && probe.call(component) === true;
 }
 
 /** expanded 写进 rich diff 闭包，折叠/展开分槽缓存，避免每帧 parseDiff。 */
@@ -863,7 +870,12 @@ function paintCompactEditWrite(
 		component.resultRendererComponent = candidate;
 	}
 
-	const title = compactEditWriteLine(component, width, writeMetadata, { hint: !hasRich });
+	// 统计只显示一处：正文里已经有 +A -D（diff 头行/0 行摘要行）时标题不再重复。
+	const showStats = !(hasRich && richDiffBodyShowsStats(candidate));
+	const title = compactEditWriteLine(component, width, writeMetadata, {
+		hint: !hasRich,
+		showStats,
+	});
 	if (!hasRich && !expanded) {
 		return title;
 	}
@@ -903,6 +915,7 @@ function paintCompactEditWrite(
 			return compactEditWriteLine(component, innerWidth, writeMetadata, {
 				hint: false,
 				flushLeft: true,
+				showStats,
 			}).slice(1);
 		},
 		invalidate() {},

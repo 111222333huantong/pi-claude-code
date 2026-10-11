@@ -2111,22 +2111,23 @@ test("compact surfaces abort outside folded tools", () => {
 	}
 });
 
-test("compact edit/write keeps the stats header and inherits on-mode diff limits", () => {
+test("compact edit/write：计数只在正文显示一处，0 行预览带颜色", () => {
 	const metadata = new WriteExecutionMetadataStore();
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
+	const previousEditCollapsed = config.editDiffCollapsedLines;
 	const previousWriteCollapsed = config.writeDiffCollapsedLines;
 	config.mode = "compact";
 	const hooks = installCompactMode({ writeMetadata: metadata });
+	const strip = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
+	const EDIT_DIFF =
+		"diff --git a/a.ts b/a.ts\nindex 1..2 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
 	try {
+		// 折叠 edit：标题不带计数，0 行预览的摘要行自带 +1 -1。
+		config.editDiffCollapsedLines = 0;
 		const edit = tool("edit", "e1", { path: "a.ts" });
-		edit.updateResult({
-			content: [],
-			details: {
-				diff: "diff --git a/a.ts b/a.ts\nindex 1..2 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
-			},
-			isError: false,
-		});
+		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: false });
 		assert.equal(edit.render(120)[0], "", "compact file rows keep one leading blank row");
 		const collapsedRich = edit.resultRendererComponent;
 		edit.render(120);
@@ -2135,22 +2136,37 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 			collapsedRich,
 			"collapsed rich diff is reused across frames",
 		);
-		const collapsed = renderText(edit).join("\n");
-		assert.match(collapsed, /edit a\.ts \(\+1 -1\)/);
-		assert.match(collapsed, /old/, "collapsed compact edit inherits the on-mode preview");
-		assert.match(collapsed, /new/);
+		const collapsedRaw = strip(edit.render(120));
+		const collapsed = collapsedRaw.join("\n");
+		assert.match(collapsed, /edit a\.ts/);
+		assert.doesNotMatch(collapsed, /edit a\.ts.*\(\+\d+ -\d+\)/, "标题不再重复计数");
+		assert.match(collapsed, /↳ diff \+1 -1 · .*to show more/);
 		assert.doesNotMatch(collapsed, /Input|Output|Details:/);
 
+		// 计数上色：+ 绿、- 红，其余保持 muted。
 		setMessageDisplayTheme({
-			fg: (color: string, text: string) =>
-				color === "success" || color === "error" ? `<${color}>${text}</${color}>` : text,
+			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 		} as any);
-		const coloredStats = edit.render(120).join("\n");
-		assert.match(coloredStats, /<success>\+1<\/success>/);
-		assert.match(coloredStats, /<error>-1<\/error>/);
+		// 主题在组件构造时固化，换主题要重新 updateResult 重建 rich diff。
+		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: false });
+		const colored = edit.render(120).join("\n");
+		assert.match(colored, /<toolDiffAdded>\+1<\/toolDiffAdded>/);
+		assert.match(colored, /<toolDiffRemoved>-1<\/toolDiffRemoved>/);
 		setMessageDisplayTheme(previousTheme);
 
-		// expanded：保留标题/统计行，并复用 mode=on 的 rich diff 和展开卡背景。
+		// 多行预览同样只显示一处计数：标题无括号，diff 头行有。
+		config.editDiffCollapsedLines = 24;
+		const previewRaw = strip(edit.render(120));
+		assert.doesNotMatch(previewRaw.join("\n"), /edit a\.ts.*\(\+\d+ -\d+\)/);
+		assert.ok(
+			previewRaw.some((line) => line.includes("+1") && line.includes("-1")),
+			`多行预览的 diff 头行带计数: ${previewRaw.join(" | ")}`,
+		);
+		assert.ok(previewRaw.some((line) => line.includes("old")));
+		assert.ok(previewRaw.some((line) => line.includes("new")));
+		config.editDiffCollapsedLines = 0;
+
+		// expanded：保留标题，复用 mode=on 的 rich diff 和展开卡背景，计数仍只在正文。
 		const backgroundSlots: string[] = [];
 		const cardTheme = Object.assign(Object.create(previousTheme ?? null), {
 			fg: previousTheme?.fg ?? ((_color: string, text: string) => text),
@@ -2168,13 +2184,11 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.equal(edit.resultRendererComponent, expandedRich, "expanded rich diff is reused");
 		const expandedRaw = edit.render(120);
 		assert.equal(expandedRaw[0], "", "expanded edit keeps the gap from previous tool");
-		const titlePlain =
-			expandedRaw
-				.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-				.find((line: string) => line.includes("edit a.ts")) ?? "";
+		const expandedPlain = strip(expandedRaw);
+		const titlePlain = expandedPlain.find((line) => line.includes("edit a.ts")) ?? "";
 		assert.match(titlePlain, /^ ✓ edit a\.ts/, "expanded title uses Box pad only");
-		const expanded = renderText(edit).join("\n");
-		assert.match(expanded, /edit a\.ts \(\+1 -1\)/);
+		assert.doesNotMatch(titlePlain, /\(\+\d+ -\d+\)/);
+		const expanded = expandedPlain.join("\n");
 		assert.match(expanded, /old/);
 		assert.match(expanded, /new/);
 		assert.doesNotMatch(expanded, /Input|Output|Details:/);
@@ -2196,7 +2210,7 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		}
 		setMessageDisplayTheme(previousTheme);
 
-		// edit 缺 diff 时统计未知，不能伪报 (+0 -0)。
+		// edit 缺 diff 时统计未知，不能伪报 (+0 -0)，退回 Input/Output。
 		const unknownEdit = tool("edit", "e2", { path: "unknown.ts" });
 		unknownEdit.updateResult({
 			content: [{ type: "text", text: "fallback output" }],
@@ -2214,11 +2228,14 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 			"fallback IO hover keeps ToolExecutionComponent.invalidate bound",
 		);
 
-		// write 无变更成功：标题仍显示 (+0 -0)。
+		// write 折叠 0 行预览：计数在摘要行，标题不带括号。
+		config.writeDiffCollapsedLines = 0;
 		const write = tool("write", "w1", { path: "b.ts", content: "" });
 		metadata.set("w1", { fileExistedBeforeWrite: true, previousContent: "" });
 		write.updateResult({ content: [], isError: false });
-		assert.match(renderText(write).join("\n"), /write b\.ts \(\+0 -0\)/);
+		const writeCollapsed = renderText(write).join("\n");
+		assert.match(writeCollapsed, /↳ diff \+0 -0 · overwritten · .*to show more/);
+		assert.doesNotMatch(writeCollapsed, /write b\.ts.*\(\+\d+ -\d+\)/);
 
 		// write 折叠预览跟 mode=on 共用 writeDiffCollapsedLines。
 		const longWriteContent = Array.from(
@@ -2228,14 +2245,13 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		const longWrite = tool("write", "w-limit", { path: "long.ts", content: longWriteContent });
 		metadata.set("w-limit", { fileExistedBeforeWrite: false });
 		longWrite.updateResult({ content: [], isError: false });
-		config.writeDiffCollapsedLines = 0;
 		const statsOnly = renderText(longWrite).join("\n");
-		assert.match(statsOnly, /write long\.ts \(\+40 -0\)/);
-		assert.match(statsOnly, /created/);
-		assert.match(statsOnly, /more/);
+		assert.match(statsOnly, /↳ diff \+40 -0 · created · .*to show more/);
+		assert.doesNotMatch(statsOnly, /write long\.ts.*\(\+\d+ -\d+\)/);
 		assert.doesNotMatch(statsOnly, /const value10 = 10/);
 		config.writeDiffCollapsedLines = 4;
 		const preview = renderText(longWrite).join("\n");
+		assert.match(preview, /write long\.ts \(\+40 -0\)/, "多行预览时计数回到标题");
 		assert.match(preview, /const value0 = 0/);
 		assert.doesNotMatch(preview, /const value10 = 10/);
 		config.writeDiffCollapsedLines = previousWriteCollapsed;
@@ -2282,6 +2298,7 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 	} finally {
 		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
+		config.editDiffCollapsedLines = previousEditCollapsed;
 		config.writeDiffCollapsedLines = previousWriteCollapsed;
 		hooks.shutdown();
 	}

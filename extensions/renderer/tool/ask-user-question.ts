@@ -113,7 +113,8 @@ export function askUserCollapsedLines(options: {
 		const separator = fg("dim", " -> ");
 		const fixed = visibleWidth(prefix) + visibleWidth(separator);
 		const share = Math.max(1, Math.floor((rowWidth - fixed) / 2));
-		const question = fg("text", headTruncateToWidth(row.question, share));
+		// 问题只是标签，低一档对比度；亮色留给标题和回答。
+		const question = fg("muted", headTruncateToWidth(row.question, share));
 		const answerWidth = Math.max(1, rowWidth - fixed - visibleWidth(question));
 		const answer = fg(isError ? "error" : "success", headTruncateToWidth(row.answer, answerWidth));
 		return truncateToWidth(`${prefix}${question}${separator}${answer}`, rowWidth, "");

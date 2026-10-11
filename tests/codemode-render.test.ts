@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+
+import { config } from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import {
 	codemodeCalls,
 	codemodeCollapsedLines,
@@ -10,6 +15,8 @@ import {
 	createCodemodeResultComponent,
 } from "../extensions/renderer/tool/codemode.ts";
 import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
+
+initTheme("dark");
 
 const theme = { fg: (_color: string, text: string) => text } as any;
 
@@ -68,7 +75,7 @@ test("折叠态：子调用带 detail 时接在标题后（与工具组行一致
 		isError: false,
 		width: 100,
 	});
-	assert.equal(lines[0], "   ├ ✓ Read src/a.ts (offset=10, limit=1) 31ms");
+	assert.equal(lines[0], " ├ ✓ Read src/a.ts (offset=10, limit=1) 31ms");
 });
 
 test("异常数据不崩：calls 非数组、元素为 null、args 非字符串", () => {
@@ -76,7 +83,7 @@ test("异常数据不崩：calls 非数组、元素为 null、args 非字符串"
 	assert.deepEqual(codemodeCalls(messy), []);
 	assert.deepEqual(
 		codemodeCollapsedLines({ result: messy, theme, running: false, isError: false, width: 100 }),
-		["   Done · click to show more"],
+		[" Done · click to show more"],
 	);
 
 	const withNulls = result({}, [null, { name: "read" }, call({ args: 42 })]);
@@ -88,10 +95,10 @@ test("异常数据不崩：calls 非数组、元素为 null、args 非字符串"
 		width: 100,
 	});
 	// 没带 status 的调用按运行中处理（braille 帧随挂钟变，用正则）
-	assert.match(lines[0]!, /^ {3}├ \S Tool$/);
-	assert.match(lines[1]!, /^ {3}├ \S Read$/);
-	assert.match(lines[2]!, /^ {3}├ \S Ffgrep 31ms$/);
-	assert.equal(lines[3], "   └ 3 calls · 2 lines output · click to show more");
+	assert.match(lines[0]!, /^ {1}├ \S Tool$/);
+	assert.match(lines[1]!, /^ {1}├ \S Read$/);
+	assert.match(lines[2]!, /^ {1}├ \S Ffgrep 31ms$/);
+	assert.equal(lines[3], " └ 3 calls · 2 lines output · click to show more");
 });
 
 test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
@@ -103,8 +110,8 @@ test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
 		width: 100,
 	});
 	assert.deepEqual(lines, [
-		'   ├ ✓ Ffgrep "mcp" in src/ 31ms',
-		"   └ 1 call · 2 lines output · click to show more",
+		' ├ ✓ Ffgrep "mcp" in src/ 31ms',
+		" └ 1 call · 2 lines output · click to show more",
 	]);
 });
 
@@ -119,8 +126,8 @@ test("折叠态：运行中用转轮帧，汇总报 running", () => {
 		isError: false,
 		width: 100,
 	});
-	assert.match(lines[0]!, /^ {3}├ \S Ffgrep "mcp" in src\/$/);
-	assert.equal(lines[2], "   └ 2 calls running");
+	assert.match(lines[0]!, /^ {1}├ \S Ffgrep "mcp" in src\/$/);
+	assert.equal(lines[2], " └ 2 calls running");
 });
 
 test("折叠态：子调用过多时只列最近 8 条", () => {
@@ -140,10 +147,10 @@ test("折叠态：子调用过多时只列最近 8 条", () => {
 		isError: false,
 		width: 100,
 	});
-	assert.equal(lines[0], "   ├ … 3 earlier calls");
+	assert.equal(lines[0], " ├ … 3 earlier calls");
 	assert.equal(lines.length, 10);
-	assert.match(lines[1]!, /^ {3}├ ✓ Read src\/f4\.ts 8ms$/);
-	assert.equal(lines[9], "   └ 11 calls · 2 lines output · click to show more");
+	assert.match(lines[1]!, /^ {1}├ ✓ Read src\/f4\.ts 8ms$/);
+	assert.equal(lines[9], " └ 11 calls · 2 lines output · click to show more");
 });
 
 test("折叠态：没有子调用时不画衔接符", () => {
@@ -154,7 +161,7 @@ test("折叠态：没有子调用时不画衔接符", () => {
 		isError: true,
 		width: 100,
 	});
-	assert.deepEqual(lines, ["   2 lines output · click to show more"]);
+	assert.deepEqual(lines, [" 2 lines output · click to show more"]);
 });
 
 /** 与 pi 的 previewArgs 同口径：超 200 字符的紧凑 JSON 从尾部切掉，补 "..."。 */
@@ -183,7 +190,7 @@ test("折叠态：截断的子调用参数仍能取到 path（issue 46 截图里
 		isError: false,
 		width: 120,
 	});
-	assert.match(lines[0]!, /^ {3}├ ✓ Edit README\.en\.md 31ms$/);
+	assert.match(lines[0]!, /^ {1}├ ✓ Edit README\.en\.md 31ms$/);
 });
 
 test("折叠态：截断的检索参数恢复出 pattern，路径范围照旧", () => {
@@ -200,7 +207,7 @@ test("折叠态：截断的检索参数恢复出 pattern，路径范围照旧", 
 		isError: false,
 		width: 120,
 	});
-	assert.match(lines[0]!, /^ {3}├ ✓ Ffgrep "mcp" in src\/ 31ms$/);
+	assert.match(lines[0]!, /^ {1}├ ✓ Ffgrep "mcp" in src\/ 31ms$/);
 });
 
 test("折叠态：截断后也认不出的参数原样当载荷", () => {
@@ -211,7 +218,7 @@ test("折叠态：截断后也认不出的参数原样当载荷", () => {
 		isError: false,
 		width: 120,
 	});
-	assert.match(lines[0]!, /^ {3}├ ✓ Ffgrep \["mcp","src\/… 31ms$/);
+	assert.match(lines[0]!, /^ {1}├ ✓ Ffgrep \["mcp","src\/… 31ms$/);
 });
 
 test("汇总片段：宽度不够时从尾部丢，不断词", () => {
@@ -222,7 +229,7 @@ test("汇总片段：宽度不够时从尾部丢，不断词", () => {
 		isError: true,
 		width: 60,
 	});
-	assert.equal(lines.at(-1), "   └ 2 calls · 1 failed · click to show more");
+	assert.equal(lines.at(-1), " └ 2 calls · 1 failed · click to show more");
 });
 
 test("展开正文：全部子调用（含错误）+ 去头输出 + 全量输出路径", () => {
@@ -278,9 +285,9 @@ test("运行中同样只列最近 8 条", () => {
 		isError: false,
 		width: 100,
 	});
-	assert.equal(lines[0], "   ├ … 3 earlier calls");
+	assert.equal(lines[0], " ├ … 3 earlier calls");
 	assert.equal(lines.length, 10);
-	assert.equal(lines.at(-1), "   └ 11 calls running");
+	assert.equal(lines.at(-1), " └ 11 calls running");
 });
 
 test("折叠组件：只有汇总行是展开入口，运行中不可展开", () => {
@@ -291,7 +298,7 @@ test("折叠组件：只有汇总行是展开入口，运行中不可展开", ()
 		isError: false,
 	});
 	assert.equal(
-		running.isCollapsedHintLine("   └ 1 call · 2 lines output · click to show more"),
+		running.isCollapsedHintLine(" └ 1 call · 2 lines output · click to show more"),
 		false,
 	);
 
@@ -301,11 +308,11 @@ test("折叠组件：只有汇总行是展开入口，运行中不可展开", ()
 		running: false,
 		isError: false,
 	});
-	assert.equal(done.isCollapsedHintLine("   └ 1 call · 2 lines output · click to show more"), true);
-	assert.equal(done.isCollapsedHintLine('   ├ ✓ Ffgrep "mcp" in src/ 31ms'), false);
+	assert.equal(done.isCollapsedHintLine(" └ 1 call · 2 lines output · click to show more"), true);
+	assert.equal(done.isCollapsedHintLine(' ├ ✓ Ffgrep "mcp" in src/ 31ms'), false);
 	assert.deepEqual(done.render(100), [
-		'   ├ ✓ Ffgrep "mcp" in src/ 31ms',
-		"   └ 1 call · 2 lines output · click to show more",
+		' ├ ✓ Ffgrep "mcp" in src/ 31ms',
+		" └ 1 call · 2 lines output · click to show more",
 	]);
 });
 
@@ -345,7 +352,7 @@ test("折叠态：耗时/费用沿用官方格式（空格相连）", () => {
 		isError: false,
 		width: 100,
 	});
-	assert.equal(withCost[0], '   ├ ✓ Ffgrep "mcp" in src/ 31ms $0.0031');
+	assert.equal(withCost[0], ' ├ ✓ Ffgrep "mcp" in src/ 31ms $0.0031');
 
 	const seconds = codemodeCollapsedLines({
 		result: result({}, [call({ durationMs: 1234.5 })]),
@@ -354,7 +361,7 @@ test("折叠态：耗时/费用沿用官方格式（空格相连）", () => {
 		isError: false,
 		width: 100,
 	});
-	assert.equal(seconds[0], '   ├ ✓ Ffgrep "mcp" in src/ 1.2s');
+	assert.equal(seconds[0], ' ├ ✓ Ffgrep "mcp" in src/ 1.2s');
 });
 
 test("调用行：codemode 只报工具名，代码不进标题（其他工具不受影响）", () => {
@@ -371,4 +378,36 @@ test("调用行：codemode 只报工具名，代码不进标题（其他工具�
 	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, undefined);
 	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read a.ts");
 	assert.equal(toolCallSummary("read", { path: "a.ts" }).payload, undefined);
+});
+
+test("单工具卡：子调用树线与标题勾对齐", () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const tool = new ToolExecutionComponent(
+			"codemode",
+			"cm-align",
+			{ code: "return 1" },
+			{},
+			undefined,
+			{ theme, requestRender() {}, setStatus() {} } as any,
+			process.cwd(),
+		) as any;
+		tool.markExecutionStarted();
+		tool.updateResult(result());
+		const lines = tool
+			.render(120)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter(Boolean);
+		const title = lines[0]!;
+		// 勾在 " ✓" 的第 2 列，├ 也应落在第 2 列。
+		const checkColumn = title.indexOf("✓");
+		assert.ok(checkColumn > 0, `标题应带勾: ${title}`);
+		const branchLine = lines.find((line: string) => line.includes("├"));
+		assert.equal(branchLine?.indexOf("├"), checkColumn, "子调用树线应与勾对齐");
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+	}
 });

@@ -426,7 +426,8 @@ function createCcstyleTool(
 				});
 			}
 			if (options?.isPartial) {
-				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题
+				// 折叠态保持 3 格：与完成后的 `   ↳ …` 同列，工具跑完那行不横跳。
+				// 展开态贴左（Box 提供 1 格 pad）。
 				const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
 				if (!SHELL_TOOL_NAMES.has(toolName)) {
 					return new Text(theme.fg("muted", pending), 0, 0);

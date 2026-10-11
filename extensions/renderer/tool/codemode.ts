@@ -26,8 +26,8 @@ export const CODEMODE_TOOL_NAME = "codemode";
 
 /** 折叠态最多列几条子调用（与 pi 原生一致，更早的折叠成一行）。 */
 const COLLAPSED_CALL_LIMIT = 8;
-/** 折叠态正文缩进，与 `   ↳ …` 对齐。 */
-const INDENT = "   ";
+/** 折叠态正文缩进：1 格，让 ├/└ 落在标题行勾号（" ✓"）的正下方。 */
+const INDENT = " ";
 
 /** 脚本结果头；只有整块正文恰好等于它时才算头。 */
 const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n$/;

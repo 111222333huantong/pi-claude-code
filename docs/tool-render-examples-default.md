@@ -222,13 +222,13 @@ write 新建 / 覆盖：
 
 ```text
  ⠋ Ask User Question (+3)
-   ↳ Pending…
+ ↳ Pending…
 
  ✓ Ask User Question (+3)
-   ├ Which library should we… -> Read
-   ├ Which paths should the … -> src and tests
-   ├ Which checks should run? -> typecheck, unit tests, …
-   └ 3 answered · click to show more
+ ├ Which library should we … -> Read
+ ├ Which paths should the c… -> src and tests
+ ├ Which checks should run? -> typecheck, unit tests, li…
+ └ 3 answered · click to show more
 
  ✓ Ask User Question (+3)
  ├ Input
@@ -253,7 +253,7 @@ write 新建 / 覆盖：
    … 1 more lines · click to show more
 
  ✓ Ask User Question (+3)
-   Declined
+ Declined
 ```
 
 标题只留工具名和问题数（调用期间就从入参数起，不先闪出第一个问题）；问题原文与所选在折叠态逐条列出，问题行全用 `├`、最后一行用 `└` 收 `N answered` 并挂展开入口，多选把标签用 `, ` 拼在一行。展开态按「问题 / 所选 / 备注」分组，并带上总备注。没有作答（用户取消、校验失败）时不画树，只有一行 `Declined`。分组卡里空间只够一行，压成 `问题 -> 回答 (+N)`。
@@ -262,15 +262,15 @@ write 新建 / 覆盖：
 
 ```text
  ⠋ Codemode
-   ├ ⠋ Ffgrep "mcp" in src/
-   ├ ⠋ Fffind "mcp"
-   └ 2 calls running
+ ├ ⠋ Ffgrep "mcp" in src/
+ ├ ⠋ Fffind "mcp"
+ └ 2 calls running
 
  ✓ Codemode
-   ├ ✓ Ffgrep "mcp" in src/ 31ms
-   ├ ✓ Fffind "mcp" 12ms
-   ├ ✗ mcp__chrome_devtools__list_pages 240ms
-   └ 3 calls · 1 failed · click to show more
+ ├ ✓ Ffgrep "mcp" in src/ 31ms
+ ├ ✓ Fffind "mcp" 12ms
+ ├ ✗ mcp__chrome_devtools__list_pages 240ms
+ └ 3 calls · 1 failed · click to show more
 
  ✓ Codemode
  ├ Input

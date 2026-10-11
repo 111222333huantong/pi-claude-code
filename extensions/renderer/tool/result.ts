@@ -288,14 +288,12 @@ const EXPANDED_TOOL_IO_VIEW_GENERATION = Symbol("ccstyle-expanded-tool-io-view")
 /**
  * Expanded tool body with clear Input / Output sections (Grok Build–style).
  *
- * Visual frame:
- *   ├ Input  click to show more
- *   │ path: src/a.ts
- *   │
- *   └ Output  click to show more
- *     result line…
- *
- * flushLeft=true（仅 mode=on 展开卡）：去掉树线前导空格，由外层 Box(1,1) 提供 1 格 padding。
+ * Visual frame（flushLeft=true：树线的前导空格交给外层 Box(1,1)，├/└ 与标题行的勾同列）：
+ * ├ Input  click to show more
+ * │ path: src/a.ts
+ * │
+ * └ Output  click to show more
+ *   result line…
  *
  * Reused across re-renders via context.lastComponent when possible.
  */
@@ -326,7 +324,7 @@ export class ExpandedToolIoView {
 		  }
 		| undefined;
 
-	/** flushLeft：贴左渲染（mode=on 展开卡）；默认 false 保留前导空格（compact 等共用路径）。 */
+	/** flushLeft：贴左渲染（外层 Box 负责 1 格 pad）；默认 false 保留 1 格前导空格。 */
 	private flushLeft: boolean;
 	/** 尾部附注（shell 的耗时）。挂到 Output 的 show-more 行上，没有那一行时单独成行。 */
 	private footer: string | undefined;
@@ -496,7 +494,7 @@ export class ExpandedToolIoView {
 
 		const theme = this.theme;
 		const safeWidth = Math.max(1, Math.floor(width));
-		// flushLeft：贴左（外层 Box 负责 1 格 pad）；否则保留 1 格前导空格（compact 共用）
+		// flushLeft：贴左（外层 Box 负责 1 格 pad）；否则保留 1 格前导空格
 		const lead = this.flushLeft ? "" : " ";
 		const rail = `${lead}│ `;
 		const railWidth = visibleWidth(rail);
@@ -901,7 +899,7 @@ export function renderExpandedToolResult(
 	lastComponent?: unknown,
 	args?: unknown,
 	context?: any,
-	/** mode=on 展开卡贴左；compact 等保持默认前导空格 */
+	/** 贴左渲染：树线的前导空格交给外层 Box(1,1) */
 	flushLeft = false,
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
 	const { text: inputBody, codeBlock } = formatToolInputBody(args);

@@ -6,7 +6,14 @@ import {
 	isFullscreenAtBottom,
 } from "../../renderer/mouse/scroll.ts";
 import { formatDuration } from "../../utils/format.ts";
-import { resetTokenRate, markFirstToken, sampleTokenRate } from "./token-rate.ts";
+import {
+	resetTokenRate,
+	carryTokenRate,
+	pauseTokenRate,
+	resumeTokenRate,
+	markFirstToken,
+	sampleTokenRate,
+} from "./token-rate.ts";
 
 const REFRESH_INTERVAL_MS = 1_000;
 /** Elapsed time is only shown once the turn has run this long. */
@@ -63,6 +70,8 @@ export default function (pi: ExtensionAPI): void {
 	let turnActive = false;
 	let agentStartTime = 0;
 	let turnStartTime = 0;
+	/** 当前用户指令的起点；工具调用后的 turn 复用它，直到下一条指令。 */
+	let rateRunStartTime = 0;
 	let responseLength = 0;
 	let responseTextBlockLengths: number[] = [];
 	let providerOutputTokens = 0;
@@ -88,7 +97,6 @@ export default function (pi: ExtensionAPI): void {
 		responseTextBlockLengths = message ? textBlockLengths(message) : [];
 		responseLength = responseTextBlockLengths.reduce((sum, length) => sum + length, 0);
 		providerOutputTokens = message ? outputUsage(message) : 0;
-		updateTokenRate();
 	}
 
 	function updateProviderUsage(message: StreamMessage): void {
@@ -194,12 +202,17 @@ export default function (pi: ExtensionAPI): void {
 		if (!agentStartTime) agentStartTime = Date.now();
 	});
 
-	pi.on("turn_start", async (_event, ctx) => {
+	pi.on("turn_start", async (event, ctx) => {
 		turnActive = true;
 		activeCtx = ctx;
-		turnStartTime = Date.now();
+		// 事件时间戳在 handler 之前产生；用 Date.now() 会和紧随的采样落在同一毫秒，分母变成 0。
+		turnStartTime = event?.timestamp || Date.now();
 		if (!agentStartTime) agentStartTime = turnStartTime;
-		resetTokenRate(turnStartTime);
+		// 工具调用后的 turn 属于同一条用户指令：计时、TTFT 与累计 token 保持到下一条指令。
+		if (rateRunStartTime !== agentStartTime) {
+			rateRunStartTime = agentStartTime;
+			resetTokenRate(rateRunStartTime);
+		}
 		resetResponseTracking();
 		syncWorkingMessage(true);
 		scheduleRefreshTick();
@@ -248,10 +261,20 @@ export default function (pi: ExtensionAPI): void {
 		scheduleRefreshTick();
 	});
 
+	pi.on("tool_execution_start", async () => {
+		pauseTokenRate();
+	});
+
+	pi.on("tool_execution_end", async () => {
+		resumeTokenRate();
+	});
+
 	pi.on("turn_end", async (_event, ctx) => {
 		turnActive = false;
 		activeCtx = ctx;
 		stopRefreshLoop();
+		// 本段 token 在计数器清零前结转，下一段 turn 继续累加；此处不清速率。
+		carryTokenRate(tokenCount());
 		resetResponseTracking();
 		// No completion message: return immediately to Pi's default idle state.
 		restoreDefaultWorkingMessage();

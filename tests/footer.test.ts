@@ -44,6 +44,13 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 		formatConfigStatus(normalizeConfig({ footerNerdIcons: false })),
 		/footerIcons=plain/,
 	);
+	assert.equal(normalizeConfig({}).footerTokenRate, true);
+	assert.equal(normalizeConfig({ footerTokenRate: false }).footerTokenRate, false);
+	assert.equal(normalizeConfig({}).footerTokenRateMode, "average");
+	assert.equal(normalizeConfig({ footerTokenRateMode: "live" }).footerTokenRateMode, "live");
+	assert.equal(normalizeConfig({ footerTokenRateMode: "instant" }).footerTokenRateMode, "average");
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerTokenRate=on/);
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerTokenRateMode=average/);
 });
 
 test("footerGitStatsMode defaults to working and accepts only known modes", () => {

@@ -43,6 +43,7 @@ import {
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
 	FOOTER_GIT_STATS_MODES,
+	FOOTER_TOKEN_RATE_MODES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
 	pickPositiveInt,
@@ -58,6 +59,7 @@ import {
 	type DiffIndicatorMode,
 	type DiffViewMode,
 	type FooterGitStatsMode,
+	type FooterTokenRateMode,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -85,6 +87,18 @@ function excludeRenderersDescription(names: readonly string[]): string {
 function customFooterDescription(enabled: boolean): string {
 	if (!enabled) return "Pi native footer restored. Chip layout below still applies when turned on.";
 	return "Custom status bar with model, context, cache, cost, git, and plugin chips.";
+}
+
+function footerTokenRateDescription(enabled: boolean): string {
+	return enabled
+		? "Output rate chip after the cache hit rate. Turn off to hide it."
+		: "Output rate chip hidden.";
+}
+
+function footerTokenRateModeDescription(mode: FooterTokenRateMode): string {
+	return mode === "live"
+		? "Sliding 1s rate while generating (live). Tool waits are excluded. Falls back to the run average between chunks and after the prompt."
+		: "Average over the whole user prompt (avg), including tool waits. Stays until the next prompt.";
 }
 
 function footerGitStatsDescription(mode: FooterGitStatsMode): string {
@@ -730,6 +744,20 @@ export async function showCcstylePanel(
 			currentValue: config.footerGitStatsMode,
 			values: FOOTER_GIT_STATS_MODES,
 		};
+		const footerTokenRateSetting = {
+			id: "footerTokenRate",
+			label: "Token rate",
+			description: footerTokenRateDescription(config.footerTokenRate),
+			currentValue: config.footerTokenRate ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const footerTokenRateModeSetting = {
+			id: "footerTokenRateMode",
+			label: "Token rate mode",
+			description: footerTokenRateModeDescription(config.footerTokenRateMode),
+			currentValue: config.footerTokenRateMode,
+			values: FOOTER_TOKEN_RATE_MODES,
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Plugin chips",
@@ -799,6 +827,23 @@ export async function showCcstylePanel(
 				footerGitStatsSetting.currentValue = config.footerGitStatsMode;
 				footerGitStatsSetting.description = footerGitStatsDescription(config.footerGitStatsMode);
 				refreshFooterGitStats();
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerTokenRate") {
+				const enabled = value === "on";
+				updateConfig({ footerTokenRate: enabled });
+				footerTokenRateSetting.currentValue = enabled ? "on" : "off";
+				footerTokenRateSetting.description = footerTokenRateDescription(enabled);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerTokenRateMode") {
+				updateConfig({ footerTokenRateMode: value as FooterTokenRateMode });
+				footerTokenRateModeSetting.currentValue = config.footerTokenRateMode;
+				footerTokenRateModeSetting.description = footerTokenRateModeDescription(
+					config.footerTokenRateMode,
+				);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1020,6 +1065,8 @@ export async function showCcstylePanel(
 				label: "Footer",
 				items: [
 					customFooterSetting,
+					footerTokenRateSetting,
+					footerTokenRateModeSetting,
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,

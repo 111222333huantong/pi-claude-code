@@ -81,6 +81,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 
   // footer
   "enableCustomFooter": true, // custom status bar
+  "footerTokenRate": true, // output rate chip; false hides it
+  "footerTokenRateMode": "average", // average: whole-prompt avg; live: trailing 1s rate
   "footerCurrency": "USD", // display currency for the footer cost
   "footerCurrencyRate": null, // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true, // Nerd Font glyphs for git/cache; false = plain text

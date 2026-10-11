@@ -14,6 +14,7 @@ export type CompactStyleMode = "on" | "compact" | "off";
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 export type FooterGitStatsMode = "working" | "branch";
+export type FooterTokenRateMode = "average" | "live";
 
 export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
@@ -74,6 +75,10 @@ export type Config = {
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
 	enableCustomFooter: boolean;
+	/** footer 输出速率芯片。关则不显示。 */
+	footerTokenRate: boolean;
+	/** average：整段指令墙钟平均；live：最近 1 秒瞬时速率，空档回退平均。 */
+	footerTokenRateMode: FooterTokenRateMode;
 	/** ISO 4217 显示币种。USD 时不换算。 */
 	footerCurrency: string;
 	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
@@ -93,6 +98,7 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
+export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
 export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "120"];
 /** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
@@ -163,6 +169,8 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableCustomFooter: true,
+	footerTokenRate: true,
+	footerTokenRateMode: "average",
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
@@ -293,6 +301,12 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
+		footerTokenRate: source.footerTokenRate !== false,
+		footerTokenRateMode: pickEnum(
+			source.footerTokenRateMode,
+			FOOTER_TOKEN_RATE_MODES,
+			DEFAULT_CONFIG.footerTokenRateMode,
+		),
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
@@ -356,6 +370,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
+		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
+		`footerTokenRateMode=${source.footerTokenRateMode}`,
 		`footerCurrency=${source.footerCurrency}`,
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,

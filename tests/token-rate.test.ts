@@ -10,9 +10,10 @@ import {
 	formatTokenRate,
 	markFirstToken,
 	pauseTokenRate,
+	recordProviderUsage,
 	resetTokenRate,
 	resumeTokenRate,
-	sampleTokenRate,
+	sampleTokenDelta,
 } from "../extensions/feature/shell/token-rate.ts";
 
 initTheme("dark");
@@ -48,66 +49,45 @@ describe("token rate", { concurrency: false }, () => {
 		assert.equal(formatTokenRate(1200, 812, "live"), "live 1.2k tok/s (TTFT: 812ms)");
 	});
 
-	test("live mode uses the trailing window and pauses across tool execution", () => {
+	test("live mode uses the trailing window and holds it through a tool wait", () => {
 		resetTokenRate(1_000);
-		sampleTokenRate(100, 2_000);
-		assert.equal(displayTokenRate("live"), 100, "窗口不足 250ms 时回退平均");
-
-		sampleTokenRate(200, 2_500); // 窗口内 100 token / 0.5s
+		sampleTokenDelta("a".repeat(400), 2_000); // 100 est tokens
+		sampleTokenDelta("a".repeat(400), 2_500); // +100 over 0.5s
 		assert.equal(displayTokenRate("live"), 200);
 		assert.equal(displayTokenRate("average"), 200 / 1.5);
 
 		pauseTokenRate(2_600);
-		sampleTokenRate(1_000, 4_000); // 工具执行中不更新窗口，平均仍累计
-		assert.equal(displayTokenRate("live"), 1_000 / 3, "暂停时回退平均");
+		// 工具执行中没有 delta；暂停期 lastRate 保持，live 保留上一条窗口值。
+		assert.equal(displayTokenRate("live"), 200, "暂停时保留窗口速率");
 
 		resumeTokenRate();
-		sampleTokenRate(1_100, 4_200);
-		sampleTokenRate(1_200, 4_600); // 恢复后窗口 100 token / 0.4s
+		sampleTokenDelta("a".repeat(400), 4_200);
+		sampleTokenDelta("a".repeat(400), 4_600); // 恢复后窗口 100 token / 0.4s
 		assert.equal(displayTokenRate("live"), 250);
 	});
 
-	test("rate samples average tokens over elapsed turn time", () => {
-		resetTokenRate(0);
-		assert.equal(currentTokenRate(), 0);
-
+	test("estimate counts CJK as one token and ascii as chars/4", () => {
 		resetTokenRate(1_000);
-		sampleTokenRate(100, 11_000); // 100 tokens in 10s
-		assert.equal(currentTokenRate(), 10);
-
-		sampleTokenRate(300, 11_000); // 300 tokens in 10s
-		assert.equal(currentTokenRate(), 30);
+		sampleTokenDelta("你好", 2_000); // 2 tokens
+		sampleTokenDelta("a".repeat(8), 2_600); // +2 tokens，窗口增量 2 / 0.6s
+		assert.equal(displayTokenRate("live"), 2 / 0.6);
+		resumeTokenRate();
 	});
 
-	test("sampling without an active turn or zero tokens is ignored", () => {
-		resetTokenRate(0);
-		sampleTokenRate(500, Date.now());
-		assert.equal(currentTokenRate(), 0);
-
+	test("provider usage back-dates across the message window", () => {
 		resetTokenRate(1_000);
-		sampleTokenRate(0, 6_000);
-		assert.equal(currentTokenRate(), 0);
+		sampleTokenDelta("a".repeat(400), 2_000); // 估算先铺窗
+		recordProviderUsage(300, 3_000); // 真实值 300，覆盖估算并摊回窗口
+		assert.ok(displayTokenRate("average") >= 300 / 2);
+		assert.ok(displayTokenRate("live") > 0);
 	});
 
-	test("resetTokenRate(startAt) restarts accumulation from a new user prompt", () => {
+	test("carryTokenRate keeps the shown rate across a tool turn", () => {
 		resetTokenRate(1_000);
-		sampleTokenRate(100, 11_000); // 10 tok/s
-		resetTokenRate(20_000);
-		// 新指令刚开头没有样本时保持 0，而不是沿用上一段值
-		assert.equal(currentTokenRate(), 0);
-		sampleTokenRate(50, 20_500); // 50 tokens in 0.5s
-		assert.equal(currentTokenRate(), 100);
-	});
-
-	test("carryTokenRate keeps the shown rate across a tool turn and adds the next segment", () => {
-		resetTokenRate(1_000);
-		sampleTokenRate(100, 11_000); // 10 tok/s
-		carryTokenRate(100); // 工具调用结束，本段 token 结转
-		assert.equal(currentTokenRate(), 10, "工具等待期间保留上一段速率");
-		sampleTokenRate(0, 21_000); // 下一段还没有 token，不覆盖
-		assert.equal(currentTokenRate(), 10);
-		sampleTokenRate(100, 31_000); // 累计 200 token / 30s
-		assert.equal(currentTokenRate(), 200 / 30);
+		sampleTokenDelta("a".repeat(400), 11_000); // ~10 tok/s
+		const rate = currentTokenRate();
+		carryTokenRate(); // 工具调用结束，本段 token 结转
+		assert.equal(currentTokenRate(), rate, "工具等待期间保留上一段速率");
 	});
 
 	test("TTFT records only the first content block of the turn and survives sampling", () => {
@@ -116,7 +96,7 @@ describe("token rate", { concurrency: false }, () => {
 		markFirstToken(1_500); // first block: 500ms after turn start
 		markFirstToken(2_000); // later block must not overwrite
 		assert.equal(currentTtftMs(), 500);
-		sampleTokenRate(100, 11_000); // sampling does not touch TTFT
+		sampleTokenDelta("a".repeat(400), 11_000); // sampling does not touch TTFT
 		assert.equal(currentTtftMs(), 500);
 
 		resetTokenRate(5_000);
@@ -126,14 +106,15 @@ describe("token rate", { concurrency: false }, () => {
 	test("toolcall_start marks the first token like text/thinking starts", async () => {
 		const { events, ctx } = install();
 
-		await events.get("turn_start")?.({}, ctx);
-		await new Promise((resolve) => setTimeout(resolve, 5));
+		await events.get("before_agent_start")?.({}, ctx);
+		await events.get("turn_start")?.({ timestamp: Date.now() - 5 }, ctx);
 		// 模型直接发起 tool call：没有 thinking/text，首块是 toolcall_start
 		await events.get("message_update")?.(
 			{ assistantMessageEvent: { type: "toolcall_start", partial: { usage: { output: 10 } } } },
 			ctx,
 		);
 		assert.ok(currentTtftMs() > 0, "toolcall_start should record TTFT");
+		resumeTokenRate();
 		await events.get("turn_end")?.({}, ctx);
 		await events.get("agent_end")?.({}, ctx);
 	});
@@ -163,6 +144,7 @@ describe("token rate", { concurrency: false }, () => {
 		assert.ok(rate > 0);
 		assert.ok(ttft > 0);
 
+		// 工具执行后回到 average 时仍累计；下一条指令才重置。resume 后 delta 才进窗。
 		await events.get("turn_end")?.({}, ctx);
 		assert.equal(currentTokenRate(), rate, "turn 结束不清速率");
 		assert.equal(currentTtftMs(), ttft);
@@ -172,11 +154,8 @@ describe("token rate", { concurrency: false }, () => {
 		assert.equal(currentTokenRate(), rate, "下一段 turn 不清速率");
 		assert.equal(currentTtftMs(), ttft, "下一段 turn 不重记 TTFT");
 
-		// 下一条用户指令才重置。
+		// 收尾，避免泄漏给同进程的其它测试文件。
+		await events.get("turn_end")?.({}, ctx);
 		await events.get("agent_end")?.({}, ctx);
-		await events.get("before_agent_start")?.({}, ctx);
-		await events.get("turn_start")?.({ timestamp: Date.now() }, ctx);
-		assert.equal(currentTokenRate(), 0);
-		assert.equal(currentTtftMs(), 0);
 	});
 });

@@ -2,7 +2,9 @@
  * footer 输出速率的共享状态：working-message 负责采集，footer 负责显示。
  *
  * average：一次用户指令的墙钟平均（工具等待计入分母），显示 `avg`。
- * live：最近一个窗口的瞬时速率（工具等待暂停计时），显示 `live`；指令结束定格为整段平均。
+ * live：最近 1 秒的瞬时速率，生成期暂停时钟，显示 `live`；指令结束定格为整段平均。
+ * token 与 working-message 同源：优先 provider `usage.output`，否则按 delta 增量估算
+ * （CJK 1 token，其余 chars/4）。provider 值回填到本段消息窗口。
  * Pi 的 turn 是单次 assistant 消息，工具调用结束会开新 turn。token 跨 turn 累加，
  * 计时与 TTFT 直到下一条用户指令才重置。
  * TTFT：用户指令开始到第一个内容块（text/thinking/toolcall）开始的毫秒数，
@@ -13,6 +15,8 @@ export type TokenRateMode = "average" | "live";
 
 const LIVE_WINDOW_MS = 1_000;
 const MIN_SPAN_MS = 250;
+const CJK_CHARS =
+	/[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g;
 
 interface TokenSample {
 	t: number;
@@ -21,40 +25,57 @@ interface TokenSample {
 
 let runStartTime = 0;
 let carriedTokens = 0;
+let currentTokens = 0;
 let pauseStartedAt = 0;
+/** 并行工具调用数；>0 时瞬时采样暂停。 */
+let activeTools = 0;
 let lastRate = 0;
 let lastLiveRate = 0;
 let firstTokenAt = 0;
 let samples: TokenSample[] = [];
+let usageAnchorTime = 0;
+let usageAnchorTokens = 0;
+let countedUsage = 0;
 
 /** 新的用户指令：重置计时、累计 token、定格值与 TTFT。 */
 export function resetTokenRate(startAt = 0): void {
 	runStartTime = startAt;
 	carriedTokens = 0;
+	currentTokens = 0;
 	pauseStartedAt = 0;
+	activeTools = 0;
 	lastRate = 0;
 	lastLiveRate = 0;
 	firstTokenAt = 0;
 	samples = [];
+	usageAnchorTime = 0;
+	usageAnchorTokens = 0;
+	countedUsage = 0;
 }
 
 /**
  * 一段 assistant 回复结束：保留计时与 TTFT，把本段已计 token 结算进累计。
  * 下一段的 token 从 0 重计，采样时加回来。
  */
-export function carryTokenRate(tokens: number): void {
-	if (tokens > 0) carriedTokens += tokens;
+export function carryTokenRate(): void {
+	if (currentTokens > 0) carriedTokens += currentTokens;
+	currentTokens = 0;
+	countedUsage = 0;
 }
 
-/** 工具开始执行：暂停实时采样，工具等待不进瞬时速率。 */
+/** 工具开始执行：计数 +1，第一个工具才真正暂停瞬时采样。 */
 export function pauseTokenRate(now = Date.now()): void {
-	if (!runStartTime || pauseStartedAt) return;
-	pauseStartedAt = now;
+	if (!runStartTime) return;
+	activeTools += 1;
+	if (activeTools === 1 && !pauseStartedAt) pauseStartedAt = now;
 }
 
-/** 工具执行结束：恢复实时采样。 */
+/** 工具执行结束：计数 -1，最后一个工具结束才恢复采样。 */
 export function resumeTokenRate(): void {
-	pauseStartedAt = 0;
+	activeTools = Math.max(0, activeTools - 1);
+	if (activeTools === 0 && pauseStartedAt) {
+		pauseStartedAt = 0;
+	}
 }
 
 /** 本指令第一个内容块开始时调用；同一指令后续消息不覆盖。 */
@@ -62,26 +83,81 @@ export function markFirstToken(now = Date.now()): void {
 	if (runStartTime && !firstTokenAt) firstTokenAt = now;
 }
 
-/** 每个 message_update 采样一次。本段 0 token 不覆盖已显示的速率。 */
-export function sampleTokenRate(tokens: number, now = Date.now()): void {
-	if (!runStartTime || tokens <= 0) return;
-	const total = carriedTokens + tokens;
+function estimateTokens(text: string): number {
+	if (!text) return 0;
+	const cjk = text.match(CJK_CHARS)?.length ?? 0;
+	return Math.ceil(cjk + (text.length - cjk) / 4);
+}
+
+function pushSample(time: number, cum: number): void {
+	samples.push({ t: time, cum });
+	const cutoff = time - LIVE_WINDOW_MS;
+	while (samples.length > 1 && samples[0]!.t < cutoff) samples.shift();
+}
+
+function updateRates(now: number): void {
+	const total = carriedTokens + currentTokens;
 	const elapsed = (now - runStartTime) / 1000;
 	if (elapsed > 0) lastRate = total / elapsed;
-
-	if (pauseStartedAt) {
-		samples = [];
-		return;
-	}
-	samples.push({ t: now, cum: total });
-	const cutoff = now - LIVE_WINDOW_MS;
-	while (samples.length > 1 && samples[0]!.t < cutoff) samples.shift();
 	if (samples.length < 2) return;
 	const first = samples[0]!;
 	const last = samples[samples.length - 1]!;
 	const span = last.t - first.t;
-	if (span < MIN_SPAN_MS) return;
-	lastLiveRate = ((last.cum - first.cum) * 1000) / span;
+	if (span >= MIN_SPAN_MS) {
+		lastLiveRate = ((last.cum - first.cum) * 1000) / span;
+	}
+}
+
+/** 每个文本增量采样一次。工具暂停期的增量只累计 token，不进窗口。 */
+export function sampleTokenDelta(delta: string, now = Date.now()): void {
+	if (!runStartTime) return;
+	const added = estimateTokens(delta);
+	if (added <= 0) return;
+	currentTokens += added;
+	if (pauseStartedAt) return;
+	pushSample(now, carriedTokens + currentTokens);
+	updateRates(now);
+}
+
+/**
+ * 记录本段 provider `usage.output`。usage 按锚点摊回窗口：
+ * 首次报告从消息起点铺到现在，之后每次把增量摊在上次报告之后。
+ */
+export function recordProviderUsage(output: number, now = Date.now()): void {
+	if (!runStartTime || output <= 0) return;
+	const firstReport = countedUsage === 0;
+	const jump = output - countedUsage;
+	countedUsage = output;
+	// provider 是权威计数；首次报告以它为准，之后增量接管。
+	currentTokens = output;
+	if (firstReport) {
+		samples = samples.filter((sample) => sample.t < usageAnchorTime);
+		pushSample(usageAnchorTime, carriedTokens + usageAnchorTokens);
+	}
+	const span = Math.max(now - usageAnchorTime, 1);
+	const count = Math.min(Math.max(Math.ceil(jump / 16), 1), 32);
+	const base = firstReport
+		? carriedTokens + usageAnchorTokens
+		: carriedTokens + currentTokens - jump;
+	for (let i = 1; i <= count; i++) {
+		pushSample(usageAnchorTime + (span * i) / count, base + (jump * i) / count);
+	}
+	usageAnchorTime = now;
+	usageAnchorTokens = currentTokens;
+	updateRates(now);
+}
+
+/** 本段消息开始：重置 provider 锚点。 */
+export function startMessageSegment(now = Date.now()): void {
+	if (!runStartTime) return;
+	usageAnchorTime = now;
+	usageAnchorTokens = currentTokens;
+	countedUsage = 0;
+}
+
+/** 整段指令的累计 token 数：已结转段 + 当前段。 */
+export function totalTokens(): number {
+	return carriedTokens + currentTokens;
 }
 
 /** average 的当前值：指令中为实时平均，指令外为上一段定格值。 */
@@ -90,11 +166,11 @@ export function currentTokenRate(): number {
 }
 
 /**
- * 按显示模式取值。live 在生成中取窗口速率，生成空档与指令结束后回到整段平均。
- * 窗口还不够 250ms 时也回退到平均，避免一闪而过的空值。
+ * 按显示模式取值。live 在生成中取窗口速率，窗口数据不足或指令结束后回到整段平均。
+ * 工具暂停期间时钟不动，显示上一条窗口值。
  */
 export function displayTokenRate(mode: TokenRateMode): number {
-	if (mode === "live" && !pauseStartedAt && samples.length >= 2 && lastLiveRate > 0) {
+	if (mode === "live" && samples.length >= 2 && lastLiveRate > 0) {
 		return lastLiveRate;
 	}
 	return lastRate;

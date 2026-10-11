@@ -1,6 +1,15 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 
+/** token/计数缩写：<1k 原数，<1M 用 k，≥1M 用 M。footer 与 working message 共用。 */
+export function formatTokenCount(value: number): string {
+	if (value < 1000) return `${value}`;
+	if (value < 10_000) return `${(value / 1000).toFixed(1)}k`;
+	if (value < 1_000_000) return `${Math.round(value / 1000)}k`;
+	if (value < 10_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+	return `${Math.round(value / 1_000_000)}M`;
+}
+
 /** 毫秒 → "1h 2m 3s"/"2m 3s"/"3s"；低于 1 秒返回 ""（省略）。 */
 export function formatDuration(ms: number): string {
 	const totalSec = Math.floor(ms / 1000);

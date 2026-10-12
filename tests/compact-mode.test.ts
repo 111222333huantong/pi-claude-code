@@ -534,11 +534,18 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			/^Running\.\.\. · 2s, bash×2, fffind×1, read×1/,
 		);
 
+		// 消息先到、组件后到：pi 的 message_update 就是这个顺序。
+		// 组件一 updateDisplay 就进 live 槽位，槽位接管期间强制折叠，不能再单独展开。
 		const bash = tool("bash", "b1", { command: "one" });
 		const longOutput = Array.from({ length: 500 }, (_, index) => `tool output ${index}`).join("\n");
 		bash.updateResult({ content: [{ type: "text", text: longOutput }], isError: false });
+		const afterTool = renderText(assistant1);
+		assert.ok(
+			afterTool.some((line) => line.includes("↳") && line.includes("$ one")),
+			`组件后到应补进槽位: ${afterTool.join(" | ")}`,
+		);
 		bash.setExpanded(true);
-		assert.equal(bash.expanded, true, "precondition: child can be expanded before its round");
+		assert.equal(bash.expanded, false, "live 槽位接管的工具不能单独展开");
 		const edit = tool("edit", "e1", { path: "a.ts" });
 		edit.updateResult({ content: [], isError: false });
 		const backgroundSlots: string[] = [];
@@ -1028,6 +1035,46 @@ test("compact live: one thinking preview, one tool slot, folds after the settle 
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact live: 工具组件晚于消息到达时补画槽位，参数更新时刷新", () => {
+	const { restore } = installHooks();
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "looking" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-early" } },
+			],
+		};
+		const assistant = new AssistantMessageComponent(message as any, true) as any;
+		// pi 的 message_update：先 updateContent（计数 +1），工具组件还没构造。
+		assistant.updateContent(message);
+		const before = renderText(assistant);
+		assert.match(before.join("\n"), /bash×1/, `计数应先涨: ${before}`);
+		assert.ok(
+			!before.some((line) => line.startsWith("↳")),
+			`组件未到不该有槽位卡: ${before}`,
+		);
+
+		const bash = tool("bash", "b1", { command: "echo-early" });
+		bash.updateDisplay?.();
+		const after = renderText(assistant);
+		const slot = after.find((line) => line.startsWith("↳"));
+		assert.ok(slot?.includes("echo-early"), `组件到达后要补画槽位: ${after}`);
+		assert.deepEqual(renderText(bash), [], "槽位接管后外层不再单独成行");
+
+		bash.args = { command: "echo-late" };
+		bash.updateDisplay?.();
+		const updated = renderText(assistant);
+		assert.ok(
+			updated.some((line) => line.startsWith("↳") && line.includes("echo-late")),
+			`参数更新后槽位要跟着换: ${updated}`,
+		);
+	} finally {
+		restore();
 	}
 });
 

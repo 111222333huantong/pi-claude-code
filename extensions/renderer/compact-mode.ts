@@ -1196,6 +1196,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		liveSlotToolIds: Set<string>;
 		/** 收尾后的静默期截止时间戳；期间仍按围观态渲染，到点才收拢。 */
 		settleUntil?: number;
+		/** 消息已有 toolCall、工具组件还没到：等它一 updateDisplay 就重画槽位。 */
+		pendingLiveTool?: boolean;
 		foldTimer?: ReturnType<typeof setTimeout>;
 		/** 回合挂钟起点，保证 Running 时长连续递增。 */
 		startedAt: number;
@@ -1581,10 +1583,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	const syncTailForTool = (toolCallId: string): void => {
 		if (!toolCallId) return;
 		for (const round of [activeRound, ...pendingFoldRounds]) {
-			if (round?.tail && roundToolCallIds(round).has(toolCallId)) {
-				syncTailPosition(round);
-				return;
-			}
+			if (!round || !roundToolCallIds(round).has(toolCallId)) continue;
+			// 槽位是在消息更新时画的，当时工具组件还不存在：组件到了就补上。
+			// 参数流式更新也走这里，槽位卡跟着换内容。
+			if (round.pendingLiveTool || roundLive(round)) renderRound(round);
+			else if (round.tail) syncTailPosition(round);
+			return;
 		}
 	};
 
@@ -1728,6 +1732,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		let runningTool: any;
 		let lastTool: any;
+		let missingTool = false;
 		for (const [, message] of round.messages) {
 			for (const item of Array.isArray(message?.content) ? message.content : []) {
 				if (item?.type !== "toolCall" || typeof item.id !== "string") continue;
@@ -1736,11 +1741,17 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				if (OUTER_TOOLS.has(String(tool?.toolName ?? item.name ?? ""))) continue;
 				round.liveSlotToolIds.add(item.id);
 				liveSlotToolIds.add(item.id);
-				if (!tool) continue;
+				// pi 的 message_update 先 updateContent 再建工具组件：这一帧计数已经算上，
+				// 组件要等 updateDisplay 才能进槽位。记下来，组件一到就补画。
+				if (!tool) {
+					missingTool = true;
+					continue;
+				}
 				lastTool = tool;
 				if (isRunningTool(tool)) runningTool = tool;
 			}
 		}
+		round.pendingLiveTool = missingTool;
 		// 槽位单块：活动思考最新；否则本回合最近的工具（运行中原位增长，完成也留着）。
 		const slotTool = thinkingKids.length > 0 ? undefined : (runningTool ?? lastTool);
 		const cardItems: Array<{ child?: any; tool?: any }> = slotTool
@@ -1795,6 +1806,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		for (const id of round.liveSlotToolIds) liveSlotToolIds.delete(id);
 		round.liveSlotToolIds.clear();
+		// pendingLiveTool 留给 renderRoundLive 重算：这里清掉的话，组件刚到的那次
+		// 补画会把自己的触发条件抹掉，槽位仍是空的。
 
 		for (const [component, message] of round.messages) {
 			component.lastMessage = message;
@@ -2152,8 +2165,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 	patch.toolInstalledUpdateDisplay = function (this: any) {
 		const id = String(this.toolCallId ?? "");
-		if (patch.active && config.mode === "compact" && expandedRoundToolIds.has(id)) {
-			// 用户点开的保留展开；其余（含全局展开被收回的）继续强制折叠。
+		if (
+			patch.active &&
+			config.mode === "compact" &&
+			(expandedRoundToolIds.has(id) || liveSlotToolIds.has(id))
+		) {
+			// 用户点开的保留展开；其余（含全局展开、live 槽位接管的）继续强制折叠。
+			// 槽位卡在消息更新时就接管了 id，组件后到时 setExpanded 会把它翻开，外层多出一张卡。
 			if (this.expanded !== true) explicitRoundToolIds.delete(id);
 			else if (!explicitRoundToolIds.has(id)) this.expanded = false;
 		}

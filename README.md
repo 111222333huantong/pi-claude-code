@@ -116,7 +116,6 @@ pi -e .              # 只跑一次，不改 settings.json
 
 | 扩展                                     | 用途                                             |
 | ---------------------------------------- | ------------------------------------------------ |
-| `npm:@ff-labs/pi-fff`                    | 模糊文件与内容检索（fffind / ffgrep）            |
 | `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
 | `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
 

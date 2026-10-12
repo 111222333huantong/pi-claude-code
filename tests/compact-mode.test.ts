@@ -1807,7 +1807,7 @@ test("compact 展开卡：助手文本排在 thinking 前面，不被思考块�
 	}
 });
 
-test("compact 面板收起后还原展开前的视口位置", () => {
+test("compact 面板收起后重钉视口，不跳回展开前的位置", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-viewport-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -1831,7 +1831,6 @@ test("compact 面板收起后还原展开前的视口位置", () => {
 	const hooks = installCompactMode({ writeMetadata });
 	const viewport = { scrollTop: 10, isFollowingEnd: false };
 	const scrollCalls: number[] = [];
-	let endCalls = 0;
 	setToolMouseTui({
 		getPrimaryScrollView: () => ({
 			get scrollTop() {
@@ -1843,10 +1842,6 @@ test("compact 面板收起后还原展开前的视口位置", () => {
 			scrollTo(next: number) {
 				viewport.scrollTop = next;
 				scrollCalls.push(next);
-			},
-			scrollToEnd() {
-				endCalls++;
-				viewport.isFollowingEnd = true;
 			},
 		}),
 	});
@@ -1864,20 +1859,21 @@ test("compact 面板收起后还原展开前的视口位置", () => {
 		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
 
 		anchor.setExpanded(true);
-		// 展开后用户滚到别处：收起要回到展开前的偏移，不留在被撞高的位置。
+		// 展开后用户滚到别处：收起保持当前位置，不回跳展开前偏移（面板在摘要行之下，
+		// 删除只影响更低处，摘要行原地不动）。
 		viewport.scrollTop = 40;
 		anchor.setExpanded(false);
-		assert.deepEqual(scrollCalls, [10], "收起应回到展开前的滚动偏移");
-		assert.equal(viewport.scrollTop, 10);
+		assert.deepEqual(scrollCalls, [40], "收起应保持当前滚动偏移");
+		assert.equal(viewport.scrollTop, 40);
 
-		// 展开前就在底部：收起交回官方 follow，而不是回到旧偏移。
+		// 再次展开收起：同一入口重钉一次，不残留快照。
 		viewport.scrollTop = 120;
 		viewport.isFollowingEnd = true;
 		anchor.setExpanded(true);
 		viewport.scrollTop = 200;
 		viewport.isFollowingEnd = false;
 		anchor.setExpanded(false);
-		assert.equal(endCalls, 1, "展开前跟随底部时收起应交回 follow");
+		assert.deepEqual(scrollCalls, [40, 200], "第二次收起同样保持当前位置");
 	} finally {
 		setToolMouseTui(null);
 		hooks.shutdown();

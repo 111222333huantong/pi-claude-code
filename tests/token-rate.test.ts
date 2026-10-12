@@ -189,10 +189,7 @@ describe("token rate", { concurrency: false }, () => {
 				ctx,
 			);
 			assert.equal(totalTokens(), 180);
-			assert.ok(
-				displayTokenRate("live") <= 100,
-				`live rate recounted cumulative usage: ${displayTokenRate("live")}`,
-			);
+			assert.equal(displayTokenRate("live"), 80);
 		} finally {
 			Date.now = originalNow;
 			await events.get("turn_end")?.({}, ctx);

@@ -76,7 +76,7 @@ test("model chip joins effort with a circle instead of a separator dot", () => {
 	const color = (text: string) => `{think}${text}{/}`;
 	assert.equal(
 		modelChip(theme, "claude-sonnet", "high", color),
-		"{accent}claude-sonnet{/} {think}\u25d1{/} {dim}high{/}",
+		"{accent}claude-sonnet{/} {think}\u25d5 high{/}",
 	);
 	assert.equal(modelChip(theme, "claude-sonnet", "off", color), "{accent}claude-sonnet{/}");
 });

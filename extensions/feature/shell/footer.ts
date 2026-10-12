@@ -53,13 +53,16 @@ export function footerGlyphs(nerdIcons: boolean): { git: string; cache: string; 
 		: { git: "", cache: "", mcp: "" };
 }
 
-/** 思考等级的填充圆标：等级越高填得越满。 */
+/**
+ * 思考等级的填充圆标：等级越高填得越满。
+ * 全部取自同一圆径的几何圆，避开占位虚线圆和偏小的半圆。
+ */
 const EFFORT_SYMBOL: Record<string, string> = {
-	minimal: "\u25cc",
-	low: "\u25cb",
+	minimal: "\u25cb",
+	low: "\u25ce",
 	medium: "\u25d4",
-	high: "\u25d1",
-	xhigh: "\u25d5",
+	high: "\u25d5",
+	xhigh: "\u25c9",
 	max: "\u25cf",
 };
 
@@ -72,7 +75,7 @@ export function modelChip(
 ): string {
 	const symbol = EFFORT_SYMBOL[level];
 	if (!symbol) return theme.fg("accent", modelLabel);
-	return `${theme.fg("accent", modelLabel)} ${thinkingColor(symbol)} ${theme.fg("dim", level)}`;
+	return `${theme.fg("accent", modelLabel)} ${thinkingColor(`${symbol} ${level}`)}`;
 }
 
 /** git 状态符号按职能分色：冲突/落后 error，修改 warning，未跟踪 muted，领先 success。 */

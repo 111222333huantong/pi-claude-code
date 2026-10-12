@@ -186,9 +186,9 @@ export default function (pi: ExtensionAPI): void {
 			evt.type === "text_start" ||
 			evt.type === "toolcall_start"
 		) {
-			// TTFT 的首块含 toolcall_start：模型直接发起 tool call（thinking/text 省略）时也算首 token
+			// TTFT 的首块含 toolcall_start：模型直接发起 tool call（thinking/text 省略）时也算首 token。
+			// 分段锚点只在 turn_start 重置。这里再重置会把累计 usage.output 当成新的首报。
 			markFirstToken();
-			startMessageSegment();
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "thinking_delta" || evt.type === "text_delta") {
 			if (typeof evt.delta === "string") sampleTokenDelta(evt.delta);

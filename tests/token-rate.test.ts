@@ -14,6 +14,7 @@ import {
 	resetTokenRate,
 	resumeTokenRate,
 	sampleTokenDelta,
+	totalTokens,
 } from "../extensions/feature/shell/token-rate.ts";
 
 initTheme("dark");
@@ -157,5 +158,45 @@ describe("token rate", { concurrency: false }, () => {
 		// 收尾，避免泄漏给同进程的其它测试文件。
 		await events.get("turn_end")?.({}, ctx);
 		await events.get("agent_end")?.({}, ctx);
+	});
+
+	test("later content blocks do not recount cumulative usage into the live window", async () => {
+		const { events, ctx } = install();
+		const originalNow = Date.now;
+		let now = 1_000;
+		Date.now = () => now;
+		try {
+			await events.get("before_agent_start")?.({}, ctx);
+			await events.get("turn_start")?.({ timestamp: 1_000 }, ctx);
+			now = 2_000;
+			await events.get("message_update")?.(
+				{
+					assistantMessageEvent: {
+						type: "thinking_start",
+						partial: { usage: { output: 100 } },
+					},
+				},
+				ctx,
+			);
+			now = 3_000;
+			await events.get("message_update")?.(
+				{
+					assistantMessageEvent: {
+						type: "text_start",
+						partial: { usage: { output: 180 } },
+					},
+				},
+				ctx,
+			);
+			assert.equal(totalTokens(), 180);
+			assert.ok(
+				displayTokenRate("live") <= 100,
+				`live rate recounted cumulative usage: ${displayTokenRate("live")}`,
+			);
+		} finally {
+			Date.now = originalNow;
+			await events.get("turn_end")?.({}, ctx);
+			await events.get("agent_end")?.({}, ctx);
+		}
 	});
 });

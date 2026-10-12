@@ -28,7 +28,7 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
-import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
+import { setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	renderRichToolResult,

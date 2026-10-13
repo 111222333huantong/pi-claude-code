@@ -101,6 +101,12 @@ function footerTokenRateModeDescription(mode: FooterTokenRateMode): string {
 		: "Average over the whole user prompt (avg), including tool waits. Stays until the next prompt.";
 }
 
+function footerTokenRateTtftDescription(enabled: boolean): string {
+	return enabled
+		? "Append time to first token, e.g. (TTFT: 812ms) or (TTFT: 1.2s). Turn off to show the rate only."
+		: "Time to first token hidden. The rate chip shows tok/s only.";
+}
+
 function footerGitStatsDescription(mode: FooterGitStatsMode): string {
 	return mode === "branch"
 		? "Net changes since the merge base, including uncommitted edits. Base: origin/HEAD, then local main/master. Untracked files excluded; unavailable stats hidden."
@@ -758,6 +764,13 @@ export async function showCcstylePanel(
 			currentValue: config.footerTokenRateMode,
 			values: FOOTER_TOKEN_RATE_MODES,
 		};
+		const footerTokenRateTtftSetting = {
+			id: "footerTokenRateTtft",
+			label: "Token rate TTFT",
+			description: footerTokenRateTtftDescription(config.footerTokenRateTtft),
+			currentValue: config.footerTokenRateTtft ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Plugin chips",
@@ -844,6 +857,14 @@ export async function showCcstylePanel(
 				footerTokenRateModeSetting.description = footerTokenRateModeDescription(
 					config.footerTokenRateMode,
 				);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerTokenRateTtft") {
+				const enabled = value === "on";
+				updateConfig({ footerTokenRateTtft: enabled });
+				footerTokenRateTtftSetting.currentValue = enabled ? "on" : "off";
+				footerTokenRateTtftSetting.description = footerTokenRateTtftDescription(enabled);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1067,6 +1088,7 @@ export async function showCcstylePanel(
 					customFooterSetting,
 					footerTokenRateSetting,
 					footerTokenRateModeSetting,
+					footerTokenRateTtftSetting,
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,

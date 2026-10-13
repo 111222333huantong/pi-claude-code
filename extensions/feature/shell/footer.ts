@@ -444,6 +444,7 @@ const createCustomFooterFactory =
 						displayTokenRate(config.footerTokenRateMode),
 						currentTtftMs(),
 						config.footerTokenRateMode,
+						config.footerTokenRateTtft,
 					)
 				: "";
 			const rateChip = rateLabel ? theme.fg("dim", rateLabel) : "";

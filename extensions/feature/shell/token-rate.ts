@@ -182,11 +182,23 @@ export function currentTtftMs(): number {
 	return Math.max(0, firstTokenAt - runStartTime);
 }
 
-/** `avg 1.2k tok/s (TTFT: 812ms)`；无数据显示空串，未出首 token 时无括号段。 */
-export function formatTokenRate(rate: number, ttftMs = 0, mode: TokenRateMode = "average"): string {
+/** 不足 1 秒用毫秒，否则用一位小数的秒。 */
+export function formatTtft(ttftMs: number): string {
+	if (ttftMs < 1000) return `${Math.round(ttftMs)}ms`;
+	return `${(ttftMs / 1000).toFixed(1)}s`;
+}
+
+/** `avg 1.2k tok/s (TTFT: 812ms)`；无数据显示空串，未出首 token 或 showTtft 为 false 时无括号段。 */
+export function formatTokenRate(
+	rate: number,
+	ttftMs = 0,
+	mode: TokenRateMode = "average",
+	showTtft = true,
+): string {
 	if (!Number.isFinite(rate) || rate <= 0) return "";
 	const value = rate >= 1000 ? `${(rate / 1000).toFixed(1)}k` : `${Math.round(rate)}`;
-	const ttft = Number.isFinite(ttftMs) && ttftMs > 0 ? ` (TTFT: ${Math.round(ttftMs)}ms)` : "";
+	const ttft =
+		showTtft && Number.isFinite(ttftMs) && ttftMs > 0 ? ` (TTFT: ${formatTtft(ttftMs)})` : "";
 	const label = mode === "live" ? "live" : "avg";
 	return `${label} ${value} tok/s${ttft}`;
 }

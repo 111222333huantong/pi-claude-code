@@ -81,8 +81,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 
   // footer
   "enableCustomFooter": true,              // 自定义状态栏
-  "footerTokenRate": true,                  // 输出速率芯片；false 隐藏
-  "footerTokenRateMode": "average",         // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
+  "footerTokenRate": true,                 // 输出速率芯片；false 隐藏
+  "footerTokenRateMode": "average",        // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
+  "footerTokenRateTtft": true,             // 速率芯片是否带 TTFT；false 只显示 tok/s
   "footerCurrency": "USD",                 // 底栏费用的显示币种
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本

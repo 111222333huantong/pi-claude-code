@@ -45,52 +45,53 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 ```jsonc
 {
   // style
-  "mode": "on", // on / compact / off
-  "excludeRenderers": [], // tools keeping the native renderer; Agent always keeps its dedicated renderer
+  "mode": "on",                            // on / compact / off
+  "excludeRenderers": [],                  // tools keeping the native renderer; Agent always keeps its dedicated renderer
 
   // features
-  "enableSessionReference": true, // @ session references
-  "enableSubagentAutocomplete": true, // @subagent:[name] completion and delegation hints
-  "enableContextCommand": true, // /context usage check
-  "enableAgentSummary": true, // per-turn tool summary
-  "enableWorkingMessage": true, // Working... bottom token/elapsed
-  "enableAliases": true, // /clear, /exit aliases
+  "enableSessionReference": true,          // @ session references
+  "enableSubagentAutocomplete": true,      // @subagent:[name] completion and delegation hints
+  "enableContextCommand": true,            // /context usage check
+  "enableAgentSummary": true,              // per-turn tool summary
+  "enableWorkingMessage": true,            // Working... bottom token/elapsed
+  "enableAliases": true,                   // /clear, /exit aliases
 
   // ui
-  "expandedInputMaxLines": 5, // expanded tool Input lines; overflow shows a footer hint
-  "expandedOutputMaxLines": 10, // expanded tool Output lines; overflow shows a footer hint
-  "expandedPreviewMaxLines": 40, // max lines for expanded TaskList bodies (expanded diffs always show all)
+  "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
+  "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
+  "expandedPreviewMaxLines": 40,           // max lines for expanded TaskList bodies (expanded diffs always show all)
   "expandedCardBackground": "userMessageBg", // expanded card background slot: userMessageBg (same as user prompts) / toolPendingBg (neutral) etc.
-  "toolLabelClip": 0, // tool summary path/command clip length; 0 = fit width
-  "showStartupHeader": true, // startup header (logo + tips) toggle
-  "stickyUserMessage": true, // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
+  "toolLabelClip": 0,                      // tool summary path/command clip length; 0 = fit width
+  "showStartupHeader": true,               // startup header (logo + tips) toggle
+  "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
 
   // diff
-  "diffViewMode": "auto", // layout: auto / split / unified
-  "diffIndicatorMode": "bars", // change indicators: bars / classic / none
-  "diffSplitMinWidth": 120, // min terminal width for side-by-side columns
-  "editDiffCollapsedLines": 24, // edit collapse lines; 0 = change-count summary only
-  "writeDiffCollapsedLines": 0, // write collapse lines; 0 = creation summary only
-  "diffWordWrap": true, // wrap long diff lines
+  "diffViewMode": "auto",                  // layout: auto / split / unified
+  "diffIndicatorMode": "bars",             // change indicators: bars / classic / none
+  "diffSplitMinWidth": 120,                // min terminal width for side-by-side columns
+  "editDiffCollapsedLines": 24,            // edit collapse lines; 0 = change-count summary only
+  "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = creation summary only
+  "diffWordWrap": true,                    // wrap long diff lines
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
-  "previewLines": 3, // preview lines; 0 hides
-  "animationIntervalMs": 90, // title animation interval (ms)
-  "dimThinkingText": false, // dim thinking body text
+  "previewLines": 3,                       // preview lines; 0 hides
+  "animationIntervalMs": 90,               // title animation interval (ms)
+  "dimThinkingText": false,                // dim thinking body text
 
   // footer
-  "enableCustomFooter": true, // custom status bar
-  "footerTokenRate": true, // output rate chip; false hides it
-  "footerTokenRateMode": "average", // average: whole-prompt avg; live: trailing 1s rate
-  "footerCurrency": "USD", // display currency for the footer cost
-  "footerCurrencyRate": null, // display units per 1 cost unit; null changes the symbol only
-  "footerNerdIcons": true, // Nerd Font glyphs for git/cache; false = plain text
-  "footerGitStatsMode": "working", // working (default): uncommitted; branch: cumulative net changes
-  "footerHiddenKeys": [], // hidden plugin chip keys
-  "footerLine1Keys": ["pi-usage"], // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
-  "footerLine2Keys": [], // line2 plugin chip order (after cwd/git)
-  "footerLine3Keys": [], // line3 overflow slot; painted only when a chip is visible
+  "enableCustomFooter": true,              // custom status bar
+  "footerTokenRate": true,                 // output rate chip; false hides it
+  "footerTokenRateMode": "average",        // average: whole-prompt avg; live: trailing 1s rate
+  "footerTokenRateTtft": true,             // append TTFT to the rate chip; false shows tok/s only
+  "footerCurrency": "USD",                 // display currency for the footer cost
+  "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
+  "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
+  "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
+  "footerHiddenKeys": [],                  // hidden plugin chip keys
+  "footerLine1Keys": ["pi-usage"],         // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
+  "footerLine2Keys": [],                   // line2 plugin chip order (after cwd/git)
+  "footerLine3Keys": [],                   // line3 overflow slot; painted only when a chip is visible
 }
 ```
 

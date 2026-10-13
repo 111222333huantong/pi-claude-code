@@ -48,6 +48,10 @@ describe("token rate", { concurrency: false }, () => {
 		assert.equal(formatTokenRate(1200, 812.4), "avg 1.2k tok/s (TTFT: 812ms)");
 		assert.equal(formatTokenRate(1200, -5), "avg 1.2k tok/s");
 		assert.equal(formatTokenRate(1200, 812, "live"), "live 1.2k tok/s (TTFT: 812ms)");
+		assert.equal(formatTokenRate(1200, 812, "average", false), "avg 1.2k tok/s");
+		assert.equal(formatTokenRate(1200, 999.4), "avg 1.2k tok/s (TTFT: 999ms)");
+		assert.equal(formatTokenRate(1200, 1000), "avg 1.2k tok/s (TTFT: 1.0s)");
+		assert.equal(formatTokenRate(1200, 12_340), "avg 1.2k tok/s (TTFT: 12.3s)");
 	});
 
 	test("live mode uses the trailing window and holds it through a tool wait", () => {

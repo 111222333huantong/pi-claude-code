@@ -79,6 +79,8 @@ export type Config = {
 	footerTokenRate: boolean;
 	/** average：整段指令墙钟平均；live：最近 1 秒瞬时速率，空档回退平均。 */
 	footerTokenRateMode: FooterTokenRateMode;
+	/** 速率芯片是否带 TTFT。关则只显示速率。 */
+	footerTokenRateTtft: boolean;
 	/** ISO 4217 显示币种。USD 时不换算。 */
 	footerCurrency: string;
 	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
@@ -171,6 +173,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableCustomFooter: true,
 	footerTokenRate: true,
 	footerTokenRateMode: "average",
+	footerTokenRateTtft: true,
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
@@ -307,6 +310,7 @@ export function normalizeConfig(input: unknown): Config {
 			FOOTER_TOKEN_RATE_MODES,
 			DEFAULT_CONFIG.footerTokenRateMode,
 		),
+		footerTokenRateTtft: source.footerTokenRateTtft !== false,
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
@@ -372,6 +376,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
 		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
 		`footerTokenRateMode=${source.footerTokenRateMode}`,
+		`footerTokenRateTtft=${source.footerTokenRateTtft ? "on" : "off"}`,
 		`footerCurrency=${source.footerCurrency}`,
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,

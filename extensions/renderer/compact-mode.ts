@@ -619,17 +619,6 @@ const trackedToolComponents = new Set<any>();
 let hoveredAssistantComponent: any;
 
 /**
- * 活动回合摘要 getter：常驻状态行（pi working row）镜像用。
- * installCompactMode 注册、卸载时清空，直接读 activeRound，不持有回合闭包。
- */
-let compactRunStatusGetter: (() => string | undefined) | undefined;
-
-/** 活动回合的摘要文本（`Running... · 9s, bash×1`）；无活动回合返回 undefined。 */
-export function getCompactRunStatusText(): string | undefined {
-	return compactRunStatusGetter?.();
-}
-
-/**
  * 回合尾行记录：摘要行（live 时连槽位卡）挂成 transcript 容器里回合末尾的
  * 兄弟组件，而不是 anchor 内部。anchor 内部的可变内容一旦被工具/diff 顶出视口
  * 就再也写不进 scrollback（regular 主屏只能差分可视区），运行态 Running 会永久
@@ -1358,12 +1347,6 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		...round.messages.values(),
 		...round.detachedMessages,
 	];
-
-	/** 镜像给常驻状态行的文案：只认当前活动回合（摘要行被顶出视口时由 working-message 取用）。 */
-	compactRunStatusGetter = () => {
-		const round = activeRound;
-		return round?.active ? summarize(roundMessages(round), true, round) || undefined : undefined;
-	};
 
 	const roundToolCallIds = (round: CompactRound): Set<string> => {
 		const ids = new Set<string>();
@@ -2220,7 +2203,6 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		trackedToolComponents.clear();
 		hoveredAssistantComponent = undefined;
 		resetRounds();
-		compactRunStatusGetter = undefined;
 	};
 
 	assistantPrototype.updateContent = patch.assistantInstalled;

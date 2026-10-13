@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import workingMessageExtension from "../extensions/feature/shell/working-message.ts";
-import { config } from "../extensions/config/config.ts";
-import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
-import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-
-initTheme("dark");
 
 function install() {
 	const events = new Map<string, Function>();
@@ -130,86 +123,18 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	assert.match(messages.at(-1) ?? "", /↓ 37 tokens/);
 });
 
-// 摘要行会被外层消息顶出视口：fullscreen 离开底部时才镜像摘要文案。
-test("compact 活动回合：fullscreen 离开底部才镜像摘要，regular 不替换", async () => {
-	const previousMode = config.mode;
-	config.mode = "compact";
-	// 官方 fullscreen 惰性 Proxy：requestRender 每次 get 返回新函数。
-	const tui: any = {
-		mode: "fullscreen",
-		isFollowingOutput: false,
-		get requestRender() {
-			return () => {};
-		},
-	};
-	setToolMouseTui(tui);
-	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
-	try {
-		const message = {
-			role: "assistant",
-			timestamp: 1,
-			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } }],
-		};
-		const assistant = new AssistantMessageComponent(message as any, true) as any;
-		assistant.updateContent(message);
-
-		const { events, messages, ctx } = install();
-		const pushDelta = () =>
-			events.get("message_update")?.(
-				{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "abcd" } },
-				ctx,
-			);
-
-		await events.get("turn_start")?.({}, ctx);
-		const mirrored = messages.at(-1) ?? "";
-		assert.match(
-			mirrored,
-			/^Running\.\.\.(?: · [\d.]+m?s)?, bash×1/,
-			`离开底部时应镜像摘要文案: ${mirrored}`,
+// compact 摘要不再改写 working message：无论是否在底部，都走默认文案。
+test("compact 活动回合不改写 working message", async () => {
+	const { events, messages, ctx } = install();
+	const pushDelta = () =>
+		events.get("message_update")?.(
+			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "abcd" } },
+			ctx,
 		);
-		assert.doesNotMatch(mirrored, /click to show more/, `不带展开入口: ${mirrored}`);
-		assert.doesNotMatch(mirrored, /^Working\.\.\./, `不再走 Pi 默认文案: ${mirrored}`);
 
-		// token 段仍附加在摘要后面；回合时长由摘要行自带，不叠 agent 计时。
-		await pushDelta();
-		const withTokens = messages.at(-1) ?? "";
-		assert.match(withTokens, /bash×1 · ↓ 1 tokens/, `摘要后接 token: ${withTokens}`);
-
-		// 跟回底部：摘要行重新可见，不镜像。
-		tui.isFollowingOutput = true;
-		await pushDelta();
-		assert.match(messages.at(-1) ?? "", /^Working\.\.\. \(↓ \d+ tokens/, "在底部时不镜像");
-
-		// regular：没有“离开底部”信号，即使不在底部也不替换。
-		tui.mode = "regular";
-		tui.isFollowingOutput = false;
-		// 非惰性 Proxy：requestRender 固定，不再每次 get 返回新函数。
-		Object.defineProperty(tui, "requestRender", {
-			value: () => {},
-			configurable: true,
-			writable: true,
-		});
-		await pushDelta();
-		assert.match(messages.at(-1) ?? "", /^Working\.\.\. \(↓ \d+ tokens/, "regular 不替换");
-
-		// 最终回答接手：回合收尾（清空镜像），回到 fullscreen 离开底部也不再显示摘要。
-		assistant.updateContent({
-			role: "assistant",
-			timestamp: 2,
-			content: [{ type: "text", text: "done" }],
-		});
-		tui.mode = "fullscreen";
-		Object.defineProperty(tui, "requestRender", {
-			get: () => () => {},
-			configurable: true,
-		});
-		await pushDelta();
-		assert.match(messages.at(-1) ?? "", /^Working\.\.\. \(↓ \d+ tokens/, "回合结束后回落默认");
-	} finally {
-		hooks.shutdown();
-		setToolMouseTui(null);
-		config.mode = previousMode;
-	}
+	await events.get("turn_start")?.({}, ctx);
+	await pushDelta();
+	assert.match(messages.at(-1) ?? "", /^Working\.\.\. \(↓ \d+ tokens/, "保持默认文案");
 });
 
 // Pi 的 ctx 失效后 getter 会抛错；定时器里逃逸的异常会直接终止 Pi 进程 (#41)。

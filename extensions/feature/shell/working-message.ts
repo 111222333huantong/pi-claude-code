@@ -1,10 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getCompactRunStatusText } from "../../renderer/compact-mode.ts";
-import {
-	fullscreenLazyTui,
-	getToolMouseTui,
-	isFullscreenAtBottom,
-} from "../../renderer/mouse/scroll.ts";
 import { formatDuration, formatTokenCount } from "../../utils/format.ts";
 import {
 	resetTokenRate,
@@ -60,23 +54,10 @@ export default function (pi: ExtensionAPI): void {
 		if (output > 0) recordProviderUsage(output);
 	}
 
-	/**
-	 * 摘要行滚出视口才镜像：仅 fullscreen 且已离开 transcript 底部。
-	 * regular 没有“离开底部”信号（transcript 在终端回滚区），保持 Pi 默认文案。
-	 */
-	function compactMirrorText(): string | undefined {
-		const tui = getToolMouseTui();
-		if (!tui || !fullscreenLazyTui(tui) || isFullscreenAtBottom(tui)) return undefined;
-		return getCompactRunStatusText();
-	}
-
 	function buildWorkingMessage(): string {
 		const parts: string[] = [];
 		const tokens = tokenCount();
 		if (tokens > 0) parts.push(`↓ ${formatTokenCount(tokens)} tokens`);
-		// compact 活动回合且已滚出摘要行：直接用摘要行文案（自带回合时长，不叠 agent 计时）。
-		const compactStatus = compactMirrorText();
-		if (compactStatus) return [compactStatus, ...parts].join(" · ");
 		const elapsed = Date.now() - (agentStartTime || turnStartTime);
 		if (elapsed >= SHOW_TIMER_AFTER_MS || tokens > 0) {
 			// formatDuration 低于 1 秒返回 ""，此处回退 "0s" 保持计时器连续跳动。

@@ -1201,6 +1201,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 	let activeRound: CompactRound | undefined;
 	let roundByComponent = new WeakMap<object, CompactRound>();
+	/** 本 pass 建起的回合（含被收编的）：清扫孤儿尾行的在册名单。 */
+	const liveRounds = new Set<CompactRound>();
 	const expandedRoundToolIds = new Set<string>();
 	/** 用户显式点开的 round 内工具；强制折叠不压回这些 id。 */
 	const explicitRoundToolIds = new Set<string>();
@@ -1259,11 +1261,30 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		pendingFoldRounds.delete(round);
 	};
 
-	/** 结束回合活动态；不做任何重绘。 */
-	const finalizeRound = (round: CompactRound): void => {
+	/** 供采纳为回合边界的 timestamp：必须是看起来像 epoch 毫秒的数（桩数据/秒级会被拒）。 */
+	const isUsableTimestamp = (value: unknown): value is number =>
+		typeof value === "number" &&
+		Number.isFinite(value) &&
+		value >= 1_600_000_000_000 &&
+		value <= Date.now() + 60_000;
+
+	/** 结束回合活动态；不做任何重绘。endTimestamp 用后一段内容的真实时刻收边（回放里
+	 * 同一毫秒完成的 create/finalize 差不出真实耗时）；缺省取回合内消息的最大 timestamp。 */
+	const finalizeRound = (round: CompactRound, endTimestamp?: number): void => {
 		clearFoldTimer(round);
 		round.active = false;
-		if (round.endedAt === undefined) round.endedAt = Date.now();
+		if (round.endedAt === undefined) {
+			let fallback = 0;
+			for (const message of roundMessages(round)) {
+				if (isUsableTimestamp(message?.timestamp) && message.timestamp > fallback) {
+					fallback = message.timestamp;
+				}
+			}
+			round.endedAt = Math.max(
+				round.startedAt,
+				isUsableTimestamp(endTimestamp) ? endTimestamp : (fallback || Date.now()),
+			);
+		}
 		if (activeRound === round) {
 			activeRound = undefined;
 			deps.query?.setCompactSummaryActive?.(false);
@@ -1275,13 +1296,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	 * 结束回合活动态；render=true 时走静默期，延迟 FOLD_SETTLE_MS 再收拢。
 	 * 分组语义不受影响：activeRound 立即让位，新消息不会被并进已收尾的回合。
 	 */
-	const endRound = (round: CompactRound, render = false): void => {
+	const endRound = (round: CompactRound, render = false, endTimestamp?: number): void => {
 		if (!render || !round.active) {
-			finalizeRound(round);
+			finalizeRound(round, endTimestamp);
 			if (render) renderRound(round);
 			return;
 		}
-		finalizeRound(round);
+		finalizeRound(round, endTimestamp);
 		if (round.foldTimer !== undefined) return;
 		round.settleUntil = Date.now() + FOLD_SETTLE_MS;
 		pendingFoldRounds.add(round);
@@ -1462,7 +1483,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	/** 取并入目标；旧回合被用户消息隔开时先收尾（静默期一转场，新回合立即接手）。 */
 	const joinOrCreateRound = (component: any, message: any): CompactRound => {
 		const joinable = joinableActiveRound(component);
-		if (!joinable && activeRound) finishRound(activeRound);
+		if (!joinable && activeRound) finishRound(activeRound, message?.timestamp);
 		return joinable ?? createRound(component, message);
 	};
 
@@ -1640,7 +1661,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 	};
 
-	/** 新建活回合：literal + 激活 + refresh 重建时的旧回合收编。 */
+	/** 新建活回合：起点用消息真实时刻（回放里 Date.now 会把整轮挤在同一毫秒）。 */
 	const createRound = (anchor: any, message: any): CompactRound => {
 		const round: CompactRound = {
 			anchor,
@@ -1649,8 +1670,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			active: true,
 			suppressedToolIds: new Set(),
 			liveSlotToolIds: new Set(),
-			startedAt: Date.now(),
+			startedAt: isUsableTimestamp(message?.timestamp) ? message.timestamp : Date.now(),
 		};
+		liveRounds.add(round);
 		activateRound(round);
 		adoptPriorRound(round, message);
 		return round;
@@ -2014,11 +2036,32 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		ensureRoundTick();
 	};
 
-	const finishRound = (round: CompactRound): void => endRound(round, true);
+	/** 结束回合活动态；render=true 时走静默期，延迟 FOLD_SETTLE_MS 再收拢。 */
+	const finishRound = (round: CompactRound, endTimestamp?: number): void =>
+		endRound(round, true, endTimestamp);
+
+	/**
+	 * 重放/重建结束后的对账：mountedTails 里凡 tail.round 不在本 pass 回合名单的
+	 * 都是没被收编的孤儿（anchor 组件没了、消息换成了新对象、回放顺序错位），
+	 * 就地摘除。收编过的尾行 round 已过户到新 round，不在此列。
+	 */
+	const sweepOrphanTails = (): void => {
+		for (const tail of [...mountedTails]) {
+			const round = tail.round as CompactRound | undefined;
+			if (round && liveRounds.has(round)) continue;
+			removeTailHost(tail);
+			mountedTails.delete(tail);
+			if (round?.anchor && tailByAnchor.get(round.anchor) === tail) {
+				tailByAnchor.delete(round.anchor);
+			}
+			if (round?.tail === tail) round.tail = undefined;
+		}
+	};
 
 	const resetRounds = (): void => {
 		for (const round of [...pendingFoldRounds]) clearFoldTimer(round);
 		activeRound = undefined;
+		liveRounds.clear();
 		roundByComponent = new WeakMap();
 		expandedRoundToolIds.clear();
 		explicitRoundToolIds.clear();
@@ -2088,7 +2131,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					round.messages.delete(this);
 					clearRoundAnchor(this);
 				}
-				if (activeRound) finishRound(activeRound);
+				if (activeRound) finishRound(activeRound, message.timestamp);
 				round = createRound(this, message);
 				roundByComponent.set(this, round);
 			} else if (!round) {
@@ -2097,6 +2140,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				roundByComponent.set(this, round);
 			}
 			round.messages.set(this, message);
+			if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
+				round.startedAt = message.timestamp;
+			}
 			renderRound(round);
 			return undefined;
 		}
@@ -2111,17 +2157,17 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				clearRoundAnchor(this);
 				round.detachedMessages.push(previousMessage);
 				roundByComponent.delete(this);
-				finishRound(round);
+				finishRound(round, message.timestamp);
 				return renderAssistantWithoutThinking(this, message);
 			}
 			if (round) {
 				// 围观态下 anchor 还挂着槽位卡，必须重绘才能收回。
-				endRound(round, true);
+				endRound(round, true, message.timestamp);
 				roundByComponent.delete(this);
 				clearRoundAnchor(this);
 				return passThroughAssistant(this, message);
 			}
-			if (activeRound) finishRound(activeRound);
+			if (activeRound) finishRound(activeRound, message.timestamp);
 			return renderAssistantWithoutThinking(this, message);
 		}
 
@@ -2133,6 +2179,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				roundByComponent.set(this, round);
 			}
 			round.messages.set(this, message);
+			if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
+				round.startedAt = message.timestamp;
+			}
 			renderRound(round);
 			return undefined;
 		}
@@ -2140,7 +2189,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		// 无可见内容的 abort/error/length：直接外层状态行，并结束进行中的回合。
 		const loneStatus = messageStopStatus(message);
 		if (loneStatus) {
-			if (activeRound) finishRound(activeRound);
+			if (activeRound) finishRound(activeRound, message.timestamp);
 			self.contentContainer.clear();
 			appendStopStatus(this, loneStatus);
 			return undefined;
@@ -2265,6 +2314,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			if (config.mode === "compact") syncGlobalExpanded(ctx);
 			else hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
+			sweepOrphanTails();
 		},
 		refresh() {
 			if (!patch.active) return;
@@ -2272,6 +2322,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			patch.assertAssistantOwnership();
 			if (config.mode !== "compact") hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
+			sweepOrphanTails();
 		},
 		assertOwnership() {
 			if (!patch.active) return;

@@ -536,6 +536,52 @@ test("write metadata is bounded, clearable, and failures do not retain entries",
 	assert.equal(store.get("failed"), undefined);
 });
 
+test("a completed write reports UTF-8 bytes and keeps metadata after abort", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-abort-"));
+	const path = join(directory, "target.txt");
+	const store = new WriteExecutionMetadataStore();
+	let abortReads = 0;
+	const signal = {
+		get aborted() {
+			abortReads++;
+			return abortReads >= 4;
+		},
+	} as AbortSignal;
+	try {
+		await writeFile(path, "before");
+		const result = await executeWriteWithMetadata(
+			store,
+			"completed",
+			{ path, content: "你好" },
+			signal,
+			directory,
+		);
+		assert.equal(await readFile(path, "utf8"), "你好");
+		assert.equal(store.get("completed")?.previousContent, "before");
+		assert.match(result.content[0]?.text ?? "", /6 bytes/);
+		assert.equal(abortReads, 3);
+
+		const empty = await executeWriteWithMetadata(
+			store,
+			"empty",
+			{ path, content: "" },
+			undefined,
+			directory,
+		);
+		const ascii = await executeWriteWithMetadata(
+			store,
+			"ascii",
+			{ path, content: "ab" },
+			undefined,
+			directory,
+		);
+		assert.match(empty.content[0]?.text ?? "", /0 bytes/);
+		assert.match(ascii.content[0]?.text ?? "", /2 bytes/);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test("default-mode write collapsed uses title stats and created hint", () => {
 	const previousMode = config.mode;
 	const store = new WriteExecutionMetadataStore();

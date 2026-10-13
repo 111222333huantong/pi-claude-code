@@ -1268,6 +1268,97 @@ test("compact 尾行：只有 edit/write 的回合不挂摘要行", async () => 
 	}
 });
 
+test("compact resume：重放已结束的回合直接落成 Ran for，不停留在 Running", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "checking" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "ls" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		// resume 重放：构造时 updateContent 不带 isStreaming，消息已是终态。
+		anchor.updateContent(message);
+		// 回放进行中不收尾：还有后续消息要并进同一回合。
+		assert.match(renderText(chat).join("\n"), /Running\.\.\..*bash×1/);
+		// 回放结束（session_start 延迟一拍）才收尾最后一条。
+		hooks.settleReplayedRound();
+		const rendered = renderText(chat).join("\n");
+		assert.doesNotMatch(rendered, /Running\.\.\./, `重放不该停在进行中: ${rendered}`);
+		assert.match(rendered, /Ran for .+bash×1/, `重放应直接落成已结束: ${rendered}`);
+
+		// 流式中的消息（pending）不受影响，仍显示 Running。
+		const live = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "pending",
+			content: [
+				{ type: "text", text: "next" },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "pwd" } },
+			],
+		};
+		const liveAnchor = new AssistantMessageComponent(live as any, true) as any;
+		chat.addChild(liveAnchor);
+		liveAnchor.updateContent(live);
+		assert.match(renderText(chat).join("\n"), /Running\.\.\..*bash×1/);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：带正文的工具消息各起回合，无正文续接才并入上一回合", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const first = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "one" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+			],
+		};
+		const second = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "two" },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "pwd" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(first as any, true) as any;
+		const follow = new AssistantMessageComponent(second as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "ls" }));
+		anchor.updateContent(first);
+		chat.addChild(follow);
+		chat.addChild(tool("bash", "b2", { command: "pwd" }));
+		follow.updateContent(second);
+
+		hooks.settleReplayedRound();
+		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
+		// 每条消息都带可见正文 → 各自是自己的 anchor，两个 bash 各成一行（截图语义）。
+		assert.deepEqual(summaries.length, 2, `两条带正文的消息应各起一行: ${summaries}`);
+		assert.ok(summaries.every((line) => /bash×1/.test(line)), `每行各记一次 bash: ${summaries}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
 test("compact 尾行：运行中外来提示行压在计数行之上，收尾后落到摘要之下", async () => {
 	const { restore } = installHooks();
 	const chat = new Container() as any;

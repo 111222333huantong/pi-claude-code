@@ -250,6 +250,9 @@ export default function (
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
 		setTimeout(() => syncCompactMode(ctx), 0);
+		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
+		// 否则它没有后续消息，摘要行会停在 Running。
+		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
 		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
 	});
 

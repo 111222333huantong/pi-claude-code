@@ -592,6 +592,11 @@ export type CompactModeHooks = {
 	assertOwnership(): void;
 	/** 重新渲染包含指定 toolCallId 的 assistant 消息（思考收尾时刷新）。 */
 	refreshToolCallMessage(toolCallId: string | undefined): void;
+	/**
+	 * 收尾 resume 重放留下的活动回合。重放是同步的，回合之间靠下一条消息收口，
+	 * 只有最后一条没有后续消息，会停在 Running。
+	 */
+	settleReplayedRound(): void;
 	shutdown(): void;
 };
 
@@ -2286,6 +2291,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					trackedAssistantComponents.delete(component);
 				}
 			}
+		},
+		settleReplayedRound() {
+			if (!patch.active || config.mode !== "compact") return;
+			const round = activeRound;
+			if (!round) return;
+			finalizeRound(round); // clears activeRound — capture it first
+			renderRound(round);
 		},
 		shutdown() {
 			patch.dispose();

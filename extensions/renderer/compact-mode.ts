@@ -1359,6 +1359,26 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	/**
+	 * 摘要行有东西可汇总才挂：普通工具（edit/write/ask 之外）或非空思考。
+	 * 只剩外层卡的回合不挂——那些卡各自能展开，空摘要点开只会跳位。
+	 */
+	const roundHasSummaryContent = (round: CompactRound): boolean => {
+		for (const message of roundMessages(round)) {
+			for (const item of Array.isArray(message?.content) ? message.content : []) {
+				if (item?.type === "thinking" && String(item.thinking ?? "").trim()) return true;
+				if (
+					item?.type === "toolCall" &&
+					typeof item.name === "string" &&
+					!OUTER_TOOLS.has(item.name)
+				) {
+					return true;
+				}
+			}
+		}
+		return false;
+	};
+
+	/**
 	 * anchor 所在的 transcript 容器（pi chatContainer）。
 	 * 优先走分组补丁在 addChild 时挂的父指针；没有则沿 tui 组件树找直属父容器。
 	 */
@@ -1813,6 +1833,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 
 		if (round.anchor.expanded === true) {
+			// 没有可汇总内容的回合不进展开态：摘要行不存在，展开只会把正文搬回回合开头。
+			if (!roundHasSummaryContent(round)) {
+				for (const member of round.messages.keys()) member.expanded = false;
+				round.anchor.expanded = false;
+			}
+		}
+		if (round.anchor.expanded === true) {
 			// 展开内容留在摘要行那个位置：回合最后一个成员（含 write/edit）之后。
 			// 放进 anchor 内部会跳到回合起点，盖到中间的 write/edit 上面。
 			// anchor 未挂进 transcript 时没有这个位置，退回 anchor 内部。
@@ -1955,8 +1982,9 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		for (const [component, message] of round.messages) {
 			if (component === round.anchor) {
 				renderAssistantWithoutThinking(component, message);
-				// 空摘要不挂行（getter 在 Running 启动瞬间也可能短暂为空）
-				if (summary || round.active) {
+				// 空摘要不挂行（getter 在 Running 启动瞬间也可能短暂为空）。
+				// 只剩外层卡的回合同样不挂：摘要行没有可汇总的内容。
+				if ((summary || round.active) && (round.active || roundHasSummaryContent(round))) {
 					mountRoundTail(round, (identity) => [
 						compactAssistantLineComponent(identity, getSummary, deps.query),
 					]);

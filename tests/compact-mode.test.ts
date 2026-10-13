@@ -1220,6 +1220,54 @@ test("compact 尾行：摘要行挂 transcript 容器回合末尾，新工具追
 	}
 });
 
+test("compact 尾行：只有 edit/write 的回合不挂摘要行", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "" },
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "e2", name: "edit", arguments: { path: "b.ts" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const editA = tool("edit", "e1", { path: "a.ts" });
+		const editB = tool("edit", "e2", { path: "b.ts" });
+		chat.addChild(anchor);
+		chat.addChild(editA);
+		chat.addChild(editB);
+		anchor.updateContent(message);
+
+		// 运行中摘要行仍在：它承载 Running... 状态。
+		assert.ok(
+			chat.children.some((child: any) => /Running\.\.\./.test(renderText(child).join("\n"))),
+			"运行中应挂摘要行",
+		);
+
+		// steering / 下一条消息把回合收尾：没有普通工具也没有思考，摘要行撤掉。
+		const next = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "next" }],
+		};
+		const follow = new AssistantMessageComponent(next as any, true) as any;
+		chat.addChild(follow);
+		follow.updateContent(next);
+		await settleFold();
+		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
+		assert.deepEqual(summaries, [], `只剩外层卡的回合不应有摘要行: ${summaries}`);
+		assert.equal(chat.children.includes(editA), true);
+		assert.equal(chat.children.includes(editB), true);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
 test("compact 尾行：运行中外来提示行压在计数行之上，收尾后落到摘要之下", async () => {
 	const { restore } = installHooks();
 	const chat = new Container() as any;

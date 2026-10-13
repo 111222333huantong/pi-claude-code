@@ -7,9 +7,11 @@ import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agen
 import {
 	capParts,
 	collectContextBreakdown,
+	copyButtonHitbox,
 	escCloseHitbox,
 	hasActiveTextPreview,
 	resolveUsedTokens,
+	setPreviewCopyImpl,
 	showTextPreview,
 } from "../extensions/feature/context.ts";
 
@@ -34,30 +36,39 @@ test("context breakdown separates tools, results, and conversation without infla
 		}),
 		getSystemPrompt: () => "s".repeat(200),
 		sessionManager: {
-			buildContextEntries: () => [
-				{ type: "message", message: { role: "user", content: "uuuuuuuu", timestamp: 0 } },
-				{
-					type: "message",
-					message: {
-						role: "assistant",
-						content: [
-							{ type: "text", text: "aaaa" },
-							{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
+			buildSessionProjection: () => ({
+				entries: [
+					{
+						sourceEntry: { type: "message" },
+						messages: [
+							{
+								role: "system",
+								content: "",
+								sections: { preamble: "s".repeat(200) },
+							},
+							{ role: "user", content: "uuuuuuuu", timestamp: 0 },
+							{
+								role: "assistant",
+								content: [
+									{ type: "text", text: "aaaa" },
+									{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
+								],
+							},
+							{
+								role: "toolResult",
+								toolCallId: "1",
+								toolName: "read",
+								content: "rrrrrrrr",
+								timestamp: 0,
+							},
 						],
 					},
-				},
-				{
-					type: "message",
-					message: {
-						role: "toolResult",
-						toolCallId: "1",
-						toolName: "read",
-						content: "rrrrrrrr",
-						timestamp: 0,
+					{
+						sourceEntry: { type: "compaction" },
+						messages: [{ role: "compactionSummary", summary: "ssss", timestamp: 0 }],
 					},
-				},
-				{ type: "compaction", summary: "ssss" },
-			],
+				],
+			}),
 		},
 	} as any;
 	const tools = [
@@ -92,7 +103,7 @@ test("context breakdown separates tools, results, and conversation without infla
 	assert.doesNotMatch(breakdown.previews.skills, /hidden/);
 	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
 	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
-	assert.equal(breakdown.previews.systemPrompt, "s".repeat(200));
+	assert.match(breakdown.previews.systemPrompt, /"preamble": "s{200}"/);
 	assert.match(breakdown.previews.tools, /Definition: read/);
 	assert.match(breakdown.previews.tools, /"parameters"/);
 	assert.doesNotMatch(breakdown.previews.tools, /Call: read/);
@@ -102,7 +113,7 @@ test("context breakdown separates tools, results, and conversation without infla
 	assert.match(breakdown.previews.contextFiles, /aaaa/);
 	assert.match(breakdown.previews.contextFiles, /Assistant tool call: read/);
 	assert.match(breakdown.previews.contextFiles, /"path": "a"/);
-	assert.match(breakdown.previews.contextFiles, /Compaction/);
+	assert.match(breakdown.previews.contextFiles, /compactionSummary/);
 
 	const fitted = capParts(parts, parts.reduce((sum, part) => sum + part.tokens, 0) + 10);
 	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
@@ -129,7 +140,7 @@ test("context breakdown attributes embedded memory and skills once", () => {
 	const memory = "cccc";
 	const skills = [{ name: "ok", description: "desc", filePath: "/v" }];
 	const skillsText = formatSkillsForPrompt(skills as any).trim();
-	const systemPrompt = `base\n<project_instructions>\n${memory}\n</project_instructions>\n${skillsText}`;
+	const chunk = `<project_instructions path="AGENTS.md">\n${memory}\n</project_instructions>`;
 	const ctx = {
 		getSystemPromptOptions: () => ({
 			cwd: "/repo",
@@ -137,18 +148,41 @@ test("context breakdown attributes embedded memory and skills once", () => {
 			contextFiles: [{ path: "AGENTS.md", content: memory }],
 			skills,
 		}),
-		getSystemPrompt: () => systemPrompt,
-		sessionManager: { buildContextEntries: () => [] },
+		sessionManager: {
+			buildSessionProjection: () => ({
+				entries: [
+					{
+						sourceEntry: { type: "message" },
+						messages: [
+							{
+								role: "system",
+								content: "",
+								sections: {
+									preamble: "base",
+									project_context: `<project_context>\n${chunk}\n</project_context>`,
+									skills: `<skills>\n${skillsText}\n</skills>`,
+								},
+							},
+						],
+					},
+				],
+			}),
+		},
 	} as any;
 
 	const breakdown = collectContextBreakdown(ctx, []);
 	const systemTokens = breakdown.parts.find((part) => part.label === "System prompt")?.tokens ?? -1;
 	const memoryTokens = breakdown.parts.find((part) => part.label === "Memory")?.tokens ?? -1;
 	const skillsTokens = breakdown.parts.find((part) => part.label === "Skills")?.tokens ?? -1;
-	assert.equal(memoryTokens, Math.ceil(memory.length / 4));
+	assert.equal(memoryTokens, Math.ceil(chunk.length / 4));
 	assert.equal(skillsTokens, Math.ceil(skillsText.length / 4));
-	assert.equal(systemTokens + memoryTokens + skillsTokens, Math.ceil(systemPrompt.length / 4));
-	assert.ok(systemTokens < Math.ceil(systemPrompt.length / 4));
+	const sectionsText = [
+		"base",
+		`<project_context>\n${chunk}\n</project_context>`,
+		`<skills>\n${skillsText}\n</skills>`,
+	].join("");
+	assert.equal(systemTokens + memoryTokens + skillsTokens, Math.ceil(sectionsText.length / 4));
+	assert.ok(systemTokens < Math.ceil(sectionsText.length / 4));
 });
 
 test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {
@@ -170,6 +204,18 @@ test("capParts never produces negative tokens when estimates exceed usage", () =
 		5,
 	);
 	assert.ok(fitted.every((part) => part.tokens >= 0));
+});
+
+test("copyButtonHitbox sits one space left of [esc] on the title row", () => {
+	assert.deepEqual(copyButtonHitbox({ left: 8, top: 1, width: 64 }), {
+		row: 3,
+		startCol: 60,
+		endCol: 65,
+	});
+	const esc = escCloseHitbox({ left: 8, top: 1, width: 64 });
+	const copy = copyButtonHitbox({ left: 8, top: 1, width: 64 });
+	assert.equal(copy.row, esc.row);
+	assert.ok(copy.endCol < esc.startCol);
 });
 
 test("escCloseHitbox sits 5 columns wide at the title row's right edge", () => {
@@ -195,17 +241,13 @@ test("escCloseHitbox sits 5 columns wide at the title row's right edge", () => {
 function textPreviewHarness(
 	theme: any = { fg: (_color: string, text: string) => text, bold: (text: string) => text },
 	onMount?: (component: any) => void,
+	tui: any = { terminal: { columns: 80, rows: 24 }, requestRender() {} },
 ): any {
 	let component: any;
 	return {
 		custom: async (factory: any) =>
 			await new Promise<void>((resolve) => {
-				component = factory(
-					{ terminal: { columns: 80, rows: 24 }, requestRender() {} },
-					theme,
-					null,
-					resolve,
-				);
+				component = factory(tui, theme, null, resolve);
 				onMount?.(component);
 			}),
 		get component() {
@@ -236,6 +278,44 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 	ui.component.handleInput(`\x1b[<0;67;4M`);
 	await preview;
 	assert.equal(hasActiveTextPreview(), false);
+});
+
+test("showTextPreview copies content from the [copy] hitbox and flashes confirmation", async () => {
+	const flashes: string[] = [];
+	const copied: string[] = [];
+	setPreviewCopyImpl(async (text) => {
+		copied.push(text);
+	});
+	let copyColor = "";
+	const theme = {
+		fg: (color: string, text: string) => {
+			if (text === "[copy]") copyColor = color;
+			return text;
+		},
+		bold: (text: string) => text,
+	};
+	const ui = textPreviewHarness(theme, (c) => c.render(64), {
+		terminal: { columns: 80, rows: 24 },
+		requestRender() {},
+		flash: (message: string) => flashes.push(message),
+	});
+	try {
+		const preview = showTextPreview({ ui } as any, "Output", "hello preview");
+		assert.equal(copyColor, "muted");
+		// [copy] 命中 row=4, col=60..65。
+		ui.component.handleInput(`\x1b[<35;60;4M`);
+		ui.component.render(64);
+		assert.equal(copyColor, "text", "[copy] hover switches to text color");
+		ui.component.handleInput(`\x1b[<0;60;4M`);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(copied, ["hello preview"]);
+		assert.deepEqual(flashes, ["Copied!"]);
+		assert.equal(hasActiveTextPreview(), true, "复制不关闭预览");
+		ui.component.handleInput("\x1b");
+		await preview;
+	} finally {
+		setPreviewCopyImpl(null);
+	}
 });
 
 test("showTextPreview scrollbar supports press and drag", async () => {

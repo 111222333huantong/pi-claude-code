@@ -208,6 +208,8 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 
 	// Inject as a request message, not systemPrompt, so the cached prefix stays stable.
 	pi.on("before_agent_start", async (event, _ctx) => {
+		// Pi 1.2.0 custom events have no prompt. Older hosts omit messageType.
+		if (event.messageType !== undefined && event.messageType !== "user") return;
 		const agents = getAgents();
 		if (agents.length === 0) return;
 

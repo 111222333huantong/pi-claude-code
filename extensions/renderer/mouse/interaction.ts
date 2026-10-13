@@ -1,5 +1,5 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
+import { showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import {
 	patchRegistry,
@@ -191,7 +191,7 @@ const FULLSCREEN_FOCUS_OUT = "\x1b[O";
 
 let pendingCollapsePress: {
 	card: any;
-	/** 命中的最内层组件：官方工具卡由 MouseRegion 的 click 收起。 */
+	/** 命中的最内层组件：卡内工具行命中时用于触发官方 click 抑制窗口。 */
 	component: any;
 	col: number;
 	row: number;
@@ -240,22 +240,17 @@ function rememberCollapsePress(card: any, component: any, packet: SgrMousePacket
 
 /**
  * 松手结算：只有"按下与松开在同一格"的完整单击才收起，拖动选择文本时保持展开。
- * 官方工具卡（result 区的 MouseRegion）由 guard 在官方 click 里收起，这里必须跳过，
- * 否则先收起会被官方 click 的 setExpanded(!expanded) 翻回来。
+ * 官方卡与自有卡统一在这里结算：fullscreen 下结算成功的 release 被 consume，
+ * 官方不会再合成 click（合成 click 要求按下/松开坐标完全一致，手抖一格就不发，
+ * 还会把刚收起的卡 toggle 回去、或误触卡内其他 MouseRegion）。
  */
-function resolveCollapsePress(
-	tui: any,
-	packet: SgrMousePacket,
-	options: { skipOfficialCards: boolean },
-): any {
+function resolveCollapsePress(tui: any, packet: SgrMousePacket): any {
 	const press = pendingCollapsePress;
 	pendingCollapsePress = null;
 	if (!press || packet.final !== "m") return undefined;
 	if (Math.abs(packet.col - press.col) > COLLAPSE_CLICK_MOVE_TOLERANCE) return undefined;
 	if (Math.abs(packet.row - press.row) > COLLAPSE_CLICK_MOVE_TOLERANCE) return undefined;
 	if (Date.now() - press.at > COLLAPSE_CLICK_MAX_MS) return undefined;
-	if (options.skipOfficialCards && press.component instanceof ToolExecutionComponent)
-		return undefined;
 	const card = press.card;
 	if (
 		(card instanceof ToolGroupComponent || isCompactAssistantComponent(card)) &&
@@ -265,7 +260,7 @@ function resolveCollapsePress(
 		suppressOfficialCardClickUntil = Date.now() + SUPPRESS_OFFICIAL_CARD_CLICK_MS;
 	}
 	collapseExpandedCard(tui, card);
-	// 返回收起的卡：调用方只对 compact 面板清官方选区。
+	// 返回收起的卡：fullscreen 调用方据此吞掉这次 release 并清官方按下/选区状态。
 	return card;
 }
 
@@ -398,7 +393,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	if (!target) return false;
 	const component = target.component;
 	// compact 展开面板内命中时 owner 是面板：收起对象与记账对象都归面板，
-	// 否则 skipOfficialCards 会把内部工具当成官方卡跳过。
+	// 面板内工具行命中时 release 统一由扩展结算。
 	const card = target.group ?? target.owner ?? component;
 	const pressComponent = target.owner ?? component;
 	// 回到底部按钮：按组件引用命中，不依赖渲染行缓存。
@@ -474,8 +469,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 				});
 			}
 		}
-		// 其余放行官方：选区、OSC8 链接与 click 合成都交给 renderer。
-		// 完整单击的收起：官方卡由 guard 处理，自有卡在松手时结算。
+		// 其余放行官方：选区、OSC8 链接与官方按下登记都交给 renderer。
+		// 完整单击的收起统一在松手结算（release 被 consume，官方不会再合成 click）。
 		rememberCollapsePress(card, pressComponent, packet);
 		return false;
 	}
@@ -585,6 +580,27 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 }
 
 /**
+ * 鼠标包（1-based 屏幕坐标）是否落在某个已渲染 overlay 的矩形内。
+ * renderedOverlayLayouts 与官方 dispatchMouseToOverlay 同源：只含上一帧画出的可见 overlay。
+ */
+function packetInsideOverlay(tui: any, packet: SgrMousePacket): boolean {
+	const layouts = tui?.renderedOverlayLayouts;
+	if (!Array.isArray(layouts)) return false;
+	const x = packet.col - 1;
+	const y = packet.row - 1;
+	for (const layout of layouts) {
+		if (
+			x >= layout.col &&
+			x < layout.col + layout.width &&
+			y >= layout.row &&
+			y < layout.row + layout.height
+		)
+			return true;
+	}
+	return false;
+}
+
+/**
  * 实例级包装 TuiAltScreen.handleViewportInput（惰性 Proxy 安全）：
  * 原型方法取 original（绕开 proxy 函数包装），实例 own property 装 wrapper
  * （constructor arrow 动态查找命中）。仅在 fullscreen 且无 overlay 时先消费
@@ -602,24 +618,29 @@ function patchFullscreenViewportInput(tui: any): void {
 			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
 			scheduleScrollButtonSync(tui, data);
 			const packets = parseSgrMousePackets(data);
-			// 官方 fullscreen 会消费全部鼠标；文本预览 overlay 活动时放行给 focused
-			// custom component，使 [esc] 点击和滚轮可用。
-			if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
-			if (packets && !tui.hasOverlay?.()) {
+			if (packets) {
+				// overlay 可见时：落在 overlay 矩形内的包全部放行官方（文本预览的
+				// [esc] 点击/滚轮、官方搜索框等），扩展不展开/收起/hover。
+				const overlayPackets = tui.hasOverlay?.()
+					? packets.filter((packet) => packetInsideOverlay(tui, packet))
+					: undefined;
+				const insideOverlay = (packet: SgrMousePacket) =>
+					overlayPackets?.includes(packet) === true;
 				for (const packet of packets) {
+					if (insideOverlay(packet)) continue;
 					if (isSgrLeftRelease(packet)) {
-						// 只给 compact 面板清选区：自有面板收起会重排布局，官方选区锚点
-						// 还停在旧布局上，同一次 release 会结算出多行高亮。
-						if (
-							isCompactAssistantComponent(
-								resolveCollapsePress(tui, packet, { skipOfficialCards: true }),
-							)
-						) {
+						// 结算单击收起：成功时吞掉 release，官方不会再对同一次点击合成
+						// click（官方 click 要求按下/松开坐标严格一致，还会把刚收起的卡
+						// toggle 回去，或误触卡内其他 MouseRegion 区）。
+						if (resolveCollapsePress(tui, packet) !== undefined) {
+							// 收起会重排布局：官方还留着按下时登记的 press 目标与选区锚点，
+							// 发 FOCUS_OUT 一次清干净，避免旧坐标结算出误选/误发 click。
 							try {
 								Reflect.apply(original, this, [FULLSCREEN_FOCUS_OUT]);
 							} catch {
 								/* 老版本没有选区状态 */
 							}
+							return { consume: true };
 						}
 					} else if (!isSgrLeftPress(packet) && !isSgrIdleMotion(packet))
 						clearPendingCollapsePressOnMove(packet);
@@ -970,7 +991,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	for (const packet of packets) {
 		updateToolSummaryHover(getToolMouseTui(), packet);
 		if (isSgrLeftRelease(packet)) {
-			resolveCollapsePress(getToolMouseTui(), packet, { skipOfficialCards: false });
+			resolveCollapsePress(getToolMouseTui(), packet);
 			continue;
 		}
 		if (!isSgrLeftPress(packet)) {

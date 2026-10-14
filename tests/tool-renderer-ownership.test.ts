@@ -69,7 +69,9 @@ for (const mode of ["on", "compact"] as const) {
 						continue;
 					}
 					assert.match(output, new RegExp(title));
-					assert.match(output, expanded ? /done/ : /1 line (loaded|returned)/);
+					// read 句子式（Read 1 line），其余保持计数式。
+					const expectedRow = name === "read" ? /Read 1 line/ : /1 line returned/;
+					assert.match(output, expanded ? /done/ : expectedRow);
 				}
 			}
 			assert.equal("name" in renderers, false, "wrapping does not mutate Pi's renderers");

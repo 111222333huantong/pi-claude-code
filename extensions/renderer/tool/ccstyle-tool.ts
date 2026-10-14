@@ -156,6 +156,23 @@ function renderExpandedTaskResult(
 }
 
 /**
+ * 工具耗时（毫秒）。结束时优先用 pi 记在结果上的 durationMs（单调，restore 出来的行也带得到）；
+ * 运行中 pi 不给（partial 期间渲染上下文里恒为 undefined），退回 renderCall 记下的时钟。
+ * 拿不到返回 undefined。时钟回拨时钳到 0。
+ */
+function toolElapsedMs(context: any, isPartial: boolean): number | undefined {
+	const recorded = context?.durationMs;
+	if (!isPartial && typeof recorded === "number" && Number.isFinite(recorded) && recorded >= 0) {
+		return recorded;
+	}
+	const startedAt = context?.state?.ccstyleShellStartedAt;
+	if (typeof startedAt !== "number") return undefined;
+	const endedAt = context?.state?.ccstyleShellEndedAt;
+	const end = typeof endedAt === "number" ? endedAt : Date.now();
+	return Math.max(0, end - startedAt);
+}
+
+/**
  * shell 的耗时文本。Pi 原生 shell 渲染器会在结果底部报一行，ccstyle 的通用折叠行把它盖掉了。
  *
  * 两条路都要：新 Pi 在渲染上下文里给 `durationMs`（单调，restore 出来的行也带得到），优先用它；
@@ -164,16 +181,8 @@ function renderExpandedTaskResult(
  */
 function shellDurationText(toolName: string, context: any, isPartial: boolean): string {
 	if (!SHELL_TOOL_NAMES.has(toolName)) return "";
-	const recorded = context?.durationMs;
-	if (!isPartial && typeof recorded === "number" && Number.isFinite(recorded) && recorded >= 0) {
-		return formatToolDuration(recorded);
-	}
-	const startedAt = context?.state?.ccstyleShellStartedAt;
-	if (typeof startedAt !== "number") return "";
-	const endedAt = context?.state?.ccstyleShellEndedAt;
-	const end = typeof endedAt === "number" ? endedAt : Date.now();
-	// 时钟回拨时别吐负数；快照固定时钟也会走到这。
-	return formatToolDuration(Math.max(0, end - startedAt));
+	const elapsed = toolElapsedMs(context, isPartial);
+	return elapsed === undefined ? "" : formatToolDuration(elapsed);
 }
 
 /** 用 ccstyle call/result 包装任意工具定义。 */

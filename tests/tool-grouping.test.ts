@@ -8,7 +8,9 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
+import { config } from "../extensions/config/config.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
@@ -63,7 +65,7 @@ test("mixed tools group across three empty separators while edit/write and conte
 			.filter((line: string) => line.trim());
 		assert.match(
 			collapsed[0],
-			/^ ● Multiple Tools: 3 running .*read, bash, grep.*click to show more/,
+			/^ ● Multiple Tools: 3 running · Read×1, Bash×1, Grep×1 · click to show more$/,
 		);
 		assert.equal(collapsed.filter((line: string) => line.trim()).length, 4);
 		assert.match(collapsed[1], /^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read /);
@@ -187,6 +189,65 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 	}
 });
 
+test("expanded group rows repaint when the card background slot changes", () => {
+	const hooks = installToolGrouping(() => true);
+	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走
+	const ANSI_BY_SLOT: Record<string, string> = {
+		userMessageBg: "\x1b[48;2;10;20;30m",
+		toolPendingBg: "\x1b[48;2;40;40;40m",
+		customMessageBg: "\x1b[48;2;50;60;70m",
+	};
+	const bgAnsiOf = (slot: string) => ANSI_BY_SLOT[slot] ?? "\x1b[48;2;90;90;90m";
+	hooks.setTheme({
+		fg: (_color: string, text: string) => text,
+		bg: (slot: string, text: string) => `${bgAnsiOf(slot)}${text}\x1b[49m`,
+		getBgAnsi: bgAnsiOf,
+	});
+	const previousSlot = config.expandedCardBackground;
+	const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
+	try {
+		const parent = new Container() as any;
+		const read = started("read", "bg-read");
+		const bash = started("bash", "bg-bash");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		// 固定引用：子工具 paint 命中缓存时，分组展开缓存才会复用整卡行。
+		let readPaints: string[] | undefined;
+		let bashPaints: string[] | undefined;
+		read.render = () => (readPaints ??= [" ✓ Read a.ts", " ok"]);
+		bash.render = () => (bashPaints ??= [" ✓ Bash ls", " done"]);
+		group.setExpanded(true);
+
+		const first = group.render(80);
+		assert.ok(
+			first.some((line: string) => line.includes(bgAnsiOf(previousSlot))),
+			"expanded panel rows use the configured slot",
+		);
+		assert.ok(
+			first.every((line: string) => !line.includes(bgAnsiOf(targetSlot))),
+			"configured slot leaves no other background behind",
+		);
+		assert.strictEqual(group.render(80), first, "identical frame reuses the cached expanded rows");
+
+		// issue 46：改槽位后已展开的分组必须重画，不能命中旧底色的缓存行。
+		config.expandedCardBackground = targetSlot;
+		const repainted = group.render(80);
+		assert.notStrictEqual(repainted, first, "slot switch drops the stale expanded rows");
+		assert.ok(
+			repainted.some((line: string) => line.includes(bgAnsiOf(targetSlot))),
+			"expanded panel rows use the configured slot",
+		);
+		assert.ok(
+			repainted.every((line: string) => !line.includes(bgAnsiOf(previousSlot))),
+			"slot switch repaints every panel row",
+		);
+	} finally {
+		config.expandedCardBackground = previousSlot;
+		hooks.shutdown();
+	}
+});
+
 test("external task, skill, and plan tools keep reference summaries in groups", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
@@ -208,21 +269,17 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 		result.updateResult({ content: [], isError: false });
 		agentParent.addChild(agent);
 		agentParent.addChild(result);
-		// Agent and get_subagent_result are non-groupable — each stays a standalone
-		// ToolExecutionComponent rather than merging into a group.
-		assert.equal(agentParent.children.length, 2);
-		const agentRendered = agentParent.children[0]
+		const agentLines = agentParent.children[0]
 			.render(160)
 			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 			.filter((line: string) => line.trim());
-		assert.ok(agentRendered.length > 0, "Agent renders standalone output");
-		assert.match(agentRendered[0], /Agent/);
-		const resultRendered = agentParent.children[1]
-			.render(160)
-			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-			.filter((line: string) => line.trim());
-		assert.ok(resultRendered.length > 0, "get_subagent_result renders standalone output");
-		assert.match(resultRendered[0], /get_subagent_result/);
+		assert.match(
+			agentLines[0],
+			/^ ● Multiple Tools: 2 done · Agent×1, Get Subagent Result×1 · click to show more$/,
+		);
+		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
+		// 本 fork：无映射的长 agent_id 回落短 ID（compact-mode 同口径），上游为全 ID。
+		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462");
 	} finally {
 		hooks.shutdown();
 	}
@@ -251,10 +308,10 @@ test("group status and tool labels use the injected active theme", () => {
 		const hovered = group.render(200).join("\n");
 		assert.match(
 			hovered,
-			/<dim>•<\/dim> <text>click to show more<\/text>/,
+			/<dim>·<\/dim> <text>click to show more<\/text>/,
 			"hover highlights text without highlighting the dot",
 		);
-		assert.doesNotMatch(hovered, /<text>•/);
+		assert.doesNotMatch(hovered, /<text>·/);
 		group.setExpanded(true);
 		const expanded = group.render(200).join("\n");
 		assert.equal(expanded.match(/✓/g)?.length, 2, "expanded children keep one check each");
@@ -411,7 +468,7 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		assert.strictEqual(group.render(160), collapsed, "collapsed output is memoized again");
 
 		parent.addChild(started("grep", "cached-grep", { pattern: "todo" }));
-		const grown = group.render(160);
+		const grown = group.render(200);
 		assert.notStrictEqual(grown, collapsed);
 		assert.match(grown.join("\n"), /running/);
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
@@ -421,23 +478,24 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 	}
 });
 
-test("pending group header dot breathes accent/dim while tools run", () => {
+function plain(lines: string[]): string[] {
+	return lines
+		.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+		.filter((line) => line.trim());
+}
+
+test("powershell 分组行显示具体命令（issue 26）", () => {
 	const hooks = installToolGrouping(() => true);
-	hooks.setTheme({ fg: (color: string, text: string) => `<${color}>${text}` });
-	const realNow = Date.now;
 	try {
 		const parent = new Container() as any;
-		parent.addChild(started("read", "read-breath"));
-		parent.addChild(started("bash", "bash-breath"));
+		parent.addChild(started("powershell", "ps-1", { command: "Get-ChildItem -Recurse" }));
+		parent.addChild(started("powershell", "ps-2", { command: "$env:FOO = 'bar'" }));
 		const group = parent.children[0] as ToolGroupComponent;
-		Date.now = () => 100;
-		const bright = group.render(100).find((line: string) => line.trim())!;
-		Date.now = () => 900;
-		const dimmed = group.render(100).find((line: string) => line.trim())!;
-		assert.match(bright, /<accent>●/);
-		assert.match(dimmed, /<dim>●/);
+		const collapsed = plain(group.render(120));
+		assert.match(collapsed[0], /^ ● PowerShell: 2 running/);
+		assert.match(collapsed[1], /PowerShell Get-ChildItem -Recurse$/);
+		assert.match(collapsed[2], /PowerShell \$env:FOO = 'bar'$/);
 	} finally {
-		Date.now = realNow;
 		hooks.shutdown();
 	}
 });
@@ -460,6 +518,196 @@ test("queued group header dot stays accent", () => {
 		assert.doesNotMatch(second, /<dim>●/);
 	} finally {
 		Date.now = realNow;
+		hooks.shutdown();
+	}
+});
+
+test("default 与 grouping 共用同一份摘要取值链", () => {
+	const cases: Array<[string, any, string]> = [
+		["powershell", { command: "npm test" }, "PowerShell npm test"],
+		["bash", { command: "npm test" }, "Bash npm test"],
+		["grep", { pattern: "foo|bar", path: "extensions/" }, 'Grep "foo|bar" in extensions/'],
+		["ffgrep", { pattern: "hero", path: "assets/" }, 'Ffgrep "hero" in assets/'],
+		["source_check", { claim: "README 用 webp" }, "Source Check README 用 webp"],
+		["web_search", { queries: ["a", "b"] }, "Web Search a (+1)"],
+		["web_search", { queries: ["a"] }, "Web Search a"],
+		["fetch_content", { urls: ["https://a", "https://b"] }, "Fetch Content https://a (+1)"],
+		["get_search_content", { responseId: "rid-1" }, "Get Search Content rid-1"],
+		["Agent", { description: "review code" }, "Agent review code"],
+	];
+	for (const [name, args, expected] of cases) {
+		for (const variant of ["default", "grouping"] as const) {
+			assert.equal(
+				toolCallSummary(name, args, { variant, cwd: process.cwd() }).main,
+				expected,
+				`${name} / ${variant}`,
+			);
+		}
+	}
+});
+
+test("折叠分组行：codemode 报结果统计，没结果时退回代码预览", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const code = 'const r = await tools.bash({ command: "ls" })';
+		const blocks = (output: string) => [
+			{ type: "text", text: "Script completed\nWall time 1.02 seconds\nOutput:\n" },
+			{ type: "text", text: output },
+		];
+		const settled = (id: string, calls: unknown[], output: string) => {
+			const component = started("codemode", id, { code });
+			component.updateResult({ content: blocks(output), details: { calls }, isError: false });
+			return component;
+		};
+		const one = { id: "c/1", name: "bash", args: '{"command":"ls"}', status: "ok", durationMs: 11 };
+		const another = {
+			id: "c/2",
+			name: "read",
+			args: '{"path":"a.ts"}',
+			status: "ok",
+			durationMs: 3,
+		};
+
+		const parent = new Container() as any;
+		parent.addChild(settled("cd-1", [one], "one"));
+		parent.addChild(settled("cd-2", [one, another], "two\nthree"));
+		parent.addChild(started("codemode", "cd-3", { code }));
+		const rows = parent.children[0]
+			.render(120)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trimEnd());
+
+		assert.match(rows[1]!, /^ ● Codemode: 1 running · 2 done/);
+		assert.equal(rows[2], " ├ ✓ Codemode 1 call · 1 line output");
+		assert.equal(rows[3], " ├ ✓ Codemode 2 calls · 2 lines output");
+		// 还没结果：退回参数摘要，同样不带 code 预览
+		assert.match(rows[4]!, /^ └ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Codemode$/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("humanizeToolLabel 保留品牌大小写", () => {
+	assert.equal(humanizeToolLabel("powershell"), "PowerShell");
+	assert.equal(humanizeToolLabel("bash"), "Bash");
+	// MCP 入口两个的缩写固定写法
+	assert.equal(humanizeToolLabel("mcp"), "MCP");
+	assert.equal(humanizeToolLabel("mcpScript"), "MCP Script");
+});
+
+test("collapsed group rows share the single-card viewport width", async () => {
+	const { config } = await import("../extensions/config/config.ts");
+	const { toolViewportWidth } = await import("../extensions/renderer/tool/result.ts");
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const previousToolLabelClip = config.toolLabelClip;
+	config.toolLabelClip = 0;
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const long = `echo ${"x".repeat(400)}`;
+		for (const id of ["a", "b"]) {
+			const bash = tool("bash", id, { command: long });
+			bash.updateResult({ content: [], isError: false });
+			parent.addChild(bash);
+		}
+		const rows = (parent.children[0] as ToolGroupComponent)
+			.render(200)
+			.filter((line: string) => /[├└]/.test(line));
+		assert.equal(rows.length, 2);
+		for (const row of rows) assert.equal(visibleWidth(row), toolViewportWidth(200));
+	} finally {
+		config.toolLabelClip = previousToolLabelClip;
+		hooks.shutdown();
+	}
+});
+
+test("group headers share the single-card viewport limit without stretching short titles", async () => {
+	const { toolViewportWidth } = await import("../extensions/renderer/tool/result.ts");
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const command = `echo ${"x".repeat(400)}`;
+		parent.addChild(started("read", "header-read", { path: "x".repeat(400) }));
+		const bash = tool("bash", "header-bash", { command });
+		bash.updateResult({ content: [], isError: false });
+		parent.addChild(bash);
+		const grep = tool("grep", "header-grep", { pattern: "x".repeat(400) });
+		grep.updateResult({ content: [], isError: true });
+		parent.addChild(grep);
+		const group = parent.children[0] as ToolGroupComponent;
+		for (const expanded of [false, true]) {
+			group.setExpanded(expanded);
+			const fullHeader = group.render(400)[1];
+			for (const width of [60, 120, 200]) {
+				const header = group.render(width)[1];
+				assert.equal(
+					visibleWidth(header),
+					Math.min(visibleWidth(fullHeader), toolViewportWidth(width)),
+				);
+				if (width === 200) assert.equal(header, fullHeader);
+			}
+		}
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const bash = started("bash", "sh-bash", { command: "npm test" });
+		bash.updateResult({
+			content: [{ type: "text", text: "ok" }],
+			isError: false,
+			durationMs: 12_400,
+		});
+		const ps = started("powershell", "sh-ps", { command: "Get-ChildItem" });
+		ps.updateResult({ content: [], isError: false, durationMs: 300 });
+		parent.addChild(bash);
+		parent.addChild(ps);
+		const rows = plain((parent.children[0] as ToolGroupComponent).render(140));
+		// 单组标题用 toolTitle，列表跟子行同一套写法；各跑一次也报 ×1。
+		assert.equal(rows[0], " ● Multiple Tools: 2 done · Bash×1, PowerShell×1 · click to show more");
+		// 只报耗时：行数在折叠卡里冗余，展开就能看到。
+		assert.equal(rows[1], " ├ ✓ Bash npm test · 12.4s");
+		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · 300ms");
+
+		// 失败也不带输出：错误正文在展开后看，行上只留 ✗ 和耗时。
+		const parent3 = new Container() as any;
+		const bad = started("bash", "sh-bad", { command: "false" });
+		bad.updateResult({
+			content: [{ type: "text", text: "ENOENT: no such file\nsecond line" }],
+			isError: true,
+			durationMs: 20,
+		});
+		const ok = started("bash", "sh-ok", { command: "true" });
+		ok.updateResult({ content: [{ type: "text", text: "ok" }], isError: false, durationMs: 5 });
+		parent3.addChild(bad);
+		parent3.addChild(ok);
+		const rows3 = plain((parent3.children[0] as ToolGroupComponent).render(140));
+		assert.equal(rows3[1], " ├ ✗ Bash false · 20ms");
+		assert.equal(rows3[2], " └ ✓ Bash true · 5ms");
+
+		// 非 shell 工具不补尾巴。
+		const parent2 = new Container() as any;
+		const read = started("read", "sh-read", { path: "a.ts" });
+		read.updateResult({ content: [{ type: "text", text: "x" }], isError: false, durationMs: 5 });
+		const grep = started("grep", "sh-grep", { pattern: "x" });
+		grep.updateResult({ content: [{ type: "text", text: "y" }], isError: false });
+		parent2.addChild(read);
+		parent2.addChild(grep);
+		const rows2 = plain((parent2.children[0] as ToolGroupComponent).render(140));
+		assert.equal(rows2[1], " ├ ✓ Read a.ts");
+		assert.equal(rows2[2], ' └ ✓ Grep "x"');
+
+		// 窄宽度下先让出工具列表，保住行尾展开提示（鼠标层的命中锚点）。
+		const narrow = plain((parent.children[0] as ToolGroupComponent).render(72));
+		assert.match(narrow[0]!, /· click to show more$/);
+		assert.ok(narrow[0]!.length <= Math.floor(72 * 0.8));
+	} finally {
 		hooks.shutdown();
 	}
 });

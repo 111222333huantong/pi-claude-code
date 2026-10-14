@@ -116,7 +116,7 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	);
 	assert.match(visible(messages.at(-1) ?? ""), /↓ 4 tokens/);
 
-	// Provider usage replaces the live chars/4 estimate when available.
+	// Provider usage replaces the live estimate when available.
 	await events.get("message_update")?.(
 		{
 			assistantMessageEvent: {
@@ -134,7 +134,7 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	);
 	assert.match(visible(messages.at(-1) ?? ""), /↓ 37 tokens/);
 
-	// A new turn resets both estimated and provider counts.
+	// 同一条用户指令的下一段 turn 不清 token：工具后继续累计。
 	await events.get("turn_end")?.({}, ctx);
 	await events.get("turn_start")?.({}, ctx);
 	assert.match(visible(messages.at(-1)), /… \(esc to interrupt\)$/);

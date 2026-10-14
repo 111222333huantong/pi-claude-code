@@ -11,7 +11,7 @@ import {
 } from "../config/config.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
+import { installMainScreenDoRenderPatch, isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
 import {
 	type CompactModeHooks,
@@ -34,7 +34,12 @@ import {
 	TOOL_MOUSE_DISABLE,
 	teardownToolMouseInteraction,
 } from "./mouse/interaction.ts";
-import { getToolMouseTui } from "./mouse/scroll.ts";
+import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
+import {
+	disposeStickyPromptPatches,
+	installStickyPromptPatches,
+	setStickyPromptTheme,
+} from "./mouse/sticky-prompt.ts";
 import { setCodeBlockTheme } from "./tool/code-block.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { prewarmShikiHighlight } from "./tool/diff/shiki-highlight.ts";
@@ -44,7 +49,12 @@ import {
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
-import { clearAllAnimations } from "./tool/result.ts";
+import {
+	clearAllAnimations,
+	clearLiveToolCalls,
+	noteStreamingToolCalls,
+	retireLiveToolCall,
+} from "./tool/tool-state.ts";
 import { disposeTranscriptGutter, refreshTranscriptGutter } from "./transcript-gutter.ts";
 import { installUserMessageRender, refreshUserMessages } from "./user-message.ts";
 
@@ -135,6 +145,10 @@ export default function (
 		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
 		// 同样渲染这些组件，因此两种模式都安装。
 		if (installation) return installation;
+		// regular 主屏的差分渲染补丁：视口上方变化不再触发清回滚的 fullRender。
+		installMainScreenDoRenderPatch();
+		// 粘性用户消息头：标记注入 + fullscreen 帧合成。
+		installStickyPromptPatches();
 		const defaultMode = installDefaultMode(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
 		const compactMode = installCompactMode({
@@ -213,6 +227,9 @@ export default function (
 	});
 
 	pi.on("message_update", async (event) => {
+		// 声明期（assistant 消息结束前）就记住工具 id：这段工具行已在等启动，
+		// spinner 该转，但 Pi 还没跑 markExecutionStarted。
+		if (event.message?.role === "assistant") noteStreamingToolCalls(event.message);
 		// transcript 右内缩：容器识别依赖消息组件，首条消息落树后在此补扫
 		//（已安装时浅层 BFS 命中即停，开销可忽略）。
 		refreshTranscriptGutter(getToolMouseTui());
@@ -223,7 +240,15 @@ export default function (
 		}
 	});
 
+	// 回到底部按钮的累计计数：离开底部期间每落一块内容 +1。
+	pi.on("message_start", async (event) => {
+		const role = event.message?.role;
+		// toolResult 不单独成块（渲染在工具卡内），跳过以免与工具卡重复计数。
+		if (role === "user" || role === "assistant" || role === "custom") noteNewTranscriptItem();
+	});
+
 	pi.on("tool_execution_end", async (event) => {
+		retireLiveToolCall(event?.toolCallId);
 		if (config.mode !== "compact") return;
 		// Agent 等工具收尾后延迟刷新，让 compact-thinking 先落最终态。
 		const toolCallId: string | undefined = event?.toolCallId;
@@ -242,10 +267,18 @@ export default function (
 		} catch {
 			/* noop */
 		}
-		// 延迟到 session_start 注册 write override：加载阶段 getAllTools 不可用且其他扩展
-		// 尚未注册工具，无法检测外部 write 所有者（如 pi-spark），直接注册会与对方撞名。
-		// session_start 时所有扩展已加载完毕，installWriteOverride 内部会检测并让位。
-		installWriteOverride(pi, writeExecutionMetadata);
+		// 延后一拍再确认 write 归属：其他扩展同样在各自的 session_start 里注册工具，
+		// 本 handler 执行时可能还看不到对方，此时注册会与对方撞名（注册表先到先得），
+		// 对方的 write 会被静默丢弃。等所有 session_start 跑完，检测结果才是权威的。
+		setTimeout(() => {
+			installWriteOverride(pi, writeExecutionMetadata, (owner) => {
+				// 冲突可见：对方接管 write 后本插件不再提供富 diff。
+				ctx.ui?.notify?.(
+					`ccstyle: write 工具已被 ${owner.path || owner.source} 占用，富 diff 已让位`,
+					"warning",
+				);
+			});
+		}, 0);
 		const hooks = ensureTuiInstallation(ctx);
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
@@ -254,6 +287,7 @@ export default function (
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
 		setCodeBlockTheme(ctx.ui.theme);
+		setStickyPromptTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
 		// 先收集 resume transcript，再同步 compact 补丁与全局展开状态。
 		syncCompactMode(ctx);
@@ -263,6 +297,9 @@ export default function (
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
 		setTimeout(() => syncCompactMode(ctx), 0);
+		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
+		// 否则它没有后续消息，摘要行会停在 Running。
+		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
 		scheduleSessionRender(() => {
 			hooks.toolGrouping.refresh(getToolMouseTui());
 			refreshTranscriptGutter(getToolMouseTui());
@@ -278,6 +315,7 @@ export default function (
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
 		setCodeBlockTheme(ctx.ui.theme);
+		setStickyPromptTheme(ctx.ui.theme);
 		syncCompactMode(ctx);
 		refreshTranscriptGutter(getToolMouseTui());
 		scheduleSessionRender(() => {
@@ -301,10 +339,21 @@ export default function (
 	pi.on("tool_execution_start", async (_event, ctx) => {
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
 		setCodeBlockTheme(ctx.ui.theme);
+		noteNewTranscriptItem();
+	});
+
+	pi.on("turn_end", async () => {
+		clearLiveToolCalls();
+	});
+
+	pi.on("agent_end", async () => {
+		clearLiveToolCalls();
 	});
 
 	pi.on("session_shutdown", async () => {
 		writeExecutionMetadata.clear();
+		// 会话结束就清空，不能等 installation 早退判断；残留的 id 会让下一会话误转。
+		clearLiveToolCalls();
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);
@@ -321,6 +370,7 @@ export default function (
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
 		current.disposeUserMessage();
+		disposeStickyPromptPatches();
 		clearAllAnimations();
 		installation = undefined;
 	});
@@ -329,15 +379,17 @@ export default function (
 // ---- 对外导出：入口/测试实际消费的符号 ----
 export { getCompactThinkingConfig } from "../config/config.ts";
 export {
-	humanizeMcpToolName,
-	isMcpToolDefinition,
 	preservesOriginalRenderer,
 	shouldRenderRichDiff,
 } from "./default-mode.ts";
 export { installToolMouseInteraction } from "./mouse/interaction.ts";
 export {
+	isMcpToolDefinition,
+	mcpToolTitle,
+} from "./tool/mcp-title.ts";
+export { SHOW_MORE_LABEL } from "./tool/result.ts";
+export {
 	ExpandedToolIoView,
 	ExpandedToolResultText,
 	formatToolInputArgs,
-	SHOW_MORE_LABEL,
-} from "./tool/result.ts";
+} from "./tool/tool-io.ts";

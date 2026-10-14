@@ -12,9 +12,10 @@
 - **Upstream**: <https://github.com/minuque/pi-cc-extensions>（`git remote upstream` 可验证）
 - **License**: MIT（见根目录 `LICENSE`：`Copyright (c) 2026 minuque` + fork 续注）
 - **关系**：全仓 fork；`origin` = `111222333huantong/pi-claude-code`。
-  上游同步以 merge 方式进行（如 `8f1ac5d merge upstream/main 0d6f162`）。
+  上游同步以 merge 方式进行（如 `8f1ac5d merge upstream/main 0d6f162`；
+  2026-10-14 merge `upstream/main 281d23f`（v1.0.3），本包升版 1.1.0）。
 - **Local delta**（fork 后自有部分，持续增长）：状态栏、后续全部改动由本 fork 维护
-  （README 已声明）。
+  （README 已声明）。1.1.0 合并要点见本文件 §8。
 
 ## 1. `extensions/renderer/tool/diff/` — rich diff
 
@@ -105,6 +106,35 @@
 系（`@arhen/pi-core-subagent`、`runId` 短 ID）两套 subagent 协议：
 `names.ts`、`reference/agent-titles.ts`、`default-mode.ts` 的 Task 标题分支
 是本包原创的兼容垫片，不复制对方代码。对方升级协议时只改这三处。
+
+## 8. 1.1.0 合并记录（2026-10-14，`upstream/main 281d23f` v1.0.3）
+
+- **基线**：`e43e004`（v0.8.71）→ 上游 154 个提交（1.0.0/1.0.1/1.0.2/1.0.3）
+  + 本地 58 个提交，一次 merge 合入，无 rebase。
+- **以上游为准**：tool 层拆分（tool-state/tool-io/mcp-title/ask-user-question/
+  ccstyle-tool/codemode）、default 补丁拆分、footer 体系（footer*.ts/token-rate/
+  git-stats/mcp-chip）、compact 分组折叠树、粘性条/视口修复、show-more-hint
+  并入 names.ts（本包 `show-more-hint.ts` + `key-hints.ts` 的旧改已由上游独立实现，
+  删模块，`key-hints.ts` 因 panel/working-message 仍用而保留）。
+- **本地保留并适配**：statusline（与上游 footer 互斥，见 `extensions/index.ts`）、
+  working-message（verb shimmer/耐心阈值/响铃 + 向 token-rate 喂数）、
+  compact-thinking Markdown 展开 + tail-window（适配上游 string-key 状态模型）、
+  context 健康分级（+上游真实计账/[copy]）、bash live 预览（title 计数 +
+  tail 体 + group glance 行）、write 流式头 + 预告片（迁入 ccstyle-tool）、
+  P3 三段式标题、 Esc 双件套、image/clipboard 粘贴、/loaded、agent-titles、
+  失败分类（failureSummaryText 接入折叠行 + dim）、halted 语义（detail 行；
+  title ○ 待后续）、queued 静态点、MCP 人性化（无显式标题时）/真实名（单卡传入时）。
+- **改名跟进**：`inputClip` → `toolLabelClip`（normalize 兼容旧键；配置面板/测试同步）；
+  配置文件迁 `claude-code-style.json` → `pi-cc-extensions.json`（自动迁移旧文件）。
+- **依赖**：`@earendil-works/*` devDeps `^0.85.1` → `^1.2.0`（对齐宿主 Pi；
+  peer 保持上游的 `*`）；`jiti` 进 dependencies（上游）；`diff`/`pi-paster` 保留。
+- **版本**：`pi-claude-code` 0.10.0 → 1.1.0（上游 1.0.x 基线 + 本 fork 功能）。
+- **已知延后**：700ms 最小可读窗口/排队 Waiting 行/head-tail 成功输出截断
+  （旧架构特性，新架构下的移植为独立任务）；`tests/tool-visual-state.test.ts`
+  已瘦身为失败分类 + gutter/宽度用例；`pending-dot`/`pending-animation-perf`
+  呼吸类断言跟随新架构重写。
+- **环境注记**：git-stats 系 9 个用例需 git 提交身份（CI/本地无 identity 时红，
+  上游同样；`GIT_AUTHOR_*`/`GIT_COMMITTER_*` 置位即绿）。
 
 ## 待办
 

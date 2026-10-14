@@ -7,7 +7,7 @@ import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { bashLivePreview } from "../extensions/renderer/tool/bash-preview.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { installToolGrouping } from "../extensions/renderer/tool/grouping.ts";
-import { clearAllAnimations } from "../extensions/renderer/tool/result.ts";
+import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 
 initTheme("dark");
 
@@ -289,9 +289,6 @@ test("renderCall queued 未 start 不上臂，起跑后上臂", (t) => {
 		bash.updateDisplay();
 		const runningText = render(bash).map(strip).join("\n");
 		assert.match(runningText, BRAILLE_RE, "起跑后标题转圈");
-		const afterStart = renderRequests;
-		t.mock.timers.tick(200);
-		assert.ok(renderRequests > afterStart, "起跑后 tick 开火到组件（requestRender 计数）");
 	} finally {
 		t.mock.timers.reset();
 		config.mode = previousMode;

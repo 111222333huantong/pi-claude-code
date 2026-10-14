@@ -128,7 +128,8 @@ test("on → compact reshapes to summary; compact → on restores tool cards", (
 		assert.match(renderText(a1).join("\n"), /^Ran for 9s, bash×1, read×2, grep×1/);
 		assert.match(renderText(a1).join("\n"), /click to show more/);
 		assert.deepEqual(renderText(bash), []);
-		assert.match(renderText(edit).join("\n"), /edit sample\.ts \(\+1 -1\)/);
+		assert.doesNotMatch(renderText(edit).join("\n"), /edit sample\.ts \(\+\d+ -\d+\)/);
+		assert.match(renderText(edit).join("\n"), /↳ diff · \+1 · -1 · /);
 		assert.match(renderText(aFinal).join("\n"), /task done/);
 
 		// → on：工具卡恢复，摘要消失

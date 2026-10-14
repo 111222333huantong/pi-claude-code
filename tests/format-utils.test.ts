@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { config } from "../extensions/config/config.ts";
+import {
+	displayPath,
+	formatDisplayPath,
+	renderToolSummary,
+	toolCallSummary,
+} from "../extensions/renderer/tool/names.ts";
+import { toolViewportWidth } from "../extensions/renderer/tool/result.ts";
 import { formatDuration, oneLine, truncateByWidth } from "../extensions/utils/format.ts";
 
 test("formatDuration formats elapsed seconds", () => {
@@ -42,4 +50,67 @@ test("truncateByWidth: CJK 计 2 列，不断半个宽字符", () => {
 	assert.equal(truncateByWidth("hello world", 8), "hello w…");
 	assert.equal(truncateByWidth("abc", 0), "");
 	assert.equal(truncateByWidth("纯中文", 7), "纯中文");
+});
+
+test("displayPath / formatDisplayPath 保留 POSIX 与 Windows 原生分隔符", () => {
+	assert.equal(displayPath("/home/user/project/src/file.ts", "/home/user/project"), "src/file.ts");
+	assert.equal(
+		displayPath("C:\\Users\\user\\project\\src\\file.ts", "C:\\Users\\user\\project"),
+		"src\\file.ts",
+	);
+
+	// 工具卡摘要入口：截断走 lastIndexOf("/") / lastIndexOf("\\") 定位文件名，各保留原生分隔符
+	const previous = config.toolLabelClip;
+	try {
+		config.toolLabelClip = 100;
+		assert.equal(
+			formatDisplayPath("/home/user/project/src/deep/file.ts", "/home/user/project", 12),
+			"src…/file.ts",
+		);
+		assert.equal(
+			formatDisplayPath(
+				"C:\\Users\\user\\project\\src\\deep\\file.ts",
+				"C:\\Users\\user\\project",
+				12,
+			),
+			"src…\\file.ts",
+		);
+	} finally {
+		config.toolLabelClip = previous;
+	}
+});
+
+test("toolLabelClip=0 按可用宽度截断；正数仍是字符上限", () => {
+	const previous = config.toolLabelClip;
+	const command = `echo ${"x".repeat(300)}`;
+	const plain = (_color: string, text: string) => text;
+	try {
+		config.toolLabelClip = 0;
+		const summary = toolCallSummary("bash", { command }, { variant: "grouping" });
+		assert.equal(summary.main, `Bash ${command}`, "摘要不预截断");
+		const line = renderToolSummary(summary, 180, plain);
+		assert.equal(line.length, 180, "宽屏铺满可用宽度");
+		assert.equal(line.endsWith("…"), true);
+		assert.equal(renderToolSummary(summary, 400, plain), `Bash ${command}`);
+		const path = `/repo/${"deep/".repeat(60)}file.ts`;
+		assert.equal(formatDisplayPath(path, undefined, 1000), path);
+
+		config.toolLabelClip = 40;
+		const clipped = renderToolSummary(
+			toolCallSummary("bash", { command }, { variant: "grouping" }),
+			180,
+			plain,
+		);
+		assert.equal(clipped.length, "Bash ".length + 40);
+	} finally {
+		config.toolLabelClip = previous;
+	}
+});
+
+test("toolViewportWidth: 窄屏按 80%，宽屏右侧留白封顶 24 列", () => {
+	assert.equal(toolViewportWidth(1), 1);
+	assert.equal(toolViewportWidth(80), 64);
+	assert.equal(toolViewportWidth(120), 96, "临界点：比例与固定留白相等");
+	assert.equal(toolViewportWidth(200), 176);
+	assert.equal(toolViewportWidth(300), 276);
 });

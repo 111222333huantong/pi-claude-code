@@ -28,4 +28,5 @@ export {
 	STREAMING_WRITE_PREVIEW_LINES,
 	STREAMING_WRITE_PREVIEW_LINES_EXPANDED,
 	type StreamingWritePreview,
+	writeStatsInCollapsedBody,
 } from "./diff-write-render.ts";

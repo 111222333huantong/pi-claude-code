@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+	assignReferenceTokens,
 	buildReferenceContentFromSections,
 	extractSessionReferenceIds,
 	formatReferenceSession,
 	SESSION_REFERENCE_CUSTOM_TYPE,
+	sessionReferenceLabel,
 	sessionTitle,
 	truncateUtf8,
 } from "../extensions/feature/reference/session.ts";
@@ -31,6 +34,86 @@ test("sessionTitle normalizes and truncates display text", () => {
 	assert.equal(sessionTitle(info), "Refactor the auth module");
 	assert.equal(sessionTitle({ ...info, name: "Named session" }), "Named session");
 	assert.equal(sessionTitle({ ...info, name: "123456789" }, 6), "12345…");
+});
+
+test("sessionReferenceLabel uses the title and strips brackets", () => {
+	assert.equal(sessionReferenceLabel(info), "Refactor the auth module");
+	assert.equal(sessionReferenceLabel({ ...info, firstMessage: "" }), "");
+	assert.equal(
+		sessionReferenceLabel({ ...info, firstMessage: "Fix [auth] flow" }),
+		"Fix auth flow",
+	);
+});
+
+test("sessionReferenceLabel truncates the editor token by display width", () => {
+	const long = {
+		...info,
+		name: undefined,
+		firstMessage: "<pre> 这是一次渲染验收，只做下面列出的工具调用，不要改文件。",
+	};
+	const token = sessionReferenceLabel(long);
+	assert.ok(visibleWidth(token) <= 32, "token fits the width cap");
+	assert.match(token, /…$/);
+	assert.ok(
+		visibleWidth(sessionReferenceLabel({ ...info, name: "x".repeat(80) })) <= 32,
+		"ascii titles are capped too",
+	);
+	// 同名消歧后缀在截断之后拼，不影响 token 唯一性。
+	const first = { referenceIds: [long.id], info: long };
+	const second = {
+		referenceIds: ["b"],
+		info: { ...long, id: "b", modified: new Date("2025-02-02T00:00:00.000Z") },
+	};
+	const tokens = [...assignReferenceTokens([first, second]).values()];
+	assert.equal(new Set(tokens).size, 2, "truncated titles stay distinguishable");
+});
+
+test("assignReferenceTokens keeps readable tokens for same-named sessions", () => {
+	const named = (id: string, modified: string, name?: string) => ({
+		referenceIds: [id],
+		info: { ...info, id, name, modified: new Date(modified) },
+	});
+
+	assert.deepEqual(
+		[...assignReferenceTokens([named("a", "2025-02-01T00:00:00.000Z", "Solo")]).values()],
+		["Solo"],
+	);
+	assert.deepEqual(
+		[
+			...assignReferenceTokens([
+				named("a", "2025-02-01T00:00:00.000Z", "Pair"),
+				named("b", "2025-02-02T00:00:00.000Z", "Pair"),
+			]).values(),
+		],
+		["Pair 02-01", "Pair 02-02"],
+	);
+	// 同名同日靠时间区分；同名同日同分才退到稳定 ID，避免指错会话。
+	assert.deepEqual(
+		[
+			...assignReferenceTokens([
+				named("a", "2025-02-01T01:00:00.000Z", "Twin"),
+				named("b", "2025-02-01T02:00:00.000Z", "Twin"),
+			]).values(),
+		],
+		["Twin 02-01 01:00", "Twin 02-01 02:00"],
+	);
+	assert.deepEqual(
+		[
+			...assignReferenceTokens([
+				named("a", "2025-02-01T01:00:00.000Z", "Twin"),
+				named("b", "2025-02-01T01:00:30.000Z", "Twin"),
+			]).values(),
+		],
+		["a", "b"],
+	);
+	assert.deepEqual(
+		[
+			...assignReferenceTokens([
+				{ referenceIds: ["c"], info: { ...info, id: "c", name: undefined, firstMessage: "" } },
+			]).values(),
+		],
+		["c"],
+	);
 });
 
 test("truncateUtf8 enforces byte limits for multibyte content", () => {

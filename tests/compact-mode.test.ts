@@ -6,10 +6,16 @@ import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
+	createBashToolDefinition,
+	createEditToolDefinition,
+	createGrepToolDefinition,
+	createReadToolDefinition,
+	createWriteToolDefinition,
 	initTheme,
 	ToolExecutionComponent,
+	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
 
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
@@ -24,17 +30,23 @@ import {
 	buildMessageSummary,
 	installCompactMode,
 	isCompactAssistantComponent,
+	markCompactRoundToolExpanded,
 	refreshCompactModeComponents,
+	setHoveredCompactAssistant,
 	styleCompactThinkingText,
 } from "../extensions/renderer/compact-mode.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
+import { setHoveredToolCallId } from "../extensions/renderer/mouse/hover.ts";
+import { componentAtLocalRow } from "../extensions/renderer/mouse/layout.ts";
+import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
-import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
+import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
 import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
 
 initTheme("dark");
@@ -44,36 +56,22 @@ const ui = {
 	requestRender() {},
 } as any;
 
-function tool(name: string, id: string, args: any = {}, definition: any = undefined) {
-	return new ToolExecutionComponent(name, id, args, {}, definition, ui, process.cwd()) as any;
-}
-
 /**
- * 0.85+ 内置渲染器不再随构造器附带（也未公开导出），线上由
- * interactive-mode 经 withBuiltInRenderers 注入。此 stub 还原原生 bash
- * 折叠预览契约（尾部行 + `N earlier lines` 提示，该文案 0.84/0.85 一致），
- * 仅用于验证 round 卡对长输出子组件的收纳行为。
+ * 内置工具定义按名字构造。pi 0.99 起内置 renderer 由调用方合并（以前 ToolExecutionComponent
+ * 自己查表），这里跟 CLI 的 getRegisteredToolDefinition 保持一致；非内置工具只给名字。
  */
-function bashPreviewDefinition() {
-	const TAIL = 5;
-	return {
-		renderCall: (args: any) => new Text(`bash ${args?.command ?? ""}`, 0, 0),
-		renderResult: (result: any, options: any) => {
-			const text = (result?.content ?? [])
-				.filter((item: any) => item?.type === "text")
-				.map((item: any) => String(item.text ?? ""))
-				.join("\n");
-			const lines = text.split("\n");
-			if (options?.expanded) return new Text(lines.join("\n"), 0, 0);
-			const skipped = lines.length - TAIL;
-			if (skipped <= 0) return new Text(lines.join("\n"), 0, 0);
-			return new Text(
-				["", `... (${skipped} earlier lines, press to expand)`, ...lines.slice(-TAIL)].join("\n"),
-				0,
-				0,
-			);
-		},
-	};
+const BUILT_IN_TOOL_DEFINITIONS: Record<string, (cwd: string) => any> = {
+	bash: createBashToolDefinition,
+	edit: createEditToolDefinition,
+	grep: createGrepToolDefinition,
+	read: createReadToolDefinition,
+	write: createWriteToolDefinition,
+};
+
+function tool(name: string, id: string, args: any = {}) {
+	const cwd = process.cwd();
+	const definition = BUILT_IN_TOOL_DEFINITIONS[name]?.(cwd) ?? { name };
+	return new ToolExecutionComponent(name, id, args, {}, definition, ui, cwd) as any;
 }
 
 const renderText = (component: any, width = 120): string[] =>
@@ -145,6 +143,8 @@ function toolCallMessage(timestamp: number, name = "bash") {
 		content: [{ type: "toolCall", name, arguments: { command: "echo" } }],
 	} as unknown as AssistantMessage;
 }
+/** 等过回合收尾的静默期（FOLD_SETTLE_MS = 250ms）。 */
+const settleFold = () => new Promise((resolve) => setTimeout(resolve, 350));
 
 test("buildMessageSummary: duration first, read dedup by path, counts, first-seen order, edit/write excluded", () => {
 	const query = {
@@ -214,9 +214,14 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).dimThinkingText, false);
 	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
-	assert.equal(normalizeConfig({}).inputClip, 100);
-	assert.equal(normalizeConfig({ inputClip: 40 }).inputClip, 40);
-	assert.match(formatConfigStatus(normalizeConfig({})), /inputClip=100/);
+	assert.equal(normalizeConfig({}).toolLabelClip, 0);
+	assert.equal(normalizeConfig({ toolLabelClip: 40 }).toolLabelClip, 40);
+	assert.equal(normalizeConfig({ toolLabelClip: "0" }).toolLabelClip, 0);
+	assert.equal(normalizeConfig({ toolLabelClip: 3 }).toolLabelClip, 8);
+	assert.equal(normalizeConfig({ toolLabelClip: 9999 }).toolLabelClip, 500);
+	// 旧配置键 inputClip 自动迁移
+	assert.equal(normalizeConfig({ inputClip: 60 }).toolLabelClip, 60);
+	assert.match(formatConfigStatus(normalizeConfig({})), /toolLabelClip=0/);
 	assert.equal(normalizeConfig({}).expandedInputMaxLines, 5);
 	assert.equal(normalizeConfig({}).expandedOutputMaxLines, 10);
 	assert.equal(normalizeConfig({ expandedInputMaxLines: 20 }).expandedInputMaxLines, 20);
@@ -228,6 +233,25 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ completionBellAfterSec: -5 }).completionBellAfterSec, 0);
 	assert.equal(normalizeConfig({ completionBellAfterSec: 99999 }).completionBellAfterSec, 3600);
 	assert.match(formatConfigStatus(normalizeConfig({})), /bellAfter=0s/);
+	// issue 46：展开卡背景槽位白名单，默认与旧行为一致。
+	assert.equal(normalizeConfig({}).expandedCardBackground, "userMessageBg");
+	assert.equal(
+		normalizeConfig({ expandedCardBackground: "toolPendingBg" }).expandedCardBackground,
+		"toolPendingBg",
+	);
+	assert.equal(
+		normalizeConfig({ expandedCardBackground: "selectedBg" }).expandedCardBackground,
+		"selectedBg",
+	);
+	// 非背景 token（fg 槽位）与垃圾值都回退默认，theme.bg 不会拿到未知 token。
+	assert.equal(
+		normalizeConfig({ expandedCardBackground: "toolTitle" }).expandedCardBackground,
+		"userMessageBg",
+	);
+	assert.equal(
+		normalizeConfig({ expandedCardBackground: 42 }).expandedCardBackground,
+		"userMessageBg",
+	);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {
@@ -250,7 +274,7 @@ test("config normalize keeps compact, defaults to on, command completions order 
 });
 
 test("tool path summaries relativize cwd paths and preserve filenames when clipped", () => {
-	const previous = config.inputClip;
+	const previous = config.toolLabelClip;
 	const args = {
 		path: join(
 			process.cwd(),
@@ -262,7 +286,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 	};
 	const original = { ...args };
 	try {
-		config.inputClip = 40;
+		config.toolLabelClip = 40;
 		for (const variant of ["default", "grouping"] as const) {
 			const summary = toolCallSummary("read", args, { variant, cwd: process.cwd() });
 			assert.match(summary.main, /^Read extensions/);
@@ -272,7 +296,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 				new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
 			);
 		}
-		config.inputClip = 200;
+		config.toolLabelClip = 200;
 		const outside = join(process.cwd(), "..", "outside-project", "target-file.ts");
 		assert.equal(
 			toolCallSummary("write", { path: outside }, { cwd: process.cwd() }).main,
@@ -281,7 +305,7 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 		);
 		assert.deepEqual(args, original, "display formatting does not mutate tool arguments");
 	} finally {
-		config.inputClip = previous;
+		config.toolLabelClip = previous;
 	}
 });
 
@@ -326,9 +350,9 @@ test("toolCallSummary: arhen subagent 派生用人名，无 UUID", () => {
 });
 
 test("toolCallSummary: tintinweb agent_id 换 subagent 标题，无映射回短 ID", () => {
-	const previous = config.inputClip;
+	const previous = config.toolLabelClip;
 	try {
-		config.inputClip = 100;
+		config.toolLabelClip = 100;
 		clearAgentTitles();
 		// 无映射：17 位 UUID 只留前 8 位。
 		assert.equal(
@@ -356,7 +380,7 @@ test("toolCallSummary: tintinweb agent_id 换 subagent 标题，无映射回短 
 			"Steer Subagent Plan",
 		);
 	} finally {
-		config.inputClip = previous;
+		config.toolLabelClip = previous;
 		clearAgentTitles();
 	}
 });
@@ -497,6 +521,67 @@ test("dim thinking text uses the dim token without mutating the theme", () => {
 	}
 });
 
+test("Dim thinking text 开启时摘要行整行走 dim", () => {
+	const previousTheme = getMessageDisplayTheme();
+	const previousDim = config.dimThinkingText;
+	const previousMode = config.mode;
+	setMessageDisplayTheme({
+		fg: (color: string, text: string) => `<${color}>${text}`,
+	} as any);
+	// 每次调用独立装卸补丁：共用安装时，上一个组件的回合会被 refresh 抢回去。
+	const summaryOf = (dim: boolean) => {
+		config.mode = "compact";
+		config.dimThinkingText = dim;
+		const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+		try {
+			const msg = toolCallMessage(1);
+			const assistant = new AssistantMessageComponent(msg, true) as any;
+			assistant.updateContent(msg);
+			return assistant.render(200).join("\n");
+		} finally {
+			hooks.shutdown();
+		}
+	};
+	try {
+		const muted = summaryOf(false);
+		assert.ok(muted.includes("<muted>, bash×1"), `关闭时工具计数走 muted: ${muted}`);
+		const dim = summaryOf(true);
+		assert.ok(dim.includes("<dim>, bash×1"), `开启时工具计数走 dim: ${dim}`);
+		assert.ok(!dim.includes("<muted>"), `开启时整行不该再有 muted: ${dim}`);
+	} finally {
+		config.dimThinkingText = previousDim;
+		config.mode = previousMode;
+		setMessageDisplayTheme(previousTheme);
+	}
+});
+
+test("摘要行 hover 只高亮展开文字，圆点保持 dim", () => {
+	const previousTheme = getMessageDisplayTheme();
+	const previousMode = config.mode;
+	setMessageDisplayTheme({
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	} as any);
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const msg = toolCallMessage(1);
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const summaryLine = () => {
+			assistant.invalidate?.();
+			return assistant.render(200).find((line: string) => line.includes("click to show more"));
+		};
+		assert.match(summaryLine() ?? "", /<dim> · <\/dim><dim>click to show more<\/dim>/);
+		setHoveredCompactAssistant(assistant);
+		assert.match(summaryLine() ?? "", /<dim> · <\/dim><text>click to show more<\/text>/);
+	} finally {
+		setHoveredCompactAssistant(null);
+		hooks.shutdown();
+		config.mode = previousMode;
+		setMessageDisplayTheme(previousTheme);
+	}
+});
+
 test("compact collapses tool-calling assistant to one line; native render outside compact", () => {
 	const { restore } = installHooks();
 	try {
@@ -541,6 +626,46 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 		assistant.updateContent(msg);
 		assert.ok(!renderText(assistant).some((line) => /Running\.\.\., bash×1/.test(line)));
 		assert.ok(renderText(read).length > 0, "tool renders natively in off mode");
+	} finally {
+		restore();
+	}
+});
+
+test("compact 折叠摘要不挂分组折叠树，普通工具只进计数", () => {
+	const { restore } = installHooks();
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "npm test" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "ls src" } },
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "b3", name: "bash", arguments: { command: "echo done" } },
+			],
+		} as unknown as AssistantMessage;
+		const tools = [
+			tool("bash", "b1", { command: "npm test" }),
+			tool("bash", "b2", { command: "ls src" }),
+			tool("read", "r1", { path: "a.ts" }),
+			tool("bash", "b3", { command: "echo done" }),
+		];
+		for (const item of tools) {
+			item.executionStarted = true;
+			item.updateDisplay?.();
+			item.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		}
+		const assistant = new AssistantMessageComponent(message, true) as any;
+		assistant.updateContent(message);
+		const lines = renderText(assistant);
+		const summary = lines.find((line) => /bash×3/.test(line));
+		assert.ok(summary, `摘要应计数普通工具: ${lines}`);
+		assert.doesNotMatch(summary ?? "", /edit/, `edit 不进摘要: ${summary}`);
+		assert.ok(
+			!lines.some((line) => /[●├└]/.test(line) || /Bash:|Multiple Tools/.test(line)),
+			`折叠摘要下不应出现分组树: ${lines}`,
+		);
 	} finally {
 		restore();
 	}
@@ -620,11 +745,18 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			/^Running\.\.\. · 2s, bash×2, fffind×1, read×1/,
 		);
 
-		const bash = tool("bash", "b1", { command: "one" }, bashPreviewDefinition());
+		// 消息先到、组件后到：pi 的 message_update 就是这个顺序。
+		// 组件一 updateDisplay 就进 live 槽位，槽位接管期间强制折叠，不能再单独展开。
+		const bash = tool("bash", "b1", { command: "one" });
 		const longOutput = Array.from({ length: 500 }, (_, index) => `tool output ${index}`).join("\n");
 		bash.updateResult({ content: [{ type: "text", text: longOutput }], isError: false });
+		const afterTool = renderText(assistant1);
+		assert.ok(
+			afterTool.some((line) => line.includes("↳") && line.includes("$ one")),
+			`组件后到应补进槽位: ${afterTool.join(" | ")}`,
+		);
 		bash.setExpanded(true);
-		assert.equal(bash.expanded, true, "precondition: child can be expanded before its round");
+		assert.equal(bash.expanded, false, "live 槽位接管的工具不能单独展开");
 		const edit = tool("edit", "e1", { path: "a.ts" });
 		edit.updateResult({ content: [], isError: false });
 		const backgroundSlots: string[] = [];
@@ -644,12 +776,29 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		const cardLines = assistant1.render(80);
 		assert.match(renderText(assistant1).join("\n"), /495 earlier lines/);
 		assert.ok(cardLines.length < 30, "collapsed children cap long output inside the round card");
-		assert.equal(cardLines[0], "", "expanded round keeps the normal card spacer");
+		assert.equal(cardLines[0]?.trim(), "", "expanded round keeps a leading blank row");
 		assert.ok(
-			cardLines.slice(1).every((line: string) => visibleWidth(line) === 80),
+			cardLines.every((line: string) => line === "" || visibleWidth(line) === 80),
 			"expanded round is wrapped by one width-safe tool card",
 		);
-		assert.deepEqual([...new Set(backgroundSlots)], ["userMessageBg"]);
+		// 面板铺的就是当前配置的槽位（默认 userMessageBg 由 normalizeConfig 用例守）
+		assert.deepEqual([...new Set(backgroundSlots)], [config.expandedCardBackground]);
+		// issue 46：展开面板背景槽位可配，改配置后重新渲染要跟着换。
+		// 当前值可能已被本机配置设成 toolPendingBg，换个槽位验证跟随。
+		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
+		try {
+			backgroundSlots.length = 0;
+			config.expandedCardBackground = targetSlot;
+			assistant1.render(80);
+			assert.deepEqual(
+				[...new Set(backgroundSlots)],
+				[targetSlot],
+				"expanded round card follows the configured slot",
+			);
+		} finally {
+			config.expandedCardBackground = previousSlot;
+		}
 		setMessageDisplayTheme(previousTheme);
 		assert.deepEqual(renderText(bash), [], "round tools render only inside the summary card");
 		assistant1.setExpanded(false);
@@ -698,6 +847,82 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
 		hooks.shutdown();
+	}
+});
+
+test("expanded round panel repaints when the card background slot changes", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	// 面板按 patch.toolOriginalRender 取子卡行，且按数组引用判缓存命中。
+	// 装补丁前把原生 render 换成固定引用，模拟真实子卡 paint 复用的情形。
+	const prototype = ToolExecutionComponent.prototype as any;
+	const nativeRender = prototype.render;
+	const stablePaints = new WeakMap<object, string[]>();
+	prototype.render = function (this: any) {
+		let paints = stablePaints.get(this);
+		if (!paints) {
+			paints = [` ✓ ${this.toolName} done`];
+			stablePaints.set(this, paints);
+		}
+		return paints;
+	};
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } },
+			],
+		};
+		const output = { content: [{ type: "text", text: "line one\nline two" }], isError: false };
+		const first = tool("bash", "b1", { command: "one" });
+		const second = tool("bash", "b2", { command: "two" });
+		first.updateResult(output);
+		second.updateResult(output);
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		anchor.setExpanded(true);
+
+		const backgroundSlots: string[] = [];
+		setMessageDisplayTheme(
+			Object.assign(Object.create(previousTheme ?? null), {
+				fg: previousTheme?.fg ?? ((_color: string, text: string) => text),
+				bg(slot: string, text: string) {
+					backgroundSlots.push(slot);
+					return text;
+				},
+			}),
+		);
+		const initialSlot = config.expandedCardBackground;
+		anchor.render(120);
+		assert.ok(backgroundSlots.includes(initialSlot), "panel starts on the configured slot");
+
+		backgroundSlots.length = 0;
+		anchor.render(120);
+		assert.deepEqual(backgroundSlots, [], "identical frame reuses the cached panel rows");
+
+		// issue 46：改槽位后已展开的回合面板必须重画，不能命中旧底色的缓存。
+		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
+		try {
+			config.expandedCardBackground = targetSlot;
+			anchor.render(120);
+			assert.deepEqual(
+				[...new Set(backgroundSlots)],
+				[targetSlot],
+				"panel follows the configured slot",
+			);
+		} finally {
+			config.expandedCardBackground = previousSlot;
+		}
+	} finally {
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		hooks.shutdown();
+		prototype.render = nativeRender;
 	}
 });
 
@@ -753,6 +978,1422 @@ test("expanded running round keeps thinking and tools in transcript order", () =
 		assert.ok(planTwo < needle, `thinking 2 must precede its tool, got: ${text}`);
 	} finally {
 		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 整回合展开卡内工具可单击二次展开", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-round-tool-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const defaultMode = installDefaultMode(writeMetadata);
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } },
+			],
+		};
+		const first = tool("bash", "b1", { command: "one" });
+		const second = tool("bash", "b2", { command: "two" });
+		for (const item of [first, second]) {
+			item.executionStarted = true;
+			item.updateDisplay?.();
+		}
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		const output = { content: [{ type: "text", text: "line one\nline two" }], isError: false };
+		first.updateResult(output);
+		second.updateResult(output);
+		anchor.setExpanded(true);
+
+		const plainLines = (): string[] =>
+			anchor
+				.render(120)
+				.map((line: string) =>
+					line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, ""),
+				);
+		// 渲染样式随 mode/主题变化，按命中结果定位工具行，不按提示文案。
+		const rows = plainLines();
+		const toolRows = rows
+			.map((_line, index) => index)
+			.filter((index) => componentAtLocalRow(anchor, index, 120)?.component === first);
+		assert.ok(toolRows.length > 0, `展开卡里应能命中工具行: ${rows.join("\n")}`);
+
+		// 未标记时仍被强制折叠压回（保持「回合展开不递归展开工具」的既有行为）。
+		first.setExpanded(true);
+		assert.equal(first.expanded, false, "未确认用户展开前仍强制折叠");
+
+		// 用户点开：放行，并在卡内渲染出输出。
+		markCompactRoundToolExpanded(first);
+		first.setExpanded(true);
+		assert.equal(first.expanded, true, "用户点开的 round 内工具应保持展开");
+		const expandedText = plainLines().join("\n");
+		assert.match(expandedText, /line one/, `展开后应看到输出: ${expandedText}`);
+
+		// 单开：展开第二个时第一个收回。
+		markCompactRoundToolExpanded(second);
+		second.setExpanded(true);
+		assert.equal(second.expanded, true);
+		assert.equal(first.expanded, false, "单开语义：其他 round 内工具应收起");
+
+		// 回合收起再展开后回到纯折叠态。
+		anchor.setExpanded(false);
+		anchor.setExpanded(true);
+		assert.equal(second.expanded, false, "回合重新展开后工具回到折叠");
+	} finally {
+		hooks.shutdown();
+		defaultMode.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 面板收起时，卡内被点开的工具一起收回", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-round-retract-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const defaultMode = installDefaultMode(writeMetadata);
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } },
+			],
+		};
+		const first = tool("bash", "b1", { command: "one" });
+		const second = tool("bash", "b2", { command: "two" });
+		for (const item of [first, second]) {
+			item.executionStarted = true;
+			item.updateDisplay?.();
+		}
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		const output = { content: [{ type: "text", text: "line one" }], isError: false };
+		first.updateResult(output);
+		second.updateResult(output);
+
+		// 回合先收尾，模拟用户回看历史：live 态的强制折叠不再兜底。
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 9,
+			content: [{ type: "text", text: "done" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		final.updateContent(finalMessage);
+		await settleFold();
+
+		anchor.setExpanded(true);
+		markCompactRoundToolExpanded(first);
+		first.setExpanded(true);
+		assert.equal(first.expanded, true, "面板展开时用户点开的工具应保持展开");
+
+		// 面板收起（点面板内非提示区）：卡内工具必须一起收回，否则会单独渲染成一张卡。
+		anchor.setExpanded(false);
+		assert.equal(first.expanded, false, "面板收起时卡内工具应一起收回");
+		assert.deepEqual(renderText(first), [], "收回后工具不该单独成卡");
+		assert.match(renderText(anchor).join("\n"), /Ran for /, "面板收起后只剩摘要行");
+	} finally {
+		hooks.shutdown();
+		defaultMode.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact live: one thinking preview, one tool slot, folds after the settle window", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		// anchor：思考已收尾（末块是 toolCall），工具开始跑。
+		const message1 = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "plan-one" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-one" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "echo-one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const assistant1 = new AssistantMessageComponent(message1 as any, true) as any;
+		assistant1.updateContent(message1);
+
+		let text = renderText(assistant1).join("\n");
+		assert.match(text, /Running\.\.\./);
+		assert.ok(text.includes("echo-one"), `槽位应显示运行中的工具: ${text}`);
+		assert.doesNotMatch(text, /plan-one/, `已收尾的思考不该占屏幕: ${text}`);
+		const slotLine = renderText(assistant1).find((line) => line.startsWith("↳"));
+		assert.ok(slotLine, `槽位卡首行应有 ↳ 标记: ${text}`);
+		assert.ok(!slotLine.startsWith("↳  "), `↳ 后只留一个空格: ${slotLine}`);
+		assert.ok(slotLine.includes("echo-one"), `槽位卡首行应是当前工具: ${slotLine}`);
+		assert.deepEqual(renderText(bash), [], "槽位接管的工具外层不再单独成行");
+
+		// 工具完成：槽位保留终态，等下一个工具接手，不出现「完成即消失」的闪动。
+		bash.updateResult({ content: [{ type: "text", text: "ok-one" }], isError: false });
+		text = renderText(assistant1).join("\n");
+		assert.ok(text.includes("echo-one"), `工具完成后槽位仍应保留: ${text}`);
+		assert.deepEqual(renderText(bash), [], "完成态仍由槽位接管");
+
+		// 第二个成员：思考已收尾 + 新工具；第三个成员：思考仍在长。
+		const message2 = {
+			role: "assistant",
+			timestamp: 2,
+			content: [
+				{ type: "thinking", thinking: "plan-two" },
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "needle" } },
+			],
+		};
+		const grep = tool("grep", "g1", { pattern: "needle" });
+		grep.updateDisplay?.();
+		const assistant2 = new AssistantMessageComponent(message2 as any, true) as any;
+		assistant2.updateContent(message2);
+		const message3 = {
+			role: "assistant",
+			timestamp: 3,
+			content: [{ type: "thinking", thinking: "plan-three" }],
+		};
+		const assistant3 = new AssistantMessageComponent(message3 as any, true) as any;
+		assistant3.updateContent(message3);
+
+		text = renderText(assistant1).join("\n");
+		assert.match(text, /plan-three/, `活动思考应预览: ${text}`);
+		assert.doesNotMatch(text, /plan-one|plan-two/, `只有活动思考预览，中间态不堆积: ${text}`);
+		const thinkingSlot = renderText(assistant1).find((line) => line.startsWith("↳"));
+		assert.ok(thinkingSlot, `思考应占槽位: ${text}`);
+		assert.ok(!thinkingSlot.includes("needle"), `思考占槽位时工具让位: ${thinkingSlot}`);
+		assert.deepEqual(renderText(assistant2), [], "成员本体不重复渲染");
+		assert.deepEqual(renderText(assistant3), [], "思考预览已移进槽位卡");
+
+		// 最终正文出现：静默期内槽位还在，不立刻抖一下。
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 4,
+			content: [{ type: "text", text: "done-live" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		final.updateContent(finalMessage);
+		assert.match(renderText(assistant1).join("\n"), /plan-three/, "静默期内槽位保留");
+
+		// 静默期结束 → 整块收回收摘要行。
+		await settleFold();
+		const folded = renderText(assistant1).join("\n");
+		assert.match(folded, /Ran for /, `回合结束应收回收摘要行: ${folded}`);
+		assert.doesNotMatch(folded, /plan-three/, `回合结束后思考预览应回收: ${folded}`);
+		assert.doesNotMatch(folded, /↳/, "回合结束后工具槽位应回收");
+		assert.match(folded, /bash×1/);
+		assert.match(folded, /grep×1/);
+		assert.deepEqual(renderText(assistant3), []);
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact live: 工具组件晚于消息到达时补画槽位，参数更新时刷新", () => {
+	const { restore } = installHooks();
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "looking" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-early" } },
+			],
+		};
+		const assistant = new AssistantMessageComponent(message as any, true) as any;
+		// pi 的 message_update：先 updateContent（计数 +1），工具组件还没构造。
+		assistant.updateContent(message);
+		const before = renderText(assistant);
+		assert.match(before.join("\n"), /bash×1/, `计数应先涨: ${before}`);
+		assert.ok(!before.some((line) => line.startsWith("↳")), `组件未到不该有槽位卡: ${before}`);
+
+		const bash = tool("bash", "b1", { command: "echo-early" });
+		bash.updateDisplay?.();
+		const after = renderText(assistant);
+		const slot = after.find((line) => line.startsWith("↳"));
+		assert.ok(slot?.includes("echo-early"), `组件到达后要补画槽位: ${after}`);
+		assert.deepEqual(renderText(bash), [], "槽位接管后外层不再单独成行");
+
+		bash.args = { command: "echo-late" };
+		bash.updateDisplay?.();
+		const updated = renderText(assistant);
+		assert.ok(
+			updated.some((line) => line.startsWith("↳") && line.includes("echo-late")),
+			`参数更新后槽位要跟着换: ${updated}`,
+		);
+	} finally {
+		restore();
+	}
+});
+
+test("compact live: a superseding round folds the previous one immediately", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-supersede-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const messageA = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "first-line\nlatest-a" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-a" } },
+			],
+		};
+		const bashA = tool("bash", "b1", { command: "echo-a" });
+		bashA.executionStarted = true;
+		bashA.updateDisplay?.();
+		const roundA = new AssistantMessageComponent(messageA as any, true) as any;
+		roundA.updateContent(messageA);
+		const liveA = renderText(roundA);
+		// live 与折叠态同形：正文整段照原生渲染，摘要行在其后，槽位卡再挂在摘要行下。
+		assert.deepEqual(
+			liveA.slice(0, 2),
+			["first-line", "latest-a"],
+			`live 应显示完整正文: ${liveA}`,
+		);
+		assert.match(liveA[2] ?? "", /^Running\.\.\./, `摘要行排在正文之后: ${liveA}`);
+		assert.match(liveA[3] ?? "", /^↳ \S/, `槽位卡首行紧跟 ↳: ${liveA}`);
+		assert.ok(!(liveA[3] ?? "").startsWith("↳  "), `↳ 后只留一个空格: ${liveA[3]}`);
+
+		// 新 anchor 接替：旧回合立即收拢，不残留成第二张卡。
+		const messageB = {
+			role: "assistant",
+			timestamp: 2,
+			content: [
+				{ type: "text", text: "second-round" },
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "needle" } },
+			],
+		};
+		const grepB = tool("grep", "g1", { pattern: "needle" });
+		grepB.executionStarted = true;
+		grepB.updateDisplay?.();
+		const roundB = new AssistantMessageComponent(messageB as any, true) as any;
+		roundB.updateContent(messageB);
+
+		// 收尾只少槽位卡：正文与摘要行原地不动，摘要行只换时态。
+		const foldedA = renderText(roundA);
+		assert.deepEqual(
+			foldedA.slice(0, 2),
+			["first-line", "latest-a"],
+			`收尾后正文原地不动: ${foldedA}`,
+		);
+		assert.match(foldedA[2] ?? "", /^Ran for .*bash×1/, `摘要行原地换时态: ${foldedA}`);
+		assert.equal(foldedA.length, liveA.length - 1, `收尾只该少槽位卡: ${liveA} → ${foldedA}`);
+		assert.ok(renderText(roundB).join("\n").includes("needle"), "新回合槽位应可见");
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 尾行：摘要行挂 transcript 容器回合末尾，新工具追加后归位", async () => {
+	const { restore } = installHooks();
+	// anchor 挂进容器时（等价于 pi chatContainer），摘要行挂到容器里回合末尾的
+	// 兄弟组件上——运行中恒在可写视口底缘，收尾的 Ran for 才能落进 scrollback。
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "hello" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message);
+
+		// 摘要行离开 anchor，成为容器里回合末尾的兄弟组件。
+		assert.equal(chat.children.length, 3, `尾行应挂进容器: ${chat.children.length}`);
+		const tail = chat.children[2] as any;
+		assert.ok(tail !== anchor && tail !== bash);
+		assert.ok(isCompactAssistantComponent(tail), "尾行要保留展开接线（click/hover）");
+		assert.ok(
+			!renderText(anchor).some((line) => /Running\.\.\./.test(line)),
+			"anchor 自身渲染不再带摘要行",
+		);
+		assert.match(renderText(tail).join("\n"), /Running\.\.\.(?: · [\d.]+m?s)?, bash×1/);
+
+		// pi 把新工具卡 append 在容器末尾（尾行之后）：updateDisplay 时压回合末位。
+		const message2 = {
+			...message,
+			content: [
+				...message.content,
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "x" } },
+			],
+		};
+		anchor.updateContent(message2);
+		const grep = tool("grep", "g1", { pattern: "x" });
+		chat.addChild(grep);
+		assert.equal(chat.children.at(-1), grep, "工具先落在尾行之后");
+		grep.updateDisplay?.();
+		assert.equal(chat.children.at(-1), tail, "尾行应归位到新工具之后");
+
+		// 收尾：尾行原地翻成 Ran for，停在收尾回合与下一条消息之间。
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "done" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		chat.addChild(final);
+		final.updateContent(finalMessage);
+		await settleFold();
+		assert.match(renderText(tail).join("\n"), /Ran for .+bash×1.+grep×1/);
+		const order = chat.children.map((c: any) =>
+			c === tail ? "tail" : c === anchor ? "anchor" : c === final ? "final" : "tool",
+		);
+		assert.deepEqual(order, ["anchor", "tool", "tool", "tail", "final"]);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：只有 edit/write 的回合不挂摘要行", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "" },
+				{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } },
+				{ type: "toolCall", id: "e2", name: "edit", arguments: { path: "b.ts" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const editA = tool("edit", "e1", { path: "a.ts" });
+		const editB = tool("edit", "e2", { path: "b.ts" });
+		chat.addChild(anchor);
+		chat.addChild(editA);
+		chat.addChild(editB);
+		anchor.updateContent(message);
+
+		// 运行中摘要行仍在：它承载 Running... 状态。
+		assert.ok(
+			chat.children.some((child: any) => /Running\.\.\./.test(renderText(child).join("\n"))),
+			"运行中应挂摘要行",
+		);
+
+		// steering / 下一条消息把回合收尾：没有普通工具也没有思考，摘要行撤掉。
+		const next = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "next" }],
+		};
+		const follow = new AssistantMessageComponent(next as any, true) as any;
+		chat.addChild(follow);
+		follow.updateContent(next);
+		await settleFold();
+		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
+		assert.deepEqual(summaries, [], `只剩外层卡的回合不应有摘要行: ${summaries}`);
+		assert.equal(chat.children.includes(editA), true);
+		assert.equal(chat.children.includes(editB), true);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact resume：重放已结束的回合直接落成 Ran for，不停留在 Running", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "checking" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "ls" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		// resume 重放：构造时 updateContent 不带 isStreaming，消息已是终态。
+		anchor.updateContent(message);
+		// 回放进行中不收尾：还有后续消息要并进同一回合。
+		assert.match(renderText(chat).join("\n"), /Running\.\.\..*bash×1/);
+		// 回放结束（session_start 延迟一拍）才收尾最后一条。
+		hooks.settleReplayedRound();
+		const rendered = renderText(chat).join("\n");
+		assert.doesNotMatch(rendered, /Running\.\.\./, `重放不该停在进行中: ${rendered}`);
+		assert.match(rendered, /Ran for .+bash×1/, `重放应直接落成已结束: ${rendered}`);
+
+		// 流式中的消息（pending）不受影响，仍显示 Running。
+		const live = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "pending",
+			content: [
+				{ type: "text", text: "next" },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "pwd" } },
+			],
+		};
+		const liveAnchor = new AssistantMessageComponent(live as any, true) as any;
+		chat.addChild(liveAnchor);
+		liveAnchor.updateContent(live);
+		assert.match(renderText(chat).join("\n"), /Running\.\.\..*bash×1/);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：带正文的工具消息各起回合，无正文续接才并入上一回合", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const first = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "one" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+			],
+		};
+		const second = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "toolUse",
+			content: [
+				{ type: "text", text: "two" },
+				{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "pwd" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(first as any, true) as any;
+		const follow = new AssistantMessageComponent(second as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "ls" }));
+		anchor.updateContent(first);
+		chat.addChild(follow);
+		chat.addChild(tool("bash", "b2", { command: "pwd" }));
+		follow.updateContent(second);
+
+		hooks.settleReplayedRound();
+		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
+		// 每条消息都带可见正文 → 各自是自己的 anchor，两个 bash 各成一行（截图语义）。
+		assert.deepEqual(summaries.length, 2, `两条带正文的消息应各起一行: ${summaries}`);
+		assert.ok(
+			summaries.every((line) => /bash×1/.test(line)),
+			`每行各记一次 bash: ${summaries}`,
+		);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：运行中外来提示行压在计数行之上，收尾后落到摘要之下", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "hello" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message);
+		const tail = chat.children.at(-1) as any;
+
+		// 运行中到达提示行（showStatus 的 Spacer+Text 等价物）：落在尾行之后。
+		const tipSpacer = { render: () => [""] };
+		const tipText = { render: () => ["Updated x: on"] };
+		chat.addChild(tipSpacer);
+		chat.addChild(tipText);
+
+		// 新工具 append 在提示行之后，updateDisplay 触发尾行归位。
+		const message2 = {
+			...message,
+			content: [
+				...message.content,
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "x" } },
+			],
+		};
+		anchor.updateContent(message2);
+		const grep = tool("grep", "g1", { pattern: "x" });
+		chat.addChild(grep);
+		grep.updateDisplay?.();
+
+		const order = chat.children.map((c: any) =>
+			c === tail
+				? "tail"
+				: c === anchor
+					? "anchor"
+					: c === tipSpacer || c === tipText
+						? "tip"
+						: "tool",
+		);
+		// 计数行恒在 transcript 最末：提示行不困在成员中间，也不把计数行截成两行。
+		assert.deepEqual(order, ["anchor", "tool", "tool", "tip", "tip", "tail"]);
+
+		// 收尾后摘要行回落回合末位，提示行换到它之下、回合边界之外。
+		const finalMessage = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "text", text: "done" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		chat.addChild(final);
+		final.updateContent(finalMessage);
+		await settleFold();
+		const settled = chat.children.map((c: any) =>
+			c === tail
+				? "tail"
+				: c === anchor
+					? "anchor"
+					: c === tipSpacer || c === tipText
+						? "tip"
+						: c === final
+							? "final"
+							: "tool",
+		);
+		assert.deepEqual(settled, ["anchor", "tool", "tool", "tail", "tip", "tip", "final"]);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 回合不跨用户消息：steer 留在原位，前后各一条摘要", () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const first = {
+		role: "assistant",
+		timestamp: 1,
+		content: [
+			{ type: "text", text: "好的，我先跑一下 bash。" },
+			{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+		],
+	};
+	const second = {
+		role: "assistant",
+		timestamp: 2,
+		content: [{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "Y" } }],
+	};
+	const third = {
+		role: "assistant",
+		timestamp: 3,
+		content: [{ type: "toolCall", id: "r1", name: "read", arguments: { path: "src/z.ts" } }],
+	};
+	// 直播顺序：pi 先 addChild 再 updateContent（message_start → 挂载 → 流式）。
+	try {
+		const anchor = new AssistantMessageComponent(undefined, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(first);
+
+		// 回合进行中插入 steer 用户消息。
+		const steer = new UserMessageComponent("顺便也看看 Y") as any;
+		chat.addChild(steer);
+
+		// steer 之后模型接着跑 grep：这条 assistant 消息没有正文。
+		const next = new AssistantMessageComponent(undefined, true) as any;
+		const grep = tool("grep", "g1", { pattern: "Y" });
+		chat.addChild(next);
+		chat.addChild(grep);
+		next.updateContent(second);
+		grep.updateDisplay?.();
+
+		// steer 排在旧回合之后、新回合之前：没被当成外来行挪到回合末尾。
+		const order = chat.children as any[];
+		assert.ok(order.indexOf(steer) > order.indexOf(bash), "steer 在旧回合之后");
+		assert.ok(order.indexOf(steer) < order.indexOf(next), "steer 在新回合之前");
+
+		const summaries = renderText(chat).filter((line) => /Ran for|Running\.\.\./.test(line));
+		assert.equal(summaries.length, 2, `两个回合各一条摘要: ${renderText(chat).join(" | ")}`);
+		assert.match(summaries[0]!, /Ran for .+bash×1/);
+		assert.doesNotMatch(summaries[0]!, /grep/);
+		assert.match(summaries[1]!, /Running\.\.\..*grep×1/);
+		assert.doesNotMatch(summaries[1]!, /bash/);
+
+		// 回合 2 还在跑时用户又提了新问题：新回合同样不把这条消息卷进来。
+		const prompt = new UserMessageComponent("再看看 Z") as any;
+		chat.addChild(prompt);
+		const later = new AssistantMessageComponent(undefined, true) as any;
+		const read = tool("read", "r1", { path: "src/z.ts" });
+		chat.addChild(later);
+		chat.addChild(read);
+		later.updateContent(third);
+
+		const after = chat.children as any[];
+		assert.ok(after.indexOf(prompt) > after.indexOf(grep), "新问题排在上一段工具之后");
+		assert.ok(after.indexOf(prompt) < after.indexOf(later), "新问题排在下一回合之前");
+		assert.ok(after.indexOf(steer) < after.indexOf(later), "steer 没被后一轮挪走");
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 回合不跨用户消息：重放后 refresh 重新分组，边界同样成立", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const first = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "好的，我先跑一下 bash。" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const second = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "Y" } }],
+		};
+		// 会话重放顺序：组件构造时就带消息（updateContent 发生在挂载之前），
+		// 那一刻看不到容器里的用户消息，边界由 refresh 重新分组时补上。
+		const prompt = new UserMessageComponent("把 X 改一下") as any;
+		const anchor = new AssistantMessageComponent(first as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		const steer = new UserMessageComponent("顺便也看看 Y") as any;
+		const next = new AssistantMessageComponent(second as any, true) as any;
+		const grep = tool("grep", "g1", { pattern: "Y" });
+		for (const child of [prompt, anchor, bash, steer, next, grep]) chat.addChild(child);
+
+		hooks.refresh();
+
+		const order = chat.children as any[];
+		assert.ok(order.indexOf(steer) > order.indexOf(bash), "steer 在旧回合之后");
+		assert.ok(order.indexOf(steer) < order.indexOf(next), "steer 在新回合之前");
+		const summaries = renderText(chat).filter((line) => /Ran for|Running\.\.\./.test(line));
+		assert.equal(summaries.length, 2, `两个回合各一条摘要: ${renderText(chat).join(" | ")}`);
+		assert.match(summaries[0]!, /Ran for .+bash×1/);
+		assert.match(summaries[1]!, /Running\.\.\..*grep×1/);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：refresh 重建保留挂钟与收尾态，不回摆 Running", async () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	// 可控时钟：区分「保留时长」与「重建归零」。
+	const realNow = Date.now;
+	let now = 10_000;
+	Date.now = () => now;
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "doing" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message); // startedAt = 10_000
+		now += 5_000;
+		const finalMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "done" }],
+		};
+		const final = new AssistantMessageComponent(finalMessage as any, true) as any;
+		chat.addChild(final);
+		final.updateContent(finalMessage); // endedAt = 15_000
+		await settleFold();
+		const before = renderText(chat);
+		assert.match(before.join("\n"), /Ran for 5s/, `收尾摘要: ${before}`);
+
+		// 切换设置 → refresh 重建：同一消息回放要继承旧回合，不能回摆 Running、
+		// 不能丢挂钟（Ran for 5s → 1ms）、不能重演静默期槽位卡。
+		now += 60_000;
+		hooks.refresh();
+		const after = renderText(chat);
+		assert.deepEqual(after, before, `refresh 后应与之前一致: ${before} → ${after}`);
+	} finally {
+		Date.now = realNow;
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：TUI 切换后容器过期，refresh 不另起摘要行", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const realNow = Date.now;
+	let now = 10_000;
+	Date.now = () => now;
+	const summaryRows = (root: any) =>
+		renderText(root).filter((line: string) => /(Running\.\.\.|Ran for)/.test(line));
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "doing" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(anchor);
+		chat.addChild(bash);
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "out" }], isError: false });
+		now += 5_000;
+		assert.equal(summaryRows(chat).length, 1, "前置：单条摘要行");
+
+		// 模拟 /settings 切 tuiMode：官方把组件搬到新 tui，旧容器不再持有它们，
+		// 尾行缓存的 container 就此过期。
+		const moved = new Container() as any;
+		for (const child of [...chat.children]) moved.addChild(child);
+		chat.children.length = 0;
+		setToolMouseTui({ children: [moved] });
+
+		// 面板改设置 / 会话事件都会走 refresh。
+		hooks.refresh();
+		now += 2_000;
+		const rows = [...summaryRows(moved), ...summaryRows(chat)];
+		assert.equal(rows.length, 1, `只该有一条摘要行: ${renderText(moved)}`);
+		assert.match(rows[0]!, /Running\.\.\. · 7s, bash×1/, "同一回合继续计时");
+
+		// 后续工具仍归这个回合，不另起一行。
+		const next = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "toolCall", id: "b2", name: "grep", arguments: { pattern: "x" } }],
+		};
+		const nextAnchor = new AssistantMessageComponent(next as any, true) as any;
+		const grep = tool("grep", "b2", { pattern: "x" });
+		moved.addChild(nextAnchor);
+		moved.addChild(grep);
+		nextAnchor.updateContent(next);
+		grep.updateResult({ content: [{ type: "text", text: "hit" }], isError: false });
+		now += 1_000;
+		const after = summaryRows(moved);
+		assert.equal(after.length, 1, `仍只该有一条摘要行: ${renderText(moved)}`);
+		assert.match(after[0]!, /bash×1, grep×1/, "新工具并进同一回合");
+	} finally {
+		Date.now = realNow;
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact live: 槽位卡内不重复展开入口，摘要行自己的 hint 保留", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-live-hint-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const anchorMessage = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "看长思考" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-a" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "echo-a" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(anchorMessage as any, true) as any;
+		anchor.updateContent(anchorMessage);
+
+		// 长思考成员接手槽位：预览有隐藏行，卡里本来会带 ", click to show more"。
+		const memberMessage = {
+			role: "assistant",
+			timestamp: 2,
+			content: [{ type: "thinking", thinking: ["t1", "t2", "t3", "t4", "t5"].join("\n") }],
+		};
+		const member = new AssistantMessageComponent(memberMessage as any, true) as any;
+		member.updateContent(memberMessage);
+
+		const lines = renderText(anchor);
+		const slot = lines.find((line) => line.startsWith("↳"));
+		assert.ok(slot, `槽位卡应存在: ${lines}`);
+		assert.ok(slot.includes("more lines"), `槽位卡保留隐藏行计数: ${lines}`);
+		assert.ok(!slot.includes("click to show more"), `槽位卡不重复展开入口: ${slot}`);
+		assert.ok(
+			lines.some((line) => !line.startsWith("↳") && line.includes("click to show more")),
+			`摘要行仍带自己的入口: ${lines}`,
+		);
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 展开卡：thinking 二次展开只多 1 行内卡 padding，工具卡不再叠内层底色", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-nested-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+		getBgAnsi: () => "\x1b[48;2;40;40;60m",
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "plan-one\nplan-two" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "line one\nline two" }], isError: false });
+		anchor.setExpanded(true);
+
+		const raw = () => anchor.render(120);
+		const plain = (lines: string[]) =>
+			lines.map((line) =>
+				line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, ""),
+			);
+		const blanksAbove = (lines: string[], needle: string) => {
+			const stripped = plain(lines);
+			const index = stripped.findIndex((line) => line.includes(needle));
+			assert.ok(index > 0, `缺少 ${needle}: ${stripped.join("\n")}`);
+			let count = 0;
+			for (let i = index - 1; i >= 0 && !stripped[i]?.trim(); i--) count++;
+			return count;
+		};
+
+		// 子工具卡不再包一层 card 背景：整卡只应出现外卡一种背景色。
+		const collapsed = raw();
+		const backgrounds = new Set(
+			collapsed.flatMap((line: string) => line.match(/48;2;\d+;\d+;\d+/g) ?? []),
+		);
+		assert.equal(backgrounds.size, 1, `子工具卡不应有第二层背景色: ${[...backgrounds].join(" ")}`);
+
+		const thinking = anchor.contentContainer.children
+			.flatMap((child: any) => (Array.isArray(child?.children) ? child.children : []))
+			.find((child: any) => typeof child?.setHintHovered === "function");
+		assert.ok(thinking, "展开卡应保留 thinking 块");
+		const collapsedBlanks = blanksAbove(collapsed, "Thought");
+
+		thinking.setExpanded(true);
+		// thinking 内卡的上 padding 自身占 1 行；不能再多出外卡/内卡叠出来的空行。
+		const expanded = raw();
+		assert.equal(
+			blanksAbove(expanded, "Thought") - collapsedBlanks,
+			1,
+			"thinking 二次展开只应多出内卡 1 行 padding",
+		);
+		// 内卡下 padding 之外，还要再留 1 行外卡空行，别贴着工具卡。
+		const toolRow = plain(expanded).findIndex((line) => line.includes("$ one"));
+		assert.ok(toolRow > 0, `缺少工具卡行: ${plain(expanded).join("\n")}`);
+		const bgOf = (line: string) =>
+			[...new Set(line.match(/48;2;\d+;\d+;\d+/g) ?? [])].sort().join(",");
+		assert.ok(!plain(expanded)[toolRow - 1]?.trim(), "thinking 与工具卡之间要有空行");
+		assert.notEqual(
+			bgOf(expanded[toolRow - 1] ?? ""),
+			bgOf(expanded[toolRow - 2] ?? ""),
+			"工具卡前的最后一行应是内卡下 padding，空行在其外",
+		);
+	} finally {
+		hooks.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 展开卡：助手文本不进面板，工具卡保留底色", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-text-outside-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+		getBgAnsi: () => "\x1b[48;2;40;40;60m",
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	// default-mode 先装，compact 才能把它的 ccstyle 工具卡当作 toolOriginalRender。
+	const defaultMode = installDefaultMode(writeMetadata);
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "let me check the file" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "line one\nline two" }], isError: false });
+		anchor.setExpanded(true);
+
+		const raw = anchor.render(120);
+		const strip = (line: string) =>
+			line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
+		const textRow = raw.findIndex((line: string) => strip(line).includes("let me check the file"));
+		const toolRow = raw.findIndex((line: string) => strip(line).includes("Bash one"));
+		assert.ok(
+			textRow >= 0 && toolRow > textRow,
+			`文本应在工具卡之前: ${raw.map(strip).join("\n")}`,
+		);
+		assert.ok(!raw[textRow]!.includes("48;2;"), "助手文本不进面板，不应带卡片底色");
+		assert.ok(raw[toolRow]!.includes("48;2;"), "工具卡仍在面板内，保留卡片底色");
+		assert.equal(strip(raw[textRow + 1] ?? "").trim(), "", "助手文本与面板之间要有 1 行空行");
+		assert.ok(
+			!raw[textRow + 1]!.includes("48;2;"),
+			"文本与面板之间的空行是卡外空行，不能带面板底色",
+		);
+		assert.ok(raw[textRow + 2]!.includes("48;2;"), "面板顶部要保留 1 行内层 padding，和底部对称");
+	} finally {
+		hooks.shutdown();
+		defaultMode.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 展开面板留在摘要行原位，不跳到 write/edit 上方", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-panel-anchor-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	const chat = new Container();
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "先改写入路径" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+				{ type: "toolCall", id: "w1", name: "write", arguments: { path: "src/session.ts" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "one" });
+		const write = tool("write", "w1", { path: "src/session.ts", content: "saved" });
+		for (const item of [bash, write]) {
+			item.executionStarted = true;
+			item.updateDisplay?.();
+		}
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		chat.addChild(anchor);
+		anchor.updateContent(message);
+		chat.addChild(write);
+		bash.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+		write.updateResult({ content: [], details: { diff: "+saved" }, isError: false });
+
+		const plain = (lines: string[]) =>
+			lines.map((line) =>
+				line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, ""),
+			);
+		const folded = plain(chat.render(120));
+		const summaryAt = folded.findIndex((line) => line.includes("bash×1"));
+		const writeAt = folded.findIndex((line) => line.includes("write src/session.ts"));
+		assert.ok(writeAt >= 0 && summaryAt > writeAt, `折叠摘要应在 write 之后: ${folded.join("\n")}`);
+
+		anchor.setExpanded(true);
+		const expanded = plain(chat.render(120));
+		const textAt = expanded.findIndex((line) => line.includes("先改写入路径"));
+		const writeExpandedAt = expanded.findIndex((line) => line.includes("write src/session.ts"));
+		const bashAt = expanded.findIndex(
+			(line) => line.includes("Bash one") || line.includes("$ one"),
+		);
+		assert.ok(
+			textAt >= 0 && writeExpandedAt > textAt,
+			`正文应仍在 write 之前: ${expanded.join("\n")}`,
+		);
+		assert.ok(bashAt > writeExpandedAt, `面板应留在 write 之后: ${expanded.join("\n")}`);
+		assert.ok(
+			componentAtLocalRow(chat, bashAt, 120)?.component === bash,
+			"面板换到摘要行后仍要能点中卡内工具",
+		);
+	} finally {
+		setToolMouseTui(null);
+		hooks.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 展开卡：助手文本排在 thinking 前面，不被思考块盖住", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-text-first-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		// 真实流：thinking 先于 text 到达，折叠态只看得到 text + 摘要行。
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "plan the round" },
+				{ type: "text", text: "let me check the file" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "line one" }], isError: false });
+		anchor.setExpanded(true);
+
+		const raw = anchor
+			.render(120)
+			.map((line: string) =>
+				line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, ""),
+			);
+		const textRow = raw.findIndex((line: string) => line.includes("let me check the file"));
+		const thinkRow = raw.findIndex((line: string) => line.includes("plan the round"));
+		assert.ok(textRow >= 0 && thinkRow >= 0, `缺文本或思考: ${raw.join("\n")}`);
+		assert.ok(textRow < thinkRow, "助手文本应排在 thinking 前面，展开后不被思考块盖住");
+	} finally {
+		hooks.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 面板收起后重钉视口，不跳回展开前的位置", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-viewport-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	const viewport = { scrollTop: 10, isFollowingEnd: false };
+	const scrollCalls: number[] = [];
+	setToolMouseTui({
+		getPrimaryScrollView: () => ({
+			get scrollTop() {
+				return viewport.scrollTop;
+			},
+			get isFollowingEnd() {
+				return viewport.isFollowingEnd;
+			},
+			scrollTo(next: number) {
+				viewport.scrollTop = next;
+				scrollCalls.push(next);
+			},
+		}),
+	});
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }],
+		};
+		const bash = tool("bash", "b1", { command: "one" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+
+		anchor.setExpanded(true);
+		// 展开后用户滚到别处：收起保持当前位置，不回跳展开前偏移（面板在摘要行之下，
+		// 删除只影响更低处，摘要行原地不动）。
+		viewport.scrollTop = 40;
+		anchor.setExpanded(false);
+		assert.deepEqual(scrollCalls, [40], "收起应保持当前滚动偏移");
+		assert.equal(viewport.scrollTop, 40);
+
+		// 再次展开收起：同一入口重钉一次，不残留快照。
+		viewport.scrollTop = 120;
+		viewport.isFollowingEnd = true;
+		anchor.setExpanded(true);
+		viewport.scrollTop = 200;
+		viewport.isFollowingEnd = false;
+		anchor.setExpanded(false);
+		assert.deepEqual(scrollCalls, [40, 200], "第二次收起同样保持当前位置");
+	} finally {
+		setToolMouseTui(null);
+		hooks.shutdown();
+		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("compact 折叠态工具卡复用 ccstyle 默认样式", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-ccstyle-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const previousExclude = [...config.excludeRenderers];
+	const previousTheme = getMessageDisplayTheme();
+	setMessageDisplayTheme({
+		fg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any);
+	const writeMetadata = new WriteExecutionMetadataStore();
+	// default-mode 先装，compact 才能把它的 renderPaint 当作 toolOriginalRender。
+	const defaultMode = installDefaultMode(writeMetadata);
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "rg -n renderRound" } },
+			],
+		};
+		const bash = tool("bash", "b1", { command: "rg -n renderRound" });
+		bash.executionStarted = true;
+		bash.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		bash.updateResult({ content: [{ type: "text", text: "line one\nline two" }], isError: false });
+		// compact 展开卡里的工具由 ccstyle call/result 渲染
+		anchor.setExpanded(true);
+
+		const text = renderText(anchor).join("\n");
+		assert.match(text, /2 lines returned/, `compact 工具卡应复用 ccstyle 摘要: ${text}`);
+		assert.doesNotMatch(text, /Took /, `不应回落到原生输出: ${text}`);
+
+		// excludeRenderers 仍然强制原生，不受这次放宽影响。
+		config.excludeRenderers = ["bash"];
+		bash.invalidate?.();
+		const nativeText = renderText(anchor).join("\n");
+		assert.doesNotMatch(nativeText, /2 lines returned/, `排除名单内应保留原生: ${nativeText}`);
+		config.excludeRenderers = [...previousExclude];
+	} finally {
+		config.excludeRenderers = previousExclude;
+		hooks.shutdown();
+		defaultMode.shutdown();
+		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
 		emit("session_shutdown", {}, ctx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -866,6 +2507,62 @@ test("compact folds Agent/Task tools always; no pending outer flash", () => {
 	}
 });
 
+test("compact：ask_user_question 留在外层，不进摘要，复用默认问答树", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const writeMetadata = new WriteExecutionMetadataStore();
+	// default 先装，compact 才能把它的 renderPaint 当作 toolOriginalRender。
+	const defaultMode = installDefaultMode(writeMetadata);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+				{
+					type: "toolCall",
+					id: "ask-1",
+					name: "ask_user_question",
+					arguments: { questions: [{ question: "Which library?", header: "Library" }] },
+				},
+			],
+		} as unknown as AssistantMessage;
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const bash = tool("bash", "b1", { command: "ls" });
+		const ask = tool("ask_user_question", "ask-1", {
+			questions: [{ question: "Which library?", header: "Library" }],
+		});
+		ask.markExecutionStarted();
+		ask.updateResult({
+			content: [{ type: "text", text: "User answered" }],
+			details: {
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Which library?", kind: "option", answer: "Read" }],
+			},
+		});
+
+		// 摘要只计 bash，ask_user_question 不进计数。
+		const summary = renderText(assistant).join("\n");
+		assert.match(summary, /bash×1/);
+		assert.doesNotMatch(summary, /ask_user_question/);
+
+		// bash 折叠进摘要，ask_user_question 留在外层，复用默认模式的问答树。
+		assert.deepEqual(renderText(bash), []);
+		const askLines = renderText(ask);
+		assert.match(askLines[0]!, /Ask User Question \(\+1\)/);
+		assert.ok(
+			askLines.some((line) => / -> Read/.test(line)),
+			`外层应渲染问答树: ${askLines.join(" | ")}`,
+		);
+	} finally {
+		hooks.shutdown();
+		defaultMode.shutdown();
+		config.mode = previousMode;
+	}
+});
+
 test("compact surfaces abort outside folded tools", () => {
 	const previousMode = config.mode;
 	config.mode = "compact";
@@ -922,22 +2619,23 @@ test("compact surfaces abort outside folded tools", () => {
 	}
 });
 
-test("compact edit/write keeps the stats header and inherits on-mode diff limits", () => {
+test("compact edit/write：计数只在正文显示一处，0 行预览带颜色", () => {
 	const metadata = new WriteExecutionMetadataStore();
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
+	const previousEditCollapsed = config.editDiffCollapsedLines;
 	const previousWriteCollapsed = config.writeDiffCollapsedLines;
 	config.mode = "compact";
 	const hooks = installCompactMode({ writeMetadata: metadata });
+	const strip = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
+	const EDIT_DIFF =
+		"diff --git a/a.ts b/a.ts\nindex 1..2 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
 	try {
+		// 折叠 edit：标题不带计数，0 行预览的摘要行自带 +1 -1。
+		config.editDiffCollapsedLines = 0;
 		const edit = tool("edit", "e1", { path: "a.ts" });
-		edit.updateResult({
-			content: [],
-			details: {
-				diff: "diff --git a/a.ts b/a.ts\nindex 1..2 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
-			},
-			isError: false,
-		});
+		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: false });
 		assert.equal(edit.render(120)[0], "", "compact file rows keep one leading blank row");
 		const collapsedRich = edit.resultRendererComponent;
 		edit.render(120);
@@ -946,22 +2644,37 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 			collapsedRich,
 			"collapsed rich diff is reused across frames",
 		);
-		const collapsed = renderText(edit).join("\n");
-		assert.match(collapsed, /edit a\.ts \(\+1 -1\)/);
-		assert.match(collapsed, /old/, "collapsed compact edit inherits the on-mode preview");
-		assert.match(collapsed, /new/);
+		const collapsedRaw = strip(edit.render(120));
+		const collapsed = collapsedRaw.join("\n");
+		assert.match(collapsed, /edit a\.ts/);
+		assert.doesNotMatch(collapsed, /edit a\.ts.*\(\+\d+ -\d+\)/, "标题不再重复计数");
+		assert.match(collapsed, /↳ diff \+1 -1 · .*to show more/);
 		assert.doesNotMatch(collapsed, /Input|Output|Details:/);
 
+		// 计数上色：+ 绿、- 红，其余保持 muted。
 		setMessageDisplayTheme({
-			fg: (color: string, text: string) =>
-				color === "success" || color === "error" ? `<${color}>${text}</${color}>` : text,
+			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 		} as any);
-		const coloredStats = edit.render(120).join("\n");
-		assert.match(coloredStats, /<success>\+1<\/success>/);
-		assert.match(coloredStats, /<error>-1<\/error>/);
+		// 主题在组件构造时固化，换主题要重新 updateResult 重建 rich diff。
+		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: false });
+		const colored = edit.render(120).join("\n");
+		assert.match(colored, /<toolDiffAdded>\+1<\/toolDiffAdded>/);
+		assert.match(colored, /<toolDiffRemoved>-1<\/toolDiffRemoved>/);
 		setMessageDisplayTheme(previousTheme);
 
-		// expanded：保留标题/统计行，并复用 mode=on 的 rich diff 和展开卡背景。
+		// 多行预览同样只显示一处计数：标题无括号，diff 头行有。
+		config.editDiffCollapsedLines = 24;
+		const previewRaw = strip(edit.render(120));
+		assert.doesNotMatch(previewRaw.join("\n"), /edit a\.ts.*\(\+\d+ -\d+\)/);
+		assert.ok(
+			previewRaw.some((line) => line.includes("+1") && line.includes("-1")),
+			`多行预览的 diff 头行带计数: ${previewRaw.join(" | ")}`,
+		);
+		assert.ok(previewRaw.some((line) => line.includes("old")));
+		assert.ok(previewRaw.some((line) => line.includes("new")));
+		config.editDiffCollapsedLines = 0;
+
+		// expanded：保留标题，复用 mode=on 的 rich diff 和展开卡背景，计数仍只在正文。
 		const backgroundSlots: string[] = [];
 		const cardTheme = Object.assign(Object.create(previousTheme ?? null), {
 			fg: previousTheme?.fg ?? ((_color: string, text: string) => text),
@@ -979,20 +2692,33 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.equal(edit.resultRendererComponent, expandedRich, "expanded rich diff is reused");
 		const expandedRaw = edit.render(120);
 		assert.equal(expandedRaw[0], "", "expanded edit keeps the gap from previous tool");
-		const titlePlain =
-			expandedRaw
-				.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-				.find((line: string) => line.includes("edit a.ts")) ?? "";
+		const expandedPlain = strip(expandedRaw);
+		const titlePlain = expandedPlain.find((line) => line.includes("edit a.ts")) ?? "";
 		assert.match(titlePlain, /^ ✓ edit a\.ts/, "expanded title uses Box pad only");
-		const expanded = renderText(edit).join("\n");
-		assert.match(expanded, /edit a\.ts \(\+1 -1\)/);
+		assert.doesNotMatch(titlePlain, /\(\+\d+ -\d+\)/);
+		const expanded = expandedPlain.join("\n");
 		assert.match(expanded, /old/);
 		assert.match(expanded, /new/);
 		assert.doesNotMatch(expanded, /Input|Output|Details:/);
 		assert.ok(backgroundSlots.includes("userMessageBg"));
+		// issue 46：edit/write 展开卡单独一条取槽位路径，同样跟随配置。
+		const previousSlot = config.expandedCardBackground;
+		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
+		try {
+			backgroundSlots.length = 0;
+			config.expandedCardBackground = targetSlot;
+			edit.render(120);
+			assert.deepEqual(
+				[...new Set(backgroundSlots)],
+				[targetSlot],
+				"expanded edit card follows the configured slot",
+			);
+		} finally {
+			config.expandedCardBackground = previousSlot;
+		}
 		setMessageDisplayTheme(previousTheme);
 
-		// edit 缺 diff 时统计未知，不能伪报 (+0 -0)。
+		// edit 缺 diff 时统计未知，不能伪报 (+0 -0)，退回 Input/Output。
 		const unknownEdit = tool("edit", "e2", { path: "unknown.ts" });
 		unknownEdit.updateResult({
 			content: [{ type: "text", text: "fallback output" }],
@@ -1010,11 +2736,14 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 			"fallback IO hover keeps ToolExecutionComponent.invalidate bound",
 		);
 
-		// write 无变更成功：标题仍显示 (+0 -0)。
+		// write 折叠 0 行预览：计数在摘要行，标题不带括号。
+		config.writeDiffCollapsedLines = 0;
 		const write = tool("write", "w1", { path: "b.ts", content: "" });
 		metadata.set("w1", { fileExistedBeforeWrite: true, previousContent: "" });
 		write.updateResult({ content: [], isError: false });
-		assert.match(renderText(write).join("\n"), /write b\.ts \(\+0 -0\)/);
+		const writeCollapsed = renderText(write).join("\n");
+		assert.match(writeCollapsed, /↳ diff \+0 -0 · overwritten · .*to show more/);
+		assert.doesNotMatch(writeCollapsed, /write b\.ts.*\(\+\d+ -\d+\)/);
 
 		// write 折叠预览跟 mode=on 共用 writeDiffCollapsedLines。
 		const longWriteContent = Array.from(
@@ -1024,14 +2753,13 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		const longWrite = tool("write", "w-limit", { path: "long.ts", content: longWriteContent });
 		metadata.set("w-limit", { fileExistedBeforeWrite: false });
 		longWrite.updateResult({ content: [], isError: false });
-		config.writeDiffCollapsedLines = 0;
 		const statsOnly = renderText(longWrite).join("\n");
-		assert.match(statsOnly, /write long\.ts \(\+40 -0\)/);
-		assert.match(statsOnly, /created/);
-		assert.match(statsOnly, /more/);
+		assert.match(statsOnly, /↳ diff \+40 -0 · created · .*to show more/);
+		assert.doesNotMatch(statsOnly, /write long\.ts.*\(\+\d+ -\d+\)/);
 		assert.doesNotMatch(statsOnly, /const value10 = 10/);
 		config.writeDiffCollapsedLines = 4;
 		const preview = renderText(longWrite).join("\n");
+		assert.match(preview, /write long\.ts \(\+40 -0\)/, "多行预览时计数回到标题");
 		assert.match(preview, /const value0 = 0/);
 		assert.doesNotMatch(preview, /const value10 = 10/);
 		config.writeDiffCollapsedLines = previousWriteCollapsed;
@@ -1050,12 +2778,19 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.match(unknownWriteExpanded, /Output/);
 
 		// Myers 精确统计：500 行改 1 行也显示 (+1 -1)，不再因旧 LCS 矩阵预算省略。
-		const oldLines = Array.from({ length: 500 }, (_, index) => `line ${index}`).join("\n");
-		const newLines = oldLines.replace("line 250", "changed");
-		const largeWrite = tool("write", "w3", { path: "large.ts", content: newLines });
-		metadata.set("w3", { fileExistedBeforeWrite: true, previousContent: oldLines });
-		largeWrite.updateResult({ content: [], isError: false });
-		assert.match(renderText(largeWrite).join("\n"), /write large\.ts \(\+1 -1\)/);
+		// 非零折叠行数下计数回标题（0 行时计数只在正文，见上）。
+		const previousMyersCollapsed = config.writeDiffCollapsedLines;
+		config.writeDiffCollapsedLines = 4;
+		try {
+			const oldLines = Array.from({ length: 500 }, (_, index) => `line ${index}`).join("\n");
+			const newLines = oldLines.replace("line 250", "changed");
+			const largeWrite = tool("write", "w3", { path: "large.ts", content: newLines });
+			metadata.set("w3", { fileExistedBeforeWrite: true, previousContent: oldLines });
+			largeWrite.updateResult({ content: [], isError: false });
+			assert.match(renderText(largeWrite).join("\n"), /write large\.ts \(\+1 -1\)/);
+		} finally {
+			config.writeDiffCollapsedLines = previousMyersCollapsed;
+		}
 
 		// compact 路径、Input 和 Output 都不能保留终端控制序列。
 		const unsafeWrite = tool("write", "w4", {
@@ -1078,6 +2813,7 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 	} finally {
 		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
+		config.editDiffCollapsedLines = previousEditCollapsed;
 		config.writeDiffCollapsedLines = previousWriteCollapsed;
 		hooks.shutdown();
 	}
@@ -1121,6 +2857,36 @@ test("compact edit/write summaries preserve filenames for long cwd paths", () =>
 			assert.match(title!, new RegExp(`${name} .*target-file\\.ts`));
 			assert.doesNotMatch(title!, new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 		}
+	} finally {
+		restore();
+	}
+});
+
+test("compact 折叠行 hover 只高亮展开提示：edit 失败单行与 rich diff 兼容", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const restore = () => {
+		setHoveredToolCallId(null);
+		setMessageDisplayTheme(previousTheme);
+		hooks.shutdown();
+		config.mode = previousMode;
+	};
+	try {
+		setMessageDisplayTheme({
+			fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		} as any);
+		// 失败的 edit 没有 rich diff，提示挂在标题行上。
+		const failed = tool("edit", "e-fail", { path: "a.ts" });
+		failed.updateResult({ content: [{ type: "text", text: "boom" }], isError: true });
+		const line = () => failed.render(120).join("\n");
+		assert.match(line(), /<dim> · <\/dim><dim>click to show more<\/dim>/);
+		setHoveredToolCallId("e-fail");
+		assert.match(line(), /<dim> · <\/dim><text>click to show more<\/text>/);
+		assert.doesNotMatch(line(), /<text>[^<]*(?:a\.ts|edit)/, "hover 只改提示，不改标题与路径");
+		setHoveredToolCallId(null);
+		assert.match(line(), /<dim> · <\/dim><dim>click to show more<\/dim>/);
 	} finally {
 		restore();
 	}

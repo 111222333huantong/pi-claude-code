@@ -4,6 +4,9 @@ import test from "node:test";
 import { config } from "../extensions/config/config.ts";
 import {
 	disableOfficialScrollToEnd,
+	getScrollButtonNewCount,
+	hideScrollButton,
+	noteNewTranscriptItem,
 	renderScrollButton,
 	resetScrollButtonState,
 	restoreOfficialScrollToEnd,
@@ -112,4 +115,65 @@ test("scroll button: off mode restores official overlay", () => {
 		resetScrollButtonState();
 		setToolMouseTui(null);
 	}
+});
+
+// 计数：仅在离开底部期间累加，文案从 Back to bottom 切成 N new message(s)，回底清零。
+test("scroll button: accumulates new content count while scrolled up", async () => {
+	const { tui } = lazyFullscreenTui();
+	setToolMouseTui(tui);
+
+	// 跟随输出时新内容不计数。
+	noteNewTranscriptItem();
+	assert.equal(getScrollButtonNewCount(), 0, "在底部时不得计数");
+
+	// 滚动离开底部 → 按钮可见，开始记账。
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.ok(
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
+		"无新内容时保持 Back to bottom 文案",
+	);
+
+	noteNewTranscriptItem();
+	let text = renderScrollButton(80, fakeTheme()).join("\n");
+	assert.ok(text.includes("[ ↓ 1 new message · Ctrl+End ]"), `单条用单数：${text}`);
+
+	noteNewTranscriptItem();
+	noteNewTranscriptItem();
+	text = renderScrollButton(80, fakeTheme()).join("\n");
+	assert.ok(text.includes("[ ↓ 3 new messages · Ctrl+End ]"), `多条用复数：${text}`);
+	assert.ok(!text.includes("Back to bottom"), "有计数时不再显示原正文");
+
+	// 滚回底部：按钮隐藏且计数清零；再离开底部时从 0 重新计数。
+	tui.isFollowingOutput = true;
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(getScrollButtonNewCount(), 0, "回到底部即清零");
+	assert.deepEqual(renderScrollButton(80, fakeTheme()), []);
+
+	tui.isFollowingOutput = false;
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.ok(
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
+		"重新离开底部后回到原文案",
+	);
+
+	// 点击/快捷键回到底部（hideScrollButton）同样清零。
+	noteNewTranscriptItem();
+	hideScrollButton(tui);
+	assert.equal(getScrollButtonNewCount(), 0, "回到底部按钮触发后清零");
+
+	// 官方直接跳回底部（提交新消息）时，下一次记账先校正状态，不把跟随期间的内容计入。
+	tui.isFollowingOutput = false;
+	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.ok(renderScrollButton(80, fakeTheme()).length > 0, "离开底部时按钮可见");
+	tui.isFollowingOutput = true;
+	noteNewTranscriptItem();
+	assert.equal(getScrollButtonNewCount(), 0, "已跟随底部时不计入新内容");
+	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "校正后按钮隐藏");
+
+	resetScrollButtonState();
+	setToolMouseTui(null);
 });

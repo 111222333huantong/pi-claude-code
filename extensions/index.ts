@@ -14,10 +14,12 @@ import agentAutocomplete from "./feature/reference/subagent.ts";
 // shell
 import piAliases from "./feature/shell/aliases.ts";
 import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
+import customFooter from "./feature/shell/footer.ts";
 import { registerLoadedCommand } from "./feature/shell/loaded-stats.ts";
-import piStartupHeader from "./feature/shell/startup-header.ts";
+import piStartupHeader, { installEarlyStartupHeader } from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 import workingRow from "./feature/shell/working-row.ts";
+import { readStatuslineConfig } from "./feature/statusline/config.ts";
 import registerStatusline from "./feature/statusline/index.ts";
 
 // renderer
@@ -29,6 +31,7 @@ export default function (pi: ExtensionAPI): void {
 	// shell chrome
 	if (config.enableAliases) piAliases(pi);
 	installFlushDockedBash();
+	installEarlyStartupHeader();
 	piStartupHeader(pi);
 	// /loaded 常驻（与 header 开关无关，resume 进来的旧会话也要能查）。
 	registerLoadedCommand(pi);
@@ -49,6 +52,9 @@ export default function (pi: ExtensionAPI): void {
 	if (config.enableDoubleEscClear) registerDoubleEscClear(pi);
 	// 输入框 ❯ 包最外层：working-row 等链式包裹先注册，本 handler 后执行。
 	registerPromptGlyph(pi);
+	// 上游 footer 与本 fork 状态栏互斥：状态栏开则用状态栏（默认），
+	// 关了才回退到上游 footer（再关则 Pi 原生 footer）。
+	if (!readStatuslineConfig().enabled && config.enableCustomFooter) customFooter(pi);
 
 	// render stack：thinking controller 直接交给 style 作 query
 	markdownEnhance(pi);

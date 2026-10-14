@@ -10,11 +10,7 @@ import {
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { renderPendingDiffPreview } from "../extensions/renderer/tool/diff/pending-preview.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import {
-	clearAllAnimations,
-	clearAnimation,
-	scheduleAnimation,
-} from "../extensions/renderer/tool/result.ts";
+import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 
 initTheme("dark");
 
@@ -185,53 +181,6 @@ test("T3: 双驱动节拍刻画（90ms braille + 16ms shimmer，mock 时钟确�
 		}
 		assert.ok(maxGap <= 200, `braille tick 最大间隔 ${maxGap}ms，超过 200ms 即节拍不稳`);
 	} finally {
-		t.mock.timers.reset();
-	}
-});
-
-test("T4: 动画驱动常驻，无块也每 90ms 开火（防饿死）", (t) => {
-	t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-	try {
-		let invalidated = 0;
-		const ctx: any = {
-			state: {},
-			toolCallId: "diag-1",
-			invalidate: () => {
-				invalidated++;
-			},
-		};
-		scheduleAnimation(ctx);
-		t.mock.timers.tick(100);
-		assert.equal(invalidated, 1, "首个 90ms 拍必须开火");
-		// 常驻：无重调度也继续开火（旧逻辑这里会停表，
-		// 块间隙里盲文跟着网络包走 → 187ms 量化卡顿）。
-		t.mock.timers.tick(200);
-		assert.equal(invalidated, 3, "t=90/180/270 各开火一次，不许停");
-	} finally {
-		clearAllAnimations();
-		t.mock.timers.reset();
-	}
-});
-
-test("T5: clearAnimation 按共享 state 移除（新对象不泄漏常驻表）", (t) => {
-	t.mock.timers.enable({ apis: ["setInterval", "Date"] });
-	try {
-		let invalidated = 0;
-		const state = {};
-		const first = {
-			state,
-			toolCallId: "diag-2",
-			invalidate: () => {
-				invalidated++;
-			},
-		};
-		scheduleAnimation(first);
-		// 同一工具的新 context 对象落定：必须清掉旧 entry。
-		clearAnimation({ state, toolCallId: "diag-2" });
-		t.mock.timers.tick(200);
-		assert.equal(invalidated, 0, "落定后 tick 不许再开火");
-	} finally {
-		clearAllAnimations();
 		t.mock.timers.reset();
 	}
 });

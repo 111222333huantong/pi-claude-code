@@ -27,12 +27,19 @@ export function setToolMouseTui(tui: any): void {
 	patchRegistry.install(TOOL_MOUSE_TUI_SLOT, tui);
 }
 
-type ScrollButtonState = { visible: boolean; hovered: boolean; widget: any };
+type ScrollButtonState = {
+	visible: boolean;
+	hovered: boolean;
+	widget: any;
+	/** 按钮可见期间新落的 transcript 块数（消息 + 工具卡）。 */
+	newCount: number;
+};
 function scrollButtonState(): ScrollButtonState {
 	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
 		visible: false,
 		hovered: false,
 		widget: null,
+		newCount: 0,
 	}));
 }
 export function getScrollButtonVisible(): boolean {
@@ -44,8 +51,32 @@ export function getScrollButtonHovered(): boolean {
 export function getScrollButtonWidget(): any {
 	return scrollButtonState().widget;
 }
+export function getScrollButtonNewCount(): number {
+	return scrollButtonState().newCount;
+}
 export function setScrollButtonVisible(visible: boolean): void {
-	scrollButtonState().visible = visible;
+	const state = scrollButtonState();
+	state.visible = visible;
+	// 计数只在离开底部期间有效：跟随输出即清零，文案回到 Back to bottom。
+	if (!visible) state.newCount = 0;
+}
+
+/**
+ * 记账一块新落进 transcript 的内容（用户/助手消息、工具卡）。
+ * 仅在按钮可见（已滚动离开底部）时累加，并请求重绘让按钮文案立即更新。
+ */
+export function noteNewTranscriptItem(): void {
+	const state = scrollButtonState();
+	const tui = getToolMouseTui();
+	if (!state.visible || !tui) return;
+	// 提交新消息时官方可能直接跳回底部（不经过滚动输入）：先按实时跟随状态校正，
+	// 否则跟随期间的内容会被当成“离开底部时的新消息”计入。
+	if (isAtTranscriptBottom(tui)) {
+		hideScrollButton(tui);
+		return;
+	}
+	state.newCount += 1;
+	tui.requestRender?.();
 }
 
 /** 返回是否发生变化（调用方据此决定是否需要重渲染）。 */
@@ -64,6 +95,7 @@ export function resetScrollButtonState(): void {
 	scrollButtonState().visible = false;
 	scrollButtonState().hovered = false;
 	scrollButtonState().widget = null;
+	scrollButtonState().newCount = 0;
 	scrollButtonSyncScheduled = false;
 }
 
@@ -206,12 +238,19 @@ export function updateScrollButtonFromInput(tui: any, data: string): void {
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
+/** 无新内容时提示原文案；有新内容时换成累计条数。 */
+function scrollButtonText(): string {
+	const count = getScrollButtonNewCount();
+	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
+	if (count <= 0) return `Back to bottom · ${shortcut}`;
+	return `${count} new message${count === 1 ? "" : "s"} · ${shortcut}`;
+}
+
 export function renderScrollButton(width: number, theme: any): string[] {
 	if (!getScrollButtonVisible() || !fullscreenLazyTui(getToolMouseTui())) return [];
-	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",
-		`[ ↓ Back to bottom · ${shortcut} ]`,
+		`[ ↓ ${scrollButtonText()} ]`,
 	);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];

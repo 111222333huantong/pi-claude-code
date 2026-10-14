@@ -1,19 +1,39 @@
 import { posix, win32 } from "node:path";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { resolveAgentTitle } from "../../feature/reference/agent-titles.ts";
 import { oneLine } from "../../utils/format.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { headTruncateToWidth } from "./result.ts";
+
+/** toolLabelClip=0 时不设字符上限，交给渲染时的实际宽度截断。 */
+function clipLimit(): number {
+	return config.toolLabelClip > 0 ? config.toolLabelClip : Number.POSITIVE_INFINITY;
+}
 
 function clip(value: unknown): string {
-	return oneLine(value, config.inputClip);
+	return oneLine(value, clipLimit());
 }
+
+/** 载荷（入参 JSON / 脚本代码）至少留出这么多宽度才显示，否则整段省略（避免只剩一个孤零零的 " {…"）。 */
+const MIN_PAYLOAD_WIDTH = 10;
+
+/** 品牌大小写固定写法；humanize 推导不出来的工具名写在这里。 */
+const TOOL_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+	powershell: "PowerShell",
+	// MCP 入口两个没有具体工具名，跟普通工具一样人性化；缩写固定大写
+	mcp: "MCP",
+	mcpscript: "MCP Script",
+};
 
 /**
  * 工具名/标签人性化：与 default-mode 的 humanizeToolLabel、grouping 的 humanizeToolName
  * 逐字相同，收敛为一个共享实现。
  */
 export function humanizeToolLabel(label: string): string {
+	const brand = TOOL_LABEL_OVERRIDES[label.toLowerCase()];
+	if (brand) return brand;
 	return label
 		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 		.replace(/[_-]+/g, " ")
@@ -147,7 +167,10 @@ export function mcpCallSummary(
 		toolName.includes(":") ||
 		/^ctx_/i.test(toolName)
 	) {
-		return mcpWithArgCount(`MCP ${humanizeMcpToolName(toolName)}`, args);
+		// 单卡调用方已用 mcpToolTitle 解析出真实工具名（与传入 title 原样相等），直接用；
+		// 分组行等没传标题的才走人性化。
+		const resolved = title === toolName ? title : `MCP ${humanizeMcpToolName(toolName)}`;
+		return mcpWithArgCount(resolved, args);
 	}
 	const bareTitle = title.replace(/^MCP(?::|\s)+/i, "").trim();
 	if (bareTitle !== title.trim()) {
@@ -198,11 +221,13 @@ export type ToolCallSummary = {
 	detail: string;
 	/** 路径摘要保留结构，供最终渲染按实际宽度优先保留文件名。 */
 	path?: { prefix: string; value: string };
+	/** 标题之外的原始载荷（完整入参 JSON、脚本代码…），已压成单行，渲染时用 dim 接在标题后。 */
+	payload?: string;
 };
 
 function pathApi(value: string) {
-	if (win32.isAbsolute(value)) return win32;
 	if (posix.isAbsolute(value)) return posix;
+	if (win32.isAbsolute(value)) return win32;
 	return undefined;
 }
 
@@ -264,7 +289,7 @@ export function truncatePathToWidth(path: string, width: number): string {
 
 /** 路径展示的统一入口：相对化后按配置和当前可用宽度截断。 */
 export function formatDisplayPath(value: unknown, cwd: string | undefined, width: number): string {
-	return truncatePathToWidth(displayPath(value, cwd), Math.min(width, config.inputClip));
+	return truncatePathToWidth(displayPath(value, cwd), Math.min(width, clipLimit()));
 }
 
 /** 头尾保留式摘要（65% 头 + … + 尾），CJK 按列宽算。 */
@@ -289,7 +314,7 @@ export function bashHeadline(command: unknown): string | undefined {
 		.filter((line) => line.length > 0);
 	if (lines.length === 0) return undefined;
 	const operative = lines.find((line) => !BASH_HEADLINE_SKIP_RE.test(line)) ?? lines[0]!;
-	const head = summarizeHeadTail(operative, config.inputClip);
+	const head = summarizeHeadTail(operative, clipLimit());
 	return lines.length > 1 ? `${head} · ${lines.length} lines` : head;
 }
 
@@ -350,7 +375,7 @@ export function fitToolCallSummary(summary: ToolCallSummary, width: number): str
 	const prefix = summary.path.prefix;
 	const pathWidth = Math.max(0, width - visibleWidth(prefix) - 1);
 	if (pathWidth <= 0) return headToWidth(prefix, width, "…");
-	return `${prefix} ${truncatePathToWidth(summary.path.value, Math.min(pathWidth, config.inputClip))}`;
+	return `${prefix} ${truncatePathToWidth(summary.path.value, Math.min(pathWidth, clipLimit()))}`;
 }
 
 function pathSummary(
@@ -361,17 +386,90 @@ function pathSummary(
 ): ToolCallSummary {
 	const path = displayPath(value, cwd);
 	return {
-		main: `${prefix} ${truncatePathToWidth(path, config.inputClip)}`,
+		main: `${prefix} ${truncatePathToWidth(path, clipLimit())}`,
 		detail,
 		path: { prefix, value: path },
 	};
 }
 
+/** 入参是 shell 命令的工具。 */
+export const SHELL_TOOL_NAMES = new Set(["bash", "powershell", "pwsh", "sh", "zsh", "cmd"]);
+
+/** 内置检索工具：pattern 缺失（无效调用）时保留 "…" 占位。 */
+const SEARCH_TOOL_NAMES = new Set(["grep", "find"]);
+
+/**
+ * 通用摘要字段优先级：default 与 grouping 共用同一份取值链。
+ * 两处曾各自维护，grouping 因此漏掉 command（powershell）和数组型入参；
+ * 路径不在链上，由 pathSummary 兜底，以便按 cwd 相对化并中间截断。
+ */
+const GENERIC_SUMMARY_FIELDS = [
+	"agent_id",
+	"command",
+	"query",
+	"queries",
+	"claim",
+	"question",
+	"questions",
+	"url",
+	"urls",
+	"responseId",
+	"findText",
+	"name",
+	"tool_use_id",
+	"toolCallId",
+	"id",
+	"subject",
+	"taskId",
+	"task_id",
+	"message",
+	"description",
+	"prompt",
+] as const;
+
+/** 通用字段链取值：字符串直接用；数组取首个可展示项并标注剩余条数。 */
+type SummaryValue = { text: string; more: number };
+
+function arrayItemText(item: unknown): string | undefined {
+	if (typeof item === "string" && item) return item;
+	if (!item || typeof item !== "object") return undefined;
+	for (const key of ["query", "url", "question", "header", "name"] as const) {
+		const text = (item as Record<string, unknown>)[key];
+		if (typeof text === "string" && text) return text;
+	}
+	return undefined;
+}
+
+function summaryFieldValue(value: unknown): SummaryValue | undefined {
+	if (typeof value === "string" && value) return { text: value, more: 0 };
+	if (!Array.isArray(value)) return undefined;
+	let first: string | undefined;
+	let count = 0;
+	for (const item of value) {
+		const text = arrayItemText(item);
+		if (!text) continue;
+		count += 1;
+		first ??= text;
+	}
+	return first === undefined ? undefined : { text: first, more: count - 1 };
+}
+
+/** 通用字段链取值；无可用字段时返回 undefined，交给调用方继续降级。 */
+function genericSummary(title: string, args: any): ToolCallSummary | undefined {
+	for (const key of GENERIC_SUMMARY_FIELDS) {
+		const found = summaryFieldValue(args[key]);
+		if (!found) continue;
+		// (+N) 追加在截断之后，避免首个元素过长时把条数挤没
+		const more = found.more > 0 ? ` (+${found.more})` : "";
+		return { main: `${title} ${clip(found.text)}${more}`, detail: "" };
+	}
+	return undefined;
+}
+
 /**
  * 单工具调用摘要（{ main, detail }）。
  *
- * default-mode 与 grouping 共用；opts.variant 保留两处各自逐字一致的输出，
- * 不改动任何现有渲染字符串。
+ * 两个变体共用同一份取值链，只有 read/agent/skill/task 等具名分支存在必要差异。
  */
 export function toolCallSummary(
 	toolName: string,
@@ -382,6 +480,21 @@ export function toolCallSummary(
 	const variant = opts.variant ?? "default";
 	if (!args || typeof args !== "object") return { main: title, detail: "" };
 	const name = toolName.toLowerCase();
+
+	// MCP 入口沿用 mcp-adapter 自己的标题风格（adapter 的 formatMcpProxyToolCallLines）：
+	// `MCP <动作> <目标>` / `MCP Script <代码>`，比把整包参数摊成 JSON 好读
+	if (name === "mcp") {
+		const gateway = mcpGatewaySummary(title, args);
+		if (gateway) return gateway;
+	}
+	if (name === "mcpscript") {
+		const code = typeof args.code === "string" && args.code ? clip(args.code) : "";
+		return code ? { main: title, detail: "", payload: code } : { main: title, detail: "" };
+	}
+	// 内置 codemode：标题只报工具名。脚本很长，塞进行首既挤又读不出重点；
+	// 要看代码展开 Input，要看跑了什么看子调用行。
+	if (name === "codemode") return { main: title, detail: "" };
+
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
 		return `${title} ${clip(found || fallback)}`;
@@ -420,8 +533,12 @@ export function toolCallSummary(
 	if (name === "enterplanmode" || name === "enter_plan_mode") {
 		return { main: `${title} enable read-only planning`, detail: "" };
 	}
-	const mcp = mcpCallSummary(toolName, title, args);
-	if (mcp) return mcp;
+	// MCP：单卡已由 mcpToolTitle 解析出真实名（opts.title 原样传入）则尊重；
+	// 无显式标题时走本地人性化 MCP 行。
+	if (opts.title === undefined) {
+		const mcp = mcpCallSummary(toolName, title, args);
+		if (mcp) return mcp;
+	}
 	if (name === "bash") {
 		const headline = bashHeadline(args.command);
 		if (headline !== undefined) return { main: `${title} ${headline}`, detail: "" };
@@ -482,41 +599,144 @@ export function toolCallSummary(
 			};
 		}
 	}
-	if (variant === "default") {
-		const preferredPath = args.path ?? args.file_path;
-		if (typeof preferredPath === "string" && preferredPath) {
-			return pathSummary(title, preferredPath, opts.cwd);
-		}
-		const preferred =
-			args.command ??
-			args.query ??
-			args.question ??
-			args.pattern ??
-			args.url ??
-			args.name ??
-			args.tool_use_id ??
-			args.toolCallId ??
-			args.id ??
-			args.message;
+	if (variant === "grouping" && SHELL_TOOL_NAMES.has(name)) {
+		// 分组行缺 command 时保留占位，避免与单工具卡一样只剩标题
+		return { main: value("...", "command"), detail: "" };
+	}
+
+	// 检索类：pattern 是正文，path 只是范围；两个变体同格式
+	if (typeof args.pattern === "string" || SEARCH_TOOL_NAMES.has(name)) {
+		const pattern = clip(args.pattern || "...");
+		const scope = typeof args.path === "string" && args.path ? ` in ${clip(args.path)}` : "";
+		return { main: `${title} ${JSON.stringify(pattern)}${scope}`, detail: "" };
+	}
+
+	const generic = genericSummary(title, args);
+	if (generic) return generic;
+
+	const preferredPath = args.path ?? args.file_path;
+	if (typeof preferredPath === "string" && preferredPath) {
+		return pathSummary(title, preferredPath, opts.cwd);
+	}
+
+	// 字段链认不出的参数（命名空间代理的 tool+args、第三方工具的自定义键…）展开完整入参 JSON，
+	// 而不是只剩一个标题；网关与脚本的专属形状在上面处理
+	const payload = jsonArgs(args);
+	return payload ? { main: title, detail: "", payload } : { main: title, detail: "" };
+}
+
+/**
+ * MCP 网关注解 `mcp <动作> <目标>`：动作与目标照搬 mcp-adapter 的 formatMcpProxyToolCallLines，
+ * 人眼读起来比参数 JSON 快；`instructions` 是 adapter 自己漏掉的一档（它那里会落到 mcp status）。
+ * 认不出的入参返回 undefined，交给通用 JSON 回退，不猜成 status。
+ */
+function mcpGatewaySummary(title: string, args: any): ToolCallSummary | undefined {
+	const text = (value: unknown) => (typeof value === "string" && value ? value : "");
+	const tool = text(args.tool);
+	const connect = text(args.connect);
+	const describe = text(args.describe);
+	const instructions = text(args.instructions);
+	const search = text(args.search);
+	const server = text(args.server);
+	const action = text(args.action);
+	const scoped = (target: string) => (server ? `${target} @ ${server}` : target);
+
+	if (action === "ui-messages") return { main: `${title} ${action}`, detail: "" };
+	if (tool) {
+		const main = `${title} call ${scoped(tool)}`;
+		const payload = innerArgsPayload(args.args);
+		return payload ? { main, detail: "", payload } : { main, detail: "" };
+	}
+	if (connect) return { main: `${title} connect ${connect}`, detail: "" };
+	if (describe) return { main: `${title} describe ${scoped(describe)}`, detail: "" };
+	if (instructions) return { main: `${title} instructions ${instructions}`, detail: "" };
+	if (search) {
+		const flags = [
+			args.regex === true ? "regex" : "",
+			args.includeSchemas === false ? "schemas hidden" : "",
+		].filter(Boolean);
 		return {
-			main:
-				preferred !== undefined && preferred !== null && typeof preferred !== "object"
-					? `${title} ${clip(preferred)}`
-					: title,
-			detail: "",
+			main: `${title} search ${scoped(search)}`,
+			detail: flags.length ? ` (${flags.join(", ")})` : "",
 		};
 	}
-	const preferred =
-		args.agent_id ??
-		args.path ??
-		args.file_path ??
-		args.url ??
-		args.description ??
-		args.query ??
-		args.name ??
-		args.prompt;
-	return {
-		main: `${title}${preferred === undefined ? "" : ` ${clip(preferred)}`}`,
-		detail: "",
-	};
+	if (server) return { main: `${title} list ${server}`, detail: "" };
+	if (action) return { main: `${title} ${action}`, detail: "" };
+	if (Object.keys(args).length === 0) return { main: `${title} status`, detail: "" };
+	return undefined;
+}
+
+/** 网关 call 的内层工具入参：对象转单行 JSON；网关允许传 JSON 字符串，就原样取用不再转义。 */
+function innerArgsPayload(value: unknown): string {
+	if (typeof value === "string") return value ? clip(value) : "";
+	if (!value || typeof value !== "object") return "";
+	return jsonArgs(value);
+}
+
+/** 入参序列化成单行 JSON；空对象或不可序列化时返回 ""。 */
+function jsonArgs(args: any): string {
+	try {
+		const json = JSON.stringify(args);
+		return json && json !== "{}" ? clip(json) : "";
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * 标题行内容：标题用调用方的 toolTitle 色，原始载荷（入参 JSON / 脚本代码）单独用 dim。
+ * 标题优先占宽（它是身份），剩下的宽度给载荷；载荷超宽时尾部省略，连
+ * MIN_PAYLOAD_WIDTH 都放不下时整段省略。
+ */
+export function renderToolSummary(
+	summary: ToolCallSummary,
+	width: number,
+	fg: (color: ThemeColor, text: string) => string,
+): string {
+	const title = fitToolCallSummary(summary, width);
+	if (!summary.payload) return fg("toolTitle", title);
+	const room = width - visibleWidth(title);
+	return room >= MIN_PAYLOAD_WIDTH
+		? `${fg("toolTitle", title)}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
+		: fg("toolTitle", title);
+}
+
+let toolTuiFullscreen: boolean | undefined;
+
+export function setToolTuiFullscreen(value: boolean): void {
+	toolTuiFullscreen = value;
+}
+
+export function isToolTuiFullscreen(): boolean {
+	return toolTuiFullscreen !== false;
+}
+
+function formatKeyPart(part: string): string {
+	// 与 pi 内置 keybinding-hints 一致：macOS 上 alt 显示为 option
+	return process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+}
+
+/** 默认展开快捷键（app.tools.expand）显示文本；未配置时回退 ctrl+o。 */
+export function expandShortcutText(): string {
+	const keys = getKeybindings().getKeys("app.tools.expand");
+	if (keys.length === 0) return "ctrl+o";
+	return keys
+		.join("/")
+		.split("/")
+		.map((part) => part.split("+").map(formatKeyPart).join("+"))
+		.join("/");
+}
+
+export function showMoreHintText(): string {
+	return isToolTuiFullscreen() ? "click to show more" : `${expandShortcutText()} to show more`;
+}
+
+/** 展开卡的收起提示，与折叠态 showMoreHintText 同一位置对称。 */
+export function collapseHintText(): string {
+	return isToolTuiFullscreen() ? "↑ Collapse" : `${expandShortcutText()} to collapse`;
+}
+
+/** 该行是否带展开态收起提示（用于展开卡的 hint hover 命中）。 */
+export function isCollapseHintLine(plainLine: string): boolean {
+	return plainLine.includes(collapseHintText());
 }

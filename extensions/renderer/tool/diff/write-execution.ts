@@ -98,14 +98,14 @@ export async function executeWriteWithMetadata(
 			await mkdir(dirname(absolutePath), { recursive: true });
 			throwIfAborted();
 			await writeFile(absolutePath, params.content, "utf8");
-			throwIfAborted();
+			// The file is already changed. A later abort must not report failure.
 			metadata.elapsedMs = performance.now() - startedAt;
 			store.set(toolCallId, metadata);
 			return {
 				content: [
 					{
 						type: "text",
-						text: `Successfully wrote ${params.content.length} bytes to ${params.path}`,
+						text: `Successfully wrote ${Buffer.byteLength(params.content, "utf8")} bytes to ${params.path}`,
 					},
 				],
 				details: undefined,

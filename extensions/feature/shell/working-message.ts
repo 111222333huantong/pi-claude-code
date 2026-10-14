@@ -13,6 +13,16 @@ import {
 	subscribeTicker,
 } from "./spinner-ticker.ts";
 import { pickVerb } from "./spinner-verbs.ts";
+import {
+	carryTokenRate,
+	markFirstToken,
+	pauseTokenRate,
+	recordProviderUsage,
+	resetTokenRate,
+	resumeTokenRate,
+	sampleTokenDelta,
+	startMessageSegment,
+} from "./token-rate.ts";
 
 type ContentBlock = {
 	type?: unknown;
@@ -277,6 +287,7 @@ const TURN_COMPLETION_MS = 2_500;
 /**
  * Claude-style working row with verb shimmer. Replaces Pi's default
  * `Working...` while a turn runs; gated by `enableWorkingMessage` in config.
+ * token 数同时喂给上游 token-rate（估算 → provider usage 同源），供 footer 速率芯片读取。
  */
 export default function (pi: ExtensionAPI): void {
 	if (!spinnerModuleEnabled()) return;
@@ -356,9 +367,15 @@ export default function (pi: ExtensionAPI): void {
 		responseLength = Math.max(0, responseLength + responseTextBlockLengths[index] - previous);
 	}
 
+	/** 当前用户指令的起点；工具调用后的 turn 复用它，直到下一条指令（供 token-rate）。 */
+	let rateRunStartTime = 0;
+
 	function updateProviderUsage(message: StreamMessage): void {
 		const output = outputUsage(message);
-		if (output > 0) providerOutputTokens = output;
+		if (output > 0) {
+			providerOutputTokens = output;
+			recordProviderUsage(output);
+		}
 	}
 
 	function resetResponseTracking(message?: StreamMessage): void {
@@ -410,7 +427,14 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 			if (!turnActive) return;
-			syncWorkingMessage();
+			try {
+				syncWorkingMessage();
+			} catch {
+				// 会话替换/reload 后捕获的 ctx 失效，getter 抛错；定时器内的异常会成为
+				// uncaughtException 终止 Pi，装饰性刷新直接停止。
+				turnActive = false;
+				stopRefreshLoop();
+			}
 		});
 	}
 
@@ -530,6 +554,7 @@ export default function (pi: ExtensionAPI): void {
 		const id = String((event as any)?.toolCallId ?? `${Date.now()}-${activeTools.size}`);
 		activeTools.set(id, toolLabel((event as any)?.toolName));
 		startupProgress = false;
+		pauseTokenRate();
 		if (turnActive) syncWorkingMessage(true);
 	});
 
@@ -537,6 +562,7 @@ export default function (pi: ExtensionAPI): void {
 		activeCtx = ctx as typeof activeCtx;
 		const id = String((event as any)?.toolCallId ?? "");
 		if (id) activeTools.delete(id);
+		resumeTokenRate();
 		if (turnActive) syncWorkingMessage(true);
 	});
 
@@ -546,8 +572,14 @@ export default function (pi: ExtensionAPI): void {
 		startupProgress = false;
 		activeCtx = ctx as typeof activeCtx;
 		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
-		turnStartTime = Date.now();
+		turnStartTime = (_event as any)?.timestamp || Date.now();
 		if (!agentStartTime) agentStartTime = turnStartTime;
+		// 上游 token-rate 桥：同一条用户指令内复用速率起点，供 footer 速率芯片读取。
+		if (rateRunStartTime !== agentStartTime) {
+			rateRunStartTime = agentStartTime;
+			resetTokenRate(turnStartTime);
+		}
+		startMessageSegment(turnStartTime);
 		// Preserve shimmer phase across verb switches — map old progress to the
 		// new interval so the band doesn't snap to 0.
 		const prevVerb = currentVerb;
@@ -587,34 +619,44 @@ export default function (pi: ExtensionAPI): void {
 
 		if (evt.type === "start") {
 			resetResponseTracking(evt.partial);
+		} else if (evt.type === "toolcall_start") {
+			// 模型直接发起 tool call（thinking/text 省略）时也算首 token。
+			markFirstToken();
+			updateProviderUsage(evt.partial ?? {});
 		} else if (evt.type === "text_start") {
 			setResponseTextBlockLength(evt.contentIndex, 0);
+			markFirstToken();
 		} else if (evt.type === "thinking_start") {
+			markFirstToken();
 			setResponseTextBlockLength(evt.contentIndex, 0);
 			clearThoughtStatusTimer();
 			thinkingStatus = "thinking";
 			thinkingStartTime = Date.now();
 			statusChanged = true;
 		} else if (evt.type === "text_delta") {
+			if (typeof evt.delta === "string") sampleTokenDelta(evt.delta);
 			const previous = responseTextBlockLengths[evt.contentIndex] ?? 0;
 			setResponseTextBlockLength(
 				evt.contentIndex,
 				previous + (typeof evt.delta === "string" ? evt.delta.length : 0),
 			);
 		} else if (evt.type === "thinking_delta") {
+			if (typeof evt.delta === "string") sampleTokenDelta(evt.delta);
 			const previous = responseTextBlockLengths[evt.contentIndex] ?? 0;
 			setResponseTextBlockLength(
 				evt.contentIndex,
 				previous + (typeof evt.delta === "string" ? evt.delta.length : 0),
 			);
 		} else if (evt.type === "text_end") {
+			updateProviderUsage(evt.partial ?? {});
 			setResponseTextBlockLength(
 				evt.contentIndex,
 				typeof evt.content === "string" ? evt.content.length : 0,
 			);
 		} else if (evt.type === "done") {
-			resetResponseTracking(evt.message);
+			updateProviderUsage(evt.message);
 		} else if (evt.type === "error") {
+			updateProviderUsage(evt.error);
 			resetResponseTracking(evt.error);
 		}
 
@@ -688,6 +730,8 @@ export default function (pi: ExtensionAPI): void {
 
 		responseLength = 0;
 		responseTextBlockLengths = [];
+		// 本段 token 结转进累计，下一段 turn 继续累加；此处不清速率（footer 定格显示）。
+		carryTokenRate();
 	});
 
 	pi.on("agent_end", async () => {

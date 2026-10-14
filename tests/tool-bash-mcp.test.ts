@@ -12,7 +12,7 @@ import {
 	mcpCallSummary,
 	toolCallSummary,
 } from "../extensions/renderer/tool/names.ts";
-import { clearAllAnimations } from "../extensions/renderer/tool/result.ts";
+import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 import { stripAnsi } from "../extensions/utils/ansi-text.ts";
 
 initTheme("dark");
@@ -92,11 +92,19 @@ test("bashHeadline skips comments and shell setup lines", () => {
 	assert.equal(bashHeadline("FOO=1 BAR=2\nmake all"), "make all · 2 lines");
 	assert.equal(bashHeadline("# only comments\n# nothing else"), "# only comments · 2 lines");
 	const long = `npm run build --workspace packages/app --define version=1.2.3 --output dist/bundle.js --sourcemap --reporter verbose --coverage enabled`;
-	const head = bashHeadline(long)!;
-	assert.ok(head.includes("…"), "long commands keep head and tail");
-	assert.ok(head.startsWith("npm run build"));
-	assert.ok(head.endsWith("coverage enabled"));
-	assert.ok(head.length < long.length);
+	// toolLabelClip=0（默认）不预截断，渲染时按宽度截；正数恢复 head-tail。
+	assert.equal(bashHeadline(long), long);
+	const previousClip = config.toolLabelClip;
+	try {
+		config.toolLabelClip = 100;
+		const head = bashHeadline(long)!;
+		assert.ok(head.includes("…"), "long commands keep head and tail");
+		assert.ok(head.startsWith("npm run build"));
+		assert.ok(head.endsWith("coverage enabled"));
+		assert.ok(head.length < long.length);
+	} finally {
+		config.toolLabelClip = previousClip;
+	}
 });
 
 test("isLikelyQuietCommand matches setup-like commands", () => {

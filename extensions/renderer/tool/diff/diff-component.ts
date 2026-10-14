@@ -3,6 +3,7 @@ import {
 	type DiffIndicatorMode,
 	type ToolDisplayConfig,
 } from "../../../config/config.ts";
+import { stripTerminalSequencesPreservingLayout } from "../../../utils/ansi-text.ts";
 import { RICH_DIFF_COMPONENT } from "../../../utils/patch-keys.ts";
 import type { DiffPresentationMode } from "./diff-presentation.ts";
 
@@ -34,6 +35,15 @@ export function resolveLiveDisplayConfig(input: DisplayConfigInput): ToolDisplay
 	return typeof input === "function" ? input() : input;
 }
 
+/**
+ * 比对用归一化：ANSI、缩进前缀和右侧填充不影响判断。
+ * 折叠态 remainder 行里有任意正文，入口必须先由组件声明再比对文本。
+ */
+export function normalizeCollapsedHintLine(line: string | undefined): string | undefined {
+	if (line === undefined) return undefined;
+	return stripTerminalSequencesPreservingLayout(line).replace(/\s+/g, " ").trim();
+}
+
 /** Cache key fragment so indicator/wrap/limits invalidate without host recreate. */
 export function displayConfigCacheKey(config: ToolDisplayConfig): string {
 	return [
@@ -43,7 +53,6 @@ export function displayConfigCacheKey(config: ToolDisplayConfig): string {
 		String(config.editDiffCollapsedLines),
 		String(config.writeDiffCollapsedLines),
 		config.diffWordWrap ? "1" : "0",
-		String(config.expandedPreviewMaxLines),
 	].join(":");
 }
 
@@ -60,6 +69,8 @@ export function createDiffRenderCache() {
 	let cachedConfigKey: string | undefined;
 	let cachedHovered: boolean | undefined;
 	let cachedLines: string[] | undefined;
+	/** 与 cachedLines 同一次渲染的折叠态 remainder 行文本。 */
+	let cachedHintLine: string | undefined;
 
 	return {
 		get(
@@ -81,6 +92,9 @@ export function createDiffRenderCache() {
 			}
 			return undefined;
 		},
+		getHintLine(): string | undefined {
+			return cachedHintLine;
+		},
 		set(
 			width: number,
 			expanded: boolean,
@@ -88,6 +102,7 @@ export function createDiffRenderCache() {
 			configKey: string,
 			hovered: boolean,
 			lines: string[],
+			hintLine?: string,
 		): string[] {
 			cachedWidth = width;
 			cachedExpanded = expanded;
@@ -95,6 +110,7 @@ export function createDiffRenderCache() {
 			cachedConfigKey = configKey;
 			cachedHovered = hovered;
 			cachedLines = lines;
+			cachedHintLine = hintLine;
 			return lines;
 		},
 		invalidate(): void {
@@ -104,6 +120,7 @@ export function createDiffRenderCache() {
 			cachedConfigKey = undefined;
 			cachedHovered = undefined;
 			cachedLines = undefined;
+			cachedHintLine = undefined;
 		},
 	};
 }

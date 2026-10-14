@@ -286,3 +286,25 @@ test("端到端：改写后原生竖排、无定界符泄漏", async () => {
 		JSON.stringify(env),
 	);
 });
+
+test("引用块和长围栏里的代码不被改写", () => {
+	const quoted = run("> ```ts\n> const n = ①\n> ```\nplain ①");
+	assert.match(quoted, /> const n = ①/);
+	assert.match(quoted, /plain \(1\)/);
+
+	const longer = run("````\n```\nstill code ①\n````\nafter ①");
+	assert.match(longer, /still code ①/);
+	assert.match(longer, /after \(1\)/);
+
+	const tilde = run("~~~\ncode ①\n~~~\nafter ①");
+	assert.match(tilde, /code ①/);
+	assert.match(tilde, /after \(1\)/);
+
+	const indented = run("   ```\n  code ①\n   ```\nafter ①");
+	assert.match(indented, /code ①/);
+	assert.match(indented, /after \(1\)/);
+
+	const quotedUrl = run("> ```\n> see https://example.com/a\n> ```\n正文 https://example.com/b");
+	assert.ok(!quotedUrl.includes("[https://example.com/a]"));
+	assert.ok(quotedUrl.includes("[https://example.com/b](https://example.com/b)"));
+});

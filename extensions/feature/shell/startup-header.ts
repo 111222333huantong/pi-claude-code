@@ -9,11 +9,16 @@
 
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { VERSION } from "@earendil-works/pi-coding-agent";
+import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { shortenCwd } from "../../utils/format.ts";
+import {
+	EARLY_STARTUP_HEADER_PATCH,
+	EARLY_STARTUP_HEADER_SWAP_KEY,
+	patchRegistry,
+} from "../../utils/patch-keys.ts";
 import { collectLoadedStats, type LoadedStats, resolveAgentDir } from "./loaded-stats.ts";
 import { PI_MASCOT_FRAME_COUNT, piMascotFrame } from "./mascot.ts";
 import { createQuietStartupFile } from "./quiet-startup.ts";
@@ -52,7 +57,6 @@ type HeaderAnimShared = {
 	timer: ReturnType<typeof setInterval> | undefined;
 	sinks: Set<() => void>;
 };
-
 const HEADER_ANIM = Symbol.for("pi-claude-code:header-anim");
 
 export function headerAnimState(): HeaderAnimShared {
@@ -267,7 +271,7 @@ export function renderHeaderLines(
 		dim("/loaded for details"),
 	];
 
-	const lines = [borderLine("╭", `${paint("Pi")} v${VERSION}`, "╮", width, paint)];
+	const lines = [borderLine("╭", `${paint("pi")} v${VERSION}`, "╮", width, paint)];
 	if (!useRight) {
 		// 单栏：左栏内容占满内宽（center 是 ANSI 感知的，保留小人配色）
 		for (const line of leftLines) lines.push(boxedLine(center(line, innerWidth), width, paint));
@@ -357,12 +361,8 @@ function disposeActiveHeader(): void {
  */
 export function applyStartupHeader(ctx: any, pi?: unknown): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
-	if (!config.showStartupHeader) {
-		// 恢复官方内置 header（logo + 快捷键提示 + onboarding）。
-		disposeActiveHeader();
-		ctx.ui.setHeader(undefined);
-		return;
-	}
+	// 禁用时不碰槽位，避免清掉其他扩展的 header；恢复原生走 clearStartupHeader。
+	if (!config.showStartupHeader) return;
 	const skipAnimation = !config.startupAnimation || headerAnimatedThisProcess();
 	const anim = headerAnimState();
 	if (skipAnimation) {
@@ -413,6 +413,87 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 		activeHeader = component;
 		return component;
 	});
+}
+/** 按配置安装启动头（静态早点头，供 init 闪屏期占位；动画版见上方 applyStartupHeader）。 */
+function headerFactoryStatic(): (
+	tui: unknown,
+	theme: any,
+) => {
+	render(width: number): string[];
+	invalidate(): void;
+} {
+	return (_tui: unknown, theme: any) => ({
+		render(width: number): string[] {
+			return renderHeaderLines(width, theme);
+		},
+		invalidate() {},
+	});
+}
+
+type EarlyHeaderPatch = {
+	active: boolean;
+	original: (...args: any[]) => unknown;
+	installed: (...args: any[]) => unknown;
+};
+
+type HeaderContainerSwap = {
+	original: (child: any) => unknown;
+	installed: (child: any) => unknown;
+};
+
+/**
+ * Pi 在 session_start 之前就把原生启动头画上去了：init() 先建 header 再 requestRender，
+ * 之后才 await 工具检查、加载扩展，所以扩展最早只能到 session_start 换头，启动时会闪一下原生头。
+ * 这里补 init，在原生 header 刚进容器的瞬间换成 ccstyle 的，首次绘制就已经是我们的。
+ * 判定用 child === mode.builtInHeader，不依赖类名；配置关掉时不碰槽位，保留原生头。
+ */
+export function installEarlyStartupHeader(): void {
+	const prototype = (InteractiveMode as any)?.prototype;
+	if (!prototype || typeof prototype.init !== "function") return;
+	const previous = patchRegistry.get<EarlyHeaderPatch>(EARLY_STARTUP_HEADER_PATCH);
+	if (previous) previous.active = false;
+	const original =
+		previous && prototype.init === previous.installed ? previous.original : prototype.init;
+	const patch: EarlyHeaderPatch = {
+		active: true,
+		original,
+		installed: async function (this: any, ...args: any[]) {
+			installHeaderContainerSwap(this, patch);
+			return original.apply(this, args);
+		},
+	};
+	prototype.init = patch.installed;
+	patchRegistry.install(EARLY_STARTUP_HEADER_PATCH, patch);
+}
+
+/** 只包一次 headerContainer.addChild；/reload 后按所有权接管旧包装。 */
+function installHeaderContainerSwap(mode: any, patch: EarlyHeaderPatch): void {
+	const container = mode?.headerContainer;
+	if (!container || typeof container.addChild !== "function") return;
+	const previous = container[EARLY_STARTUP_HEADER_SWAP_KEY] as HeaderContainerSwap | undefined;
+	const original =
+		previous && container.addChild === previous.installed
+			? previous.original
+			: container.addChild.bind(container);
+	const installed = (child: any) => {
+		const result = original(child);
+		if (!patch.active || !config.showStartupHeader || child !== mode.builtInHeader) return result;
+		if (typeof mode.setExtensionHeader !== "function") return result;
+		try {
+			mode.setExtensionHeader(headerFactoryStatic());
+		} catch {
+			// 换头失败就退回原生 header，不影响启动
+		}
+		return result;
+	};
+	container.addChild = installed;
+	container[EARLY_STARTUP_HEADER_SWAP_KEY] = { original, installed };
+}
+
+/** 用户从 /ccstyle 关掉本扩展启动头时，恢复官方 header。 */
+export function clearStartupHeader(ctx: any): void {
+	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
+	ctx.ui.setHeader(undefined);
 }
 
 const quietStartupFile = createQuietStartupFile();

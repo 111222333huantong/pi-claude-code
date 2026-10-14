@@ -12,18 +12,23 @@ export type ComponentRowHit = {
 	row: number;
 	/** 内部工具命中时所属的展开 group；普通卡点击仍折叠整个 group。 */
 	group?: ToolGroupComponent;
+	/** compact 展开面板内的命中：外层面板，单击非提示区时收起它。 */
+	owner?: any;
 };
 
 /** hitbox 左右留白列数：触控板点偏 1~2 列仍能命中。 */
 export const HINT_HITBOX_PAD_COLS = 2;
 
-/** 行内 [click to show more] 提示的命中列区间（1-based，含两端，已扩 pad）。 */
+/** 行内 [click to show more] / [↑ Collapse] 提示的命中列区间（1-based，含两端，已扩 pad）。 */
 export function collapsedHintHitbox(
 	line: string,
 	padCols = 0,
 ): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);
-	const match = /(\([^()\n]* \/ click\)|click to show more|to show more)(?=\)?\s*$)/.exec(plain);
+	const match =
+		/(\([^()\n]* \/ click\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
+			plain,
+		);
 	if (!match?.[1]) return null;
 	const pad = Math.max(0, padCols);
 	const rawStart = visibleWidth(plain.slice(0, match.index)) + 1;
@@ -169,11 +174,15 @@ export function componentAtLocalRow(
 		return { component, row: localRow };
 	}
 	if (isCompactAssistantComponent(component)) {
-		// 折叠：整行摘要。展开：先命中内部 thinking hint，其余仍归外层卡片。
+		// 折叠：整行摘要。展开：先命中面板内 thinking/工具卡/文本，其余（空行）仍归外层卡片。
 		if (component.expanded === true) {
-			const inner = nestedChildAtRow(component, localRow, mappedWidth);
-			if (inner instanceof ThinkingPreviewBlock) {
-				return { component: inner, row: localRow };
+			const inner = nestedChildAtRow(component, localRow, width);
+			if (inner) {
+				// 展开的 thinking 有自己的展开态：点它只收它自己，不收整块面板。
+				const ownExpandable = inner instanceof ThinkingPreviewBlock && inner.expanded === true;
+				return ownExpandable
+					? { component: inner, row: localRow }
+					: { component: inner, row: localRow, owner: component };
 			}
 		}
 		return { component, row: localRow };

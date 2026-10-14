@@ -22,8 +22,10 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+// 展开卡背景是 ccstyle 的渲染约定，不随上游 CompactThinkingConfig 走，直接读全局配置。
+import { config as styleConfig } from "../config/config.ts";
 import { formatThoughtDuration, styleCompactThinkingText } from "../renderer/compact-mode.ts";
-import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
+import { isToolTuiFullscreen } from "../renderer/tool/names.ts";
 import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 import {
 	COMPACT_THINKING_OWNER,
@@ -384,23 +386,26 @@ function hiddenPreviewHint(
 	const action = thinkingExpandAction() ?? "";
 	if (hiddenLines > 0) {
 		const noun = hiddenLines === 1 ? "line" : "lines";
+		// 与其它提示同一套写法：小圆点连接，不用逗号和括号
 		return {
-			prefix: ` • (${hiddenLines} more ${noun}${action ? ", " : ""}`,
+			prefix: ` · ${hiddenLines} more ${noun}${action ? " · " : ""}`,
 			action,
-			suffix: ")",
+			suffix: "",
 		};
 	}
 	if (forceExpandHint && isToolTuiFullscreen()) {
-		return { prefix: " • ", action: "click to show more", suffix: "" };
+		return { prefix: " · ", action: "click to show more", suffix: "" };
 	}
 	return undefined;
 }
 
-const expandedThinking = new Set<number>();
+const expandedThinking = new Set<string>();
 /** 展开全文态（tail 之后的第二段推进；短块 tail 即全文，不经过此集合也能全显）。 */
-const fullExpandedThinking = new Set<number>();
+const fullExpandedThinking = new Set<string>();
+const thinkingKey = (messageTimestamp: number, runStartIndex: number): string =>
+	`${messageTimestamp}:${runStartIndex}`;
 
-/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、双击整块收起，对齐工具卡。 */
+/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、展开卡单击整块收起（拖动选择文本时不收起）。 */
 export class ThinkingPreviewBlock implements Component {
 	private heading: string;
 	private text: string;
@@ -409,10 +414,9 @@ export class ThinkingPreviewBlock implements Component {
 	readonly runStartIndex: number;
 	private style: (text: string) => string;
 	private theme: Theme | undefined;
+	private hintHovered = false;
 	private markdownTheme: ConstructorParameters<typeof Markdown>[3] | undefined;
 	private markdownTransform: ((markdown: string, availableWidth: number) => string) | undefined;
-	private _expanded: boolean;
-	private hintHovered = false;
 	/** 流式活动态是否追随尾部（视觉滚动）；完成后固定头部。每次 updateContent 重建，状态不跨帧残留。 */
 	private followTail: boolean;
 	private collapsedMemo:
@@ -448,7 +452,6 @@ export class ThinkingPreviewBlock implements Component {
 		this.theme = theme;
 		this.markdownTheme = markdownTheme;
 		this.markdownTransform = markdownTransform;
-		this._expanded = expandedThinking.has(messageTimestamp);
 	}
 
 	private paint(color: string, text: string): string {
@@ -457,27 +460,27 @@ export class ThinkingPreviewBlock implements Component {
 			: text;
 	}
 
+	/** 展开态按消息时间戳 + run 序号共享：面板重排/内容重建换掉实例后，
+	 *  布局里的旧实例与 render 的新实例同键，点谁都能展开。 */
 	get expanded(): boolean {
-		return this._expanded;
+		return expandedThinking.has(`${this.messageTimestamp}:${this.runStartIndex}`);
 	}
 
 	setExpanded(expanded: boolean): void {
+		const key = thinkingKey(this.messageTimestamp, this.runStartIndex);
 		if (expanded) {
-			if (!this._expanded) {
-				this.collapsedMemo = undefined;
-				this._expanded = true;
-				expandedThinking.add(this.messageTimestamp);
+			if (!expandedThinking.has(key)) {
+				expandedThinking.add(key);
 			} else {
 				// 间隔推进 tail → full（Crush 三态）；短块 tail 即全文，此步无视觉变化。
-				fullExpandedThinking.add(this.messageTimestamp);
+				fullExpandedThinking.add(key);
 			}
-		} else if (this._expanded) {
-			this.collapsedMemo = undefined;
-			this._expanded = false;
-			expandedThinking.delete(this.messageTimestamp);
-			fullExpandedThinking.delete(this.messageTimestamp);
+		} else {
+			expandedThinking.delete(key);
+			fullExpandedThinking.delete(key);
 			evictExpandedWraps(this.messageTimestamp, this.runStartIndex);
 		}
+		this.collapsedMemo = undefined;
 	}
 
 	setHintHovered(hovered: boolean): void {
@@ -486,7 +489,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	private headingLines(width: number, hiddenLines: number, padding: number): string[] {
-		const hint = this._expanded
+		const hint = this.expanded
 			? undefined
 			: hiddenPreviewHint(hiddenLines, Boolean(this.text) && config.previewLines <= 0);
 		if (!hint) return new Text(this.heading, padding, 0).render(width);
@@ -509,16 +512,12 @@ export class ThinkingPreviewBlock implements Component {
 		width: number,
 		padding: number,
 	): { lines: string[]; hiddenLines: number; tailHint?: string; markdown?: boolean } {
-		if (!this.text || (config.previewLines <= 0 && !this._expanded)) {
+		if (!this.text || (config.previewLines <= 0 && !this.expanded)) {
 			return { lines: [], hiddenLines: 0 };
 		}
-		if (this._expanded) {
+		if (this.expanded) {
 			// 完成态定稿走 Markdown 结构化渲染（标题/列表/代码块成型，含代码块套框补丁）；
-			// 流式增量永不进 Markdown（opencode #36037 教训），折叠预览保持裸文本。
-			// messageType 用 assistant-thinking：仓库约定 thinking 保持原文，
-			// 只取 Pi 原生 Markdown 结构，不走 mermaid/提示框等扩展改写。
-			// defaultTextStyle 给正文 thinking 色 + 斜体（与折叠预览同观感，呼应原生）；
-			// 元素色（标题/代码/链接）保留 markdownTheme 定义。
+			// 流式增量永不进 Markdown，折叠预览保持裸文本。
 			// 主题未就绪等异常直接回退裸文本：render 内绝不抛错。
 			let full: string[];
 			if (this.markdownTheme !== undefined) {
@@ -549,7 +548,10 @@ export class ThinkingPreviewBlock implements Component {
 			}
 			const cap = Math.max(1, config.thinkingExpandedMaxLines);
 			// 超长先给尾部窗口 + 顶部 hint（Crush tail-window），再推进全文；短块直达全文。
-			if (full.length > cap && !fullExpandedThinking.has(this.messageTimestamp)) {
+			if (
+				full.length > cap &&
+				!fullExpandedThinking.has(thinkingKey(this.messageTimestamp, this.runStartIndex))
+			) {
 				return {
 					lines: full.slice(-cap),
 					hiddenLines: 0,
@@ -564,7 +566,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	render(width: number) {
-		if (this._expanded) {
+		if (this.expanded) {
 			const innerWidth = Math.max(1, width - 2);
 			const body = this.bodyLines(innerWidth, 0);
 			const heading = this.headingLines(innerWidth, 0, 0);
@@ -578,7 +580,7 @@ export class ThinkingPreviewBlock implements Component {
 					: heading;
 			const bgFn =
 				this.theme && typeof this.theme.bg === "function"
-					? (text: string) => this.theme!.bg("userMessageBg" as never, text)
+					? (text: string) => this.theme!.bg(styleConfig.expandedCardBackground, text)
 					: undefined;
 			const box = new Box(1, 1, bgFn);
 			box.addChild({

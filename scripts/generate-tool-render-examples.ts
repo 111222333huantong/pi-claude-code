@@ -14,9 +14,10 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
-import { config } from "../extensions/config/config.ts";
+import { config, normalizeConfig, setConfig } from "../extensions/config/config.ts";
 import { buildMessageSummary, installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import claudeCodeStyle from "../extensions/renderer/index.ts";
+import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	renderRichToolResult,
@@ -27,7 +28,7 @@ import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
-import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
+import { setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -36,6 +37,9 @@ const WIDTH = 72;
 
 initTheme("dark");
 setToolTuiFullscreen(true);
+// 快照必须与机器无关：本机 settings 里的显示配置（如 editDiffCollapsedLines）不能漏进示例，
+// 否则生成出来的文档随开发机变化。
+setConfig(normalizeConfig({ ...config, ...DEFAULT_TOOL_DISPLAY_CONFIG }));
 
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 
@@ -70,10 +74,28 @@ function fence(lines: string[] | string): string {
 	return `\`\`\`text\n${body}\n\`\`\``;
 }
 
+/** Braille loading 帧与耗时都由挂钟推导；渲染期间固定时钟，保证快照可复现。 */
+const SNAPSHOT_NOW = 0;
+
+/**
+ * 固定时钟跑一段（含 render 之外的 setup）。
+ * 耗时的开始时间是 renderCall 里记的，不在 render 内，
+ * 不一起固定的话快照会得到一个巨大的负数。
+ */
+function withSnapshotClock<T>(fn: () => T): T {
+	const realNow = Date.now;
+	Date.now = () => SNAPSHOT_NOW;
+	try {
+		return fn();
+	} finally {
+		Date.now = realNow;
+	}
+}
+
 function renderLines(component: any, width = WIDTH): string[] {
-	return component
-		.render(width)
-		.map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, ""));
+	return withSnapshotClock(() =>
+		component.render(width).map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, "")),
+	);
 }
 
 function renderBlock(component: any, width = WIDTH): string {
@@ -88,7 +110,7 @@ function header(modeLabel: string, modeKey: string): string {
 	return `# 工具 Render 示例（ccstyle · ${modeLabel}）
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
-> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
+> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
 > 当前版本：ccstyle ${version} · mode=\`${modeKey}\`。
 > renderer 变更后请运行 \`npm run docs:tool-render\` 同步本文件。
 `;
@@ -140,6 +162,16 @@ function succeed(component: any, text?: string, details?: unknown) {
 	return component;
 }
 
+function renderEditSummary(id: string, diff: string): string[] {
+	const previous = config.editDiffCollapsedLines;
+	try {
+		config.editDiffCollapsedLines = 0;
+		return renderLines(succeed(tool("edit", id, { path: "sample.ts" }), undefined, { diff }));
+	} finally {
+		config.editDiffCollapsedLines = previous;
+	}
+}
+
 function fail(component: any, text: string) {
 	component.updateResult({
 		content: [{ type: "text", text }],
@@ -172,6 +204,30 @@ async function generateDefault() {
 			tool("read", "s3", { path: "missing.ts" }),
 			"ENOENT: no such file or directory, open 'missing.ts'",
 		);
+		// shell 耗时：Pi 原生会在结果底部报一行，ccstyle 接回折叠/展开两处。
+		// 快照时钟固定，运行中取不到记录值，这里固定为 0ms。
+		const shellRunning = tool("bash", "s4", { command: "sleep 30" });
+		withSnapshotClock(() => {
+			shellRunning.markExecutionStarted();
+			shellRunning.updateResult({ content: [], isError: false }, true);
+		});
+		const shellDone = tool("bash", "s5", { command: "npm test" });
+		shellDone.markExecutionStarted();
+		shellDone.updateResult({
+			content: [{ type: "text", text: "pass 369" }],
+			isError: false,
+			durationMs: 12_400,
+		});
+		const shellExpanded = tool("bash", "s6", { command: "npm test" });
+		shellExpanded.markExecutionStarted();
+		shellExpanded.setExpanded(true);
+		shellExpanded.updateResult({
+			content: [
+				{ type: "text", text: Array.from({ length: 16 }, (_, i) => `line ${i + 1}`).join("\n") },
+			],
+			isError: false,
+			durationMs: 12_400,
+		});
 		chunks.push(
 			section(
 				"1. 运行态 / 完成态 / 失败态",
@@ -181,6 +237,17 @@ async function generateDefault() {
 						"- 运行中：call 行使用 Braille 转轮。",
 						"- 完成/失败：`✓` / `✗`；结果行缩进 3 格（`   ↳`）。",
 						"- 可展开结果附带 `click to show more`（fullscreen 文案）。",
+					].join("\n"),
+					"### shell 耗时",
+					fence([
+						...renderLines(shellRunning),
+						...renderLines(shellDone),
+						...renderLines(shellExpanded),
+					]),
+					[
+						"Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的通用折叠行把它盖掉了，这里接回来。",
+						"运行中报已用时间（随动画 tick 更新，快照固定时钟所以是 `0ms`）；完成态优先用 Pi 记录的 `durationMs`，拿不到再退回渲染器自己的时钟。",
+						"折叠态接在摘要后、展开提示前；展开态同样挂在 Output 的 show-more 行上、提示前（Output 未截断时没有那一行，才单独成行）。只对 shell（bash / powershell / pwsh / sh / zsh / cmd）生效。",
 					].join("\n"),
 				].join("\n\n"),
 			),
@@ -238,7 +305,7 @@ async function generateDefault() {
 		);
 		const longHint =
 			renderLines(longCollapsed).find((l) => l.includes("more")) ??
-			"… (more diff lines • click to show more)";
+			"… (more diff lines · click to show more)";
 
 		store.set("w-create", { fileExistedBeforeWrite: false });
 		const writeCreate = renderRichToolResult(
@@ -267,12 +334,14 @@ async function generateDefault() {
 				"4. edit/write rich diff",
 				[
 					fence(renderLines(editCall, 46)),
+					"`editDiffCollapsedLines: 0` shows a one-line change-count summary and expand hint; expanding still shows the full diff:",
+					fence(renderEditSummary("ed-summary", editDiff)),
 					"长 diff 提示：",
 					fence([longHint]),
 					[
 						"- hover `click to show more` 时由 muted 切换为白色 text。",
-						"- 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。",
-						"- 展开态下 diff 行数提示为 warning 色。",
+						"- 点击提示展开工具，展开态 diff 全量显示，不再截断。",
+						"- 折叠态 diff 行数提示为 muted 色。",
 					].join("\n"),
 					"write 新建 / 覆盖：",
 					fence([...renderLines(writeCreate), "", ...renderLines(writeOver)]),
@@ -361,24 +430,207 @@ async function generateDefault() {
 	// 8. MCP / custom
 	{
 		const blocks: string[] = [];
+		// 网关：沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格
+		blocks.push(
+			...renderLines(
+				succeed(
+					tool("mcp", "mcp0", { tool: "github_search_code", args: { query: "pi" } }),
+					"1 hit",
+				),
+			),
+		);
+		blocks.push(
+			...renderLines(succeed(tool("mcp", "mcp0b", { server: "chrome-devtools" }), "29 tools")),
+		);
+		blocks.push(
+			...renderLines(
+				succeed(tool("mcp", "mcp0d", { search: "screenshot", regex: true }), "2 tools"),
+			),
+		);
+		blocks.push(...renderLines(succeed(tool("mcpScript", "mcp0c", { code: "emit(1)" }), "1 line")));
+		// 命名空间工具：标题用 adapter 暴露的真实工具名
 		blocks.push(
 			...renderLines(
 				succeed(
 					tool(
-						"mcp__github__search",
+						"mcp__github_search_code",
 						"mcp1",
 						{ query: "pi" },
-						{ name: "mcp__github__search", label: "MCP: Github Search" },
+						{ name: "mcp__github_search_code", label: "MCP: search_code" },
 					),
 					"1 hit",
 				),
 			),
 		);
 		blocks.push(...renderLines(succeed(tool("customTranslate", "c1", { text: "hi" }), "你好")));
-		chunks.push(section("8. MCP / 自定义工具", fence(blocks)));
+		chunks.push(
+			section(
+				"8. MCP / 自定义工具",
+				`${fence(blocks)}\n\n网关的标题沿用 mcp-adapter 自己的 \`mcp <动作> <目标>\` 风格（\`list\` / \`search\` / \`describe\` / \`call\` / \`connect\` / \`status\`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（\`regex\` / \`includeSchemas\`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 \`mcp__github_search_code\`），入参先走字段链（\`query\` / \`url\` / \`command\` / \`path\` …），字段链认不出的键（命名空间代理的 \`tool\`+\`args\`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：\`MCP\` / \`MCP Script\`。超过卡片宽度与 Input clip 的部分尾部截断。`,
+			),
+		);
 	}
 
-	// 9. tool grouping
+	// 9. ask_user_question（第三方）
+	{
+		const questions = [
+			{ question: "Which library should we use?", header: "Library" },
+			{ question: "Which paths should the change cover?", header: "Scope" },
+			{ question: "Which checks should run?", header: "Checks", multiSelect: true },
+		];
+		const answered = {
+			content: [
+				{
+					type: "text",
+					text: 'User has answered your questions: "Which library should we use?"="Read". "Which paths should the change cover?"="src and tests". "Which checks should run?"="typecheck, unit tests, lint". You can now continue with the user\'s answers in mind.',
+				},
+			],
+			details: {
+				cancelled: false,
+				answers: [
+					{
+						questionIndex: 0,
+						question: questions[0]!.question,
+						kind: "option",
+						answer: "Read",
+					},
+					{
+						questionIndex: 1,
+						question: questions[1]!.question,
+						kind: "custom",
+						answer: "src and tests",
+						notes: "renderer only",
+					},
+					{
+						questionIndex: 2,
+						question: questions[2]!.question,
+						kind: "multi",
+						answer: null,
+						selected: ["typecheck", "unit tests", "lint"],
+					},
+				],
+				globalNote: "keep the diff small",
+			},
+			isError: false,
+		};
+
+		const running = tool("ask_user_question", "ask-run", { questions });
+		running.updateResult({ content: [], details: { answers: [], cancelled: false } }, true);
+
+		const done = tool("ask_user_question", "ask-done", { questions });
+		done.markExecutionStarted();
+		done.updateResult(answered);
+
+		const expanded = tool("ask_user_question", "ask-exp", { questions });
+		expanded.markExecutionStarted();
+		expanded.updateResult(answered);
+		expanded.setExpanded(true);
+
+		const declined = tool("ask_user_question", "ask-declined", { questions });
+		declined.markExecutionStarted();
+		declined.updateResult({
+			content: [{ type: "text", text: "User declined to answer questions" }],
+			details: { answers: [], cancelled: true },
+			isError: false,
+		});
+
+		chunks.push(
+			section(
+				"9. ask_user_question（第三方）",
+				`${fence([
+					...renderLines(running),
+					...renderLines(done),
+					...renderLines(expanded),
+					...renderLines(declined),
+				])}\n\n标题只留工具名和问题数（调用期间就从入参数起，不先闪出第一个问题）；问题原文与所选在折叠态逐条列出，问题行全用 \`├\`、最后一行用 \`└\` 收 \`N answered\` 并挂展开入口，多选把标签用 \`, \` 拼在一行。展开态按「问题 / 所选 / 备注」分组，并带上总备注。没有作答（用户取消、校验失败）时不画树，只有一行 \`Declined\`。分组卡里空间只够一行，压成 \`问题 -> 回答 (+N)\`。`,
+			),
+		);
+	}
+
+	// 10. codemode（内置）
+	{
+		const codeArgs = {
+			code: `// @options: {"max_output_tokens": 1000}
+const [g, f] = await Promise.all([
+  tools.ffgrep({ pattern: "mcp", path: "src/" }),
+  tools.fffind({ pattern: "mcp" }),
+])
+return g + f`,
+		};
+		const header = "Script completed\nWall time 1.9 seconds\nOutput:\n";
+		const codemodeOutput = [
+			"--- grep ---",
+			"extensions/renderer/tool/mcp-title.ts",
+			"extensions/renderer/tool/names.ts",
+		].join("\n");
+		const nested = [
+			{
+				id: "cm/1",
+				name: "ffgrep",
+				args: '{"pattern":"mcp","path":"src/"}',
+				status: "ok",
+				durationMs: 31,
+			},
+			{ id: "cm/2", name: "fffind", args: '{"pattern":"mcp"}', status: "ok", durationMs: 12 },
+		];
+
+		const running = tool("codemode", "cm-run", codeArgs);
+		running.updateResult(
+			{
+				content: [],
+				details: {
+					calls: nested.map((call) => ({ ...call, status: "running", durationMs: undefined })),
+				},
+			},
+			true,
+		);
+
+		const doneCalls = [
+			...nested,
+			{
+				id: "cm/3",
+				name: "mcp__chrome_devtools__list_pages",
+				args: "{}",
+				status: "error",
+				durationMs: 240,
+				error: "server disconnected",
+			},
+		];
+		const done = tool("codemode", "cm-done", codeArgs);
+		done.updateResult({
+			content: [
+				{ type: "text", text: header },
+				{ type: "text", text: codemodeOutput },
+			],
+			details: { calls: doneCalls },
+			isError: false,
+		});
+
+		const expanded = tool("codemode", "cm-exp", codeArgs);
+		expanded.updateResult({
+			content: [
+				{ type: "text", text: header },
+				{ type: "text", text: codemodeOutput },
+			],
+			// 展开态顺便展示子调用错误文本的缩进
+			details: { calls: doneCalls, fullOutputPath: "C:\\tmp\\pi-codemode-out.txt" },
+			isError: false,
+		});
+		expanded.setExpanded(true);
+
+		chunks.push(
+			section(
+				"10. codemode（内置）",
+				`${fence([
+					...renderLines(running),
+					...renderLines(done),
+					...renderLines(expanded),
+				])}\n\n内置 codemode 的调用行只报工具名（脚本在展开后的 Input 里看）；折叠态把子调用按工具组的树摊开，子调用全用 \`├\`、最后一行用 \`└\` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 \`result.details.calls\`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 \`Script completed / Wall time / Output:\` 头的结果与全量输出路径。`,
+			),
+		);
+	}
+
+	// 11. tool grouping
 	{
 		const hooks = installToolGrouping(() => true);
 		try {
@@ -399,7 +651,12 @@ async function generateDefault() {
 			}
 
 			const running = renderLines(group);
-			bash.updateResult({ content: [{ type: "text", text: "pass 79/79" }], isError: false });
+			bash.updateResult({
+				content: [{ type: "text", text: "pass 79/79" }],
+				isError: false,
+				// pi 把执行耗时记在结果上，组内 shell 行与单卡报的是同一个值。
+				durationMs: 12_400,
+			});
 			read.updateResult({
 				content: [
 					{
@@ -416,7 +673,7 @@ async function generateDefault() {
 
 			chunks.push(
 				section(
-					"9. 工具组（tool-grouping）",
+					"11. 工具组（tool-grouping）",
 					[
 						"### 收起：运行中",
 						fence(running),
@@ -428,7 +685,9 @@ async function generateDefault() {
 							"ANSI 剥离后无法展示背景，实际 TUI 行为如下：",
 							"",
 							"- 组头始终使用状态色圆点 `●`。",
+							"- 组头工具列表用与子行同一套人性化标题，次数一律带上（`Bash×1, PowerShell×1`）；宽度不够时先截列表，保住行尾的展开提示。",
 							"- 内部工具使用 `✓`、`✗` 或 Braille loading spinner。",
+							"- 组内 shell 行只报耗时（`· 12.4s`），行数是冗余信息；失败另报错误首行。",
 							"- 展开区统一绘制完整状态背景，左右和底部各 1 格 padding，无顶部 padding。",
 							"- 外层树在收起/展开时位置不变；Input/Output 树线与上方状态图标对齐。",
 							"- Input/Output 之间各有一个空白 rail 行。",
@@ -443,10 +702,10 @@ async function generateDefault() {
 		}
 	}
 
-	// 10. working footer
+	// 12. working footer
 	chunks.push(
 		section(
-			"10. Working footer",
+			"12. Working footer",
 			[
 				"保留 Pi 原生 spinner，仅扩展文本：",
 				fence(["⠋ Working...", "⠋ Working... (↓ 1,234 tokens · 12s)"]),
@@ -506,6 +765,17 @@ async function generateCompact() {
 			} as unknown as AssistantMessage;
 
 			thinkingActive = true;
+			for (const component of [
+				tool("bash", "b1", { command: "npm test" }),
+				tool("read", "r1", { path: "a.ts" }),
+				tool("read", "r2", { path: "a.ts" }),
+				tool("read", "r3", { path: "b.ts" }),
+				tool("grep", "g1", { pattern: "x" }),
+			]) {
+				succeed(component, "ok");
+				component.executionStarted = true;
+				component.updateDisplay?.();
+			}
 			const active = new AssistantMessageComponent(msg, true) as any;
 			active.updateContent(msg);
 			const activeLines = renderLines(active);
@@ -529,12 +799,13 @@ async function generateCompact() {
 				content: [{ type: "text", text: "done" }],
 			} as unknown as AssistantMessage);
 
-			// 展开预览：setExpanded(true) 后恢复原生渲染（摘要行 + Thinking + 工具卡）。
+			// 展开预览：setExpanded(true) 后助手文本原生渲染，thinking 与工具卡进面板。
 			const expandMsg = {
 				role: "assistant",
 				timestamp: 3,
 				content: [
-					{ type: "thinking", thinking: "check" },
+					{ type: "thinking", thinking: "check the diff first" },
+					{ type: "text", text: "checking the diff" },
 					{ type: "toolCall", id: "x1", name: "bash", arguments: { command: "npm test" } },
 					{ type: "toolCall", id: "x2", name: "read", arguments: { path: "a.ts" } },
 				],
@@ -561,19 +832,21 @@ async function generateCompact() {
 				section(
 					"1. 消息折叠摘要行",
 					[
-						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）：",
+						"含 toolCall 的 assistant 折叠为一行摘要（运行时长 + 工具计数）。普通工具不单独成行。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：",
 						fence([...activeLines, ...doneLines]),
-						"展开（Ctrl+O / 点击摘要行）后恢复原生渲染：",
+						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：",
 						fence(expandedLines),
 						[
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",
+							"- 摘要行挂在 transcript 容器内回合末尾（工具卡/diff 之下）：运行中恒在视口底缘可写区刷新，回合结束就地落成 `Ran for` 随 transcript 进入 scrollback；新工具卡追加时自动归位，不会越出回合。",
 							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
 							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。",
-							"- `edit` / `write` **不进**摘要计数（各自独立单行）。",
+							"- `edit` / `write` / `ask_user_question` **不进**摘要计数（各自独立单行）。",
 							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
-							"- abort/error/length 状态行挂在摘要外层，不被折叠吞掉。",
+							"- abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。",
 							"- 行末 `click to show more`；摘要永不换行。",
-							"- 展开后：摘要行隐藏，thinking 与工具卡恢复原生渲染，子卡片背景更深且带内部 padding。",
+							"- 展开后：摘要行隐藏，助手文本按原生渲染（不进面板），thinking 与工具卡进面板；展开的 thinking 再套一层更深的内卡，工具卡只用外卡底色。",
+							"- 点击展开前先停住底部跟随：内容变高不会把点的那行顶出屏幕（工具卡与摘要行同一口径，收起时还原展开前的视口）。",
 						].join("\n"),
 						"纯函数口径（`buildMessageSummary`）：",
 						fence([
@@ -619,7 +892,7 @@ async function generateCompact() {
 				section(
 					"2. 普通工具行隐藏",
 					[
-						"折叠时普通工具 **不渲染独立行**（摘要已统计）：",
+						"折叠时普通工具卡 **不渲染独立行**（卡自身已被摘要统计）：",
 						fence([
 							`read 折叠行数: ${renderLines(read).filter((l) => l.trim()).length}`,
 							`bash 折叠行数: ${renderLines(bash).filter((l) => l.trim()).length}`,
@@ -640,21 +913,53 @@ async function generateCompact() {
 			// write metadata for collapsed stats if needed
 			store.set("cw1", { fileExistedBeforeWrite: false });
 
-			chunks.push(
-				section(
-					"3. edit / write 独立行",
-					[
-						"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
-						fence([...renderLines(edit), ...renderLines(write)]),
-						"展开 edit：",
-					].join("\n\n"),
-				),
-			);
+			// 挂进 transcript 容器后的真实回合布局：摘要尾行在 diff 之下、回合末尾，
+			// 运行中恒在可写视口底缘；回合结束后原地落成 Ran for 进 scrollback。
+			const chat = new Container() as any;
+			setToolMouseTui({ children: [chat] });
+			let tailLayout: string[] = [];
+			try {
+				const tailMsg = {
+					role: "assistant",
+					timestamp: 2,
+					content: [
+						{ type: "text", text: "updated sample.ts" },
+						{ type: "toolCall", id: "te1", name: "edit", arguments: { path: "sample.ts" } },
+					],
+				} as unknown as AssistantMessage;
+				const anchorC = new AssistantMessageComponent(tailMsg, true) as any;
+				const editT = succeed(tool("edit", "te1", { path: "sample.ts" }), undefined, {
+					diff: editDiff,
+				});
+				chat.addChild(anchorC);
+				chat.addChild(editT);
+				anchorC.updateContent(tailMsg);
+				// 下一条可见文本结束本回合，尾行就地翻成 Ran for。
+				const finMsg = {
+					role: "assistant",
+					content: [{ type: "text", text: "task done" }],
+				} as unknown as AssistantMessage;
+				const fin = new AssistantMessageComponent(finMsg, true) as any;
+				chat.addChild(fin);
+				fin.updateContent(finMsg);
+				tailLayout = renderLines(chat).filter((l) => l.trim());
+			} finally {
+				setToolMouseTui(null);
+			}
+
+			const bodyIntro = [
+				"edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只显示一处：正文带 +A -D（diff 头行或多行预览的摘要行）时标题不重复：",
+				fence([...renderLines(edit), ...renderLines(write)]),
+				"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
+				fence(tailLayout),
+				"展开 edit：",
+			].join("\n\n");
+			chunks.push(section("3. edit / write 独立行", bodyIntro));
 			edit.setExpanded(true);
 			chunks[chunks.length - 1] = section(
 				"3. edit / write 独立行",
 				[
-					"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
+					"edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只显示一处：正文带 +A -D（diff 头行或多行预览的摘要行）时标题不重复：",
 					fence([
 						...renderLines(
 							succeed(tool("edit", "ce2", { path: "sample.ts" }), undefined, {
@@ -663,6 +968,10 @@ async function generateCompact() {
 						),
 						...renderLines(write),
 					]),
+					"`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header:",
+					fence(renderEditSummary("ce-summary", editDiff)),
+					"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
+					fence(tailLayout),
 					"展开 edit：",
 					fence(renderLines(edit, 46)),
 				].join("\n\n"),
@@ -692,6 +1001,7 @@ async function generateCompact() {
 				[
 					[
 						"- 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。",
+						"- 用户消息是回合的硬边界：steer 消息插进回合中间、或上一回合没正文就收尾时，回合就地收口、后续消息另起一回合。区间里的用户消息不会被当成外来行挪走，摘要行与展开面板都留在自己回合的位置上。",
 						"- 运行时长跨消息累加（thinking query + 回合挂钟 floor）。",
 						"- 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。",
 						"- mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。",

@@ -1,11 +1,13 @@
 import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
-import { type Component, Text } from "@earendil-works/pi-tui";
+import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
+import { showMoreHintText } from "../names.ts";
 import {
 	createDiffRenderCache,
 	type DiffRenderOptions,
 	type DisplayConfigInput,
 	displayConfigCacheKey,
+	normalizeCollapsedHintLine,
 	RICH_DIFF_COMPONENT,
 	resolveDiffIndicatorMode,
 	resolveLiveDisplayConfig,
@@ -23,6 +25,7 @@ import {
 import {
 	applyLineLimit,
 	clampDiffLinesToWidth,
+	clampDiffLineToWidth,
 	resolveDiffDisplayLimit,
 	resolveDiffProcessBudget,
 	takeEntriesForLineBudget,
@@ -39,6 +42,7 @@ import {
 	buildDiffSummaryText,
 	normalizeDiffRenderWidth,
 	resolveDiffPresentationMode,
+	styleDiffSummaryLine,
 } from "./diff-presentation.ts";
 
 function safeGetDiff(details: unknown): string {
@@ -80,6 +84,28 @@ export function countEditDiffStats(
 	}
 }
 
+/** Keep counts in the result row: the default-mode edit title does not include them. */
+function renderEditCollapsedSummaryLine(
+	stats: ParsedDiff["stats"],
+	width: number,
+	theme: DiffTheme,
+	hovered: boolean,
+): string {
+	const counts = `+${stats.added} -${stats.removed}`;
+	const hint = showMoreHintText();
+	const candidates = [
+		`↳ diff ${counts} · ${hint}`,
+		`↳ ${counts} · ${hint}`,
+		`${counts} · ${hint}`,
+		`↳ diff ${counts}`,
+		counts,
+		"diff",
+		"…",
+	];
+	const text = candidates.find((candidate) => visibleWidth(candidate) <= width) ?? "";
+	return clampDiffLineToWidth(styleDiffSummaryLine(text, stats, hint, theme, hovered), width);
+}
+
 export function renderEditDiffResult(
 	details: unknown,
 	options: DiffRenderOptions,
@@ -109,24 +135,41 @@ export function renderEditDiffResult(
 		return new Text(theme.fg("muted", "↳ no diff data"), 0, 0);
 	}
 
-	const splitRows = buildSplitRows(renderEntries);
-	const showHashlineAnchors =
-		options.expanded === true &&
-		renderEntries.some((entry) => entry.kind === "line" && !!entry.hashlineAnchorContent);
-	const lineNumberWidth = getLineNumberWidth(renderEntries, showHashlineAnchors);
 	const palette = resolveDiffPalette(theme);
 	// Rich diffs use ccstyle's self shell. Keep the panel transparent so the
 	// separator cannot leak toolSuccessBg across the entire new column.
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(options.filePath);
 	const cache = createDiffRenderCache();
-	const highlightLine = createCodeLineHighlighter(language, theme, renderEntries, () => {
-		cache.invalidate();
-		options.invalidate?.();
-	});
+	// Summary-only previews need parsed counts, not split rows or syntax highlighting.
+	// Keep detailed data lazy so a live setting change can still reveal the same diff.
+	function buildDetailedData() {
+		const showHashlineAnchors =
+			options.expanded === true &&
+			renderEntries.some((entry) => entry.kind === "line" && !!entry.hashlineAnchorContent);
+		return {
+			splitRows: buildSplitRows(renderEntries),
+			showHashlineAnchors,
+			lineNumberWidth: getLineNumberWidth(renderEntries, showHashlineAnchors),
+			highlightLine: createCodeLineHighlighter(language, theme, renderEntries, () => {
+				cache.invalidate();
+				options.invalidate?.();
+			}),
+		};
+	}
+	let detailedData: ReturnType<typeof buildDetailedData> | undefined;
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** Only the current summary/remainder row is an expand target, never diff body text. */
+		isCollapsedHintLine(plainLine: string): boolean {
+			const hint = cache.getHintLine();
+			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
+		},
+		/** 正文首行（diff 头行/0 行摘要行）自带 +A -D：标题不再重复计数。 */
+		bodyShowsStats(): boolean {
+			return true;
+		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -139,6 +182,20 @@ export function renderEditDiffResult(
 			const cached = cache.get(safeWidth, options.expanded, mode, configKey, hovered);
 			if (cached) {
 				return cached;
+			}
+
+			// Like write's zero-line preview, handle this before the normal body limiter.
+			if (!options.expanded && live.editDiffCollapsedLines === 0) {
+				const summary = renderEditCollapsedSummaryLine(parsed.stats, safeWidth, theme, hovered);
+				return cache.set(
+					safeWidth,
+					options.expanded,
+					mode,
+					configKey,
+					hovered,
+					[summary],
+					normalizeCollapsedHintLine(summary),
+				);
 			}
 
 			if (mode === "summary") {
@@ -160,12 +217,10 @@ export function renderEditDiffResult(
 				);
 			}
 
+			if (!detailedData) detailedData = buildDetailedData();
+			const { splitRows, showHashlineAnchors, lineNumberWidth, highlightLine } = detailedData;
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
-			const displayLimit = resolveDiffDisplayLimit(
-				options.expanded,
-				live.editDiffCollapsedLines,
-				live.expandedPreviewMaxLines,
-			);
+			const displayLimit = resolveDiffDisplayLimit(options.expanded, live.editDiffCollapsedLines);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			// Only highlight/render a prefix that can fill the display limit; full-diff
 			// LCS + syntax highlight on thousands of hidden lines is pure waste when collapsed.
@@ -198,7 +253,6 @@ export function renderEditDiffResult(
 				safeWidth,
 				options.expanded,
 				live.editDiffCollapsedLines,
-				live.expandedPreviewMaxLines,
 				parsed.stats.hunks,
 				theme,
 				unprocessedLogicalRows,
@@ -207,11 +261,19 @@ export function renderEditDiffResult(
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
 				mode === "unified"
-					? [...headerRows.map((row) => row.text), frame, ...bodyWithLimit, frame]
-					: [...headerRows.map((row) => row.text), ...bodyWithLimit];
+					? [...headerRows.map((row) => row.text), frame, ...bodyWithLimit.lines, frame]
+					: [...headerRows.map((row) => row.text), ...bodyWithLimit.lines];
 
 			const clampedLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, clampedLines);
+			return cache.set(
+				safeWidth,
+				options.expanded,
+				mode,
+				configKey,
+				hovered,
+				clampedLines,
+				normalizeCollapsedHintLine(bodyWithLimit.hintLine),
+			);
 		},
 		invalidate: cache.invalidate,
 	} as Component;

@@ -9,7 +9,7 @@ import {
 	initTheme,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, normalizeConfig } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { shouldRenderRichDiff } from "../extensions/renderer/index.ts";
@@ -28,6 +28,7 @@ initTheme("dark");
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
+	ownsWriteTool,
 	renderRichToolResult,
 	type ToolDisplayConfig,
 	WriteExecutionMetadataStore,
@@ -37,6 +38,7 @@ import {
 	MAX_COMPARABLE_WRITE_BYTES,
 	MAX_WRITE_METADATA_ENTRIES,
 } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 const theme = {
 	fg(_color: string, text: string) {
@@ -90,6 +92,72 @@ test("edit rich diff is width-safe and honors collapsed/expanded limits", () => 
 		store,
 	);
 	assert.ok(output(expanded, 32).length > collapsedLines.length);
+});
+
+test("expanded long edit diff shows every line instead of a remainder hint", () => {
+	const diff = ["@@ -1,80 +1,80 @@"];
+	for (let index = 1; index <= 80; index++) {
+		diff.push(`-${index}|old value ${index}`, `+${index}|new value ${index}`);
+	}
+	const render = (expanded: boolean) =>
+		output(
+			renderRichToolResult(
+				"edit",
+				{ details: { diff: diff.join("\n") }, content: [] },
+				{ expanded },
+				theme,
+				{ args: { path: "sample.ts" } },
+				new WriteExecutionMetadataStore(),
+			),
+			80,
+		).map(stripVTControlCharacters);
+
+	const collapsed = render(false);
+	assert.ok(
+		collapsed.some((line) => line.includes("more diff lines")),
+		"collapsed body caps and keeps the remainder hint",
+	);
+
+	const expanded = render(true);
+	assert.ok(
+		expanded.some((line) => line.includes("old value 80")),
+		"expanded body renders the whole diff",
+	);
+	assert.ok(
+		!expanded.some((line) => line.includes("click to show more")),
+		"expanded body has no remainder hint",
+	);
+});
+
+test("collapsed diff declares only its remainder row as the expand entry", () => {
+	const diff = ["@@ -1,30 +1,30 @@"];
+	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
+	diff.push("+   ↳ 2 lines returned · click to show more");
+	for (let index = 2; index <= 30; index++) diff.push(`+code line ${index}`);
+
+	const collapsed: any = renderEditDiffResult(
+		{ diff: diff.join("\n") },
+		{ expanded: false },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	const rows = (collapsed.render(90) as string[]).map(stripVTControlCharacters);
+	const body = rows.find((line) => line.includes("2 lines returned"));
+	const hint = rows.find((line) => line.includes("more diff lines"));
+	assert.ok(body && hint, "collapsed body renders both rows");
+	assert.equal(collapsed.isCollapsedHintLine(body), false, "body text is not the entry");
+	assert.equal(collapsed.isCollapsedHintLine(hint), true, "remainder row is the entry");
+
+	const expanded: any = renderEditDiffResult(
+		{ diff: diff.join("\n") },
+		{ expanded: true },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	expanded.render(90);
+	assert.equal(expanded.isCollapsedHintLine(hint), false, "expanded diff has no entry");
 });
 
 test("pi omissions use split number gutters and omit the terminal marker", () => {
@@ -206,8 +274,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(hint(), /\x1b\[90m/, "resting edit hint uses muted color");
 	hovered = true;
-	assert.match(hint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
-	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*•/, "edit separator dot stays muted");
+	assert.match(hint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*·/, "edit separator dot stays muted");
 
 	hovered = false;
 	const writeComponent = renderWriteDiffResult(
@@ -226,8 +294,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 		output(writeComponent).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(writeHint(), /\x1b\[90m/, "resting write hint uses muted color");
 	hovered = true;
-	assert.match(writeHint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
-	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*•/, "write separator dot stays muted");
+	assert.match(writeHint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*·/, "write separator dot stays muted");
 });
 
 test("diff indicator mode live-updates on the same component via config getter", () => {
@@ -237,7 +305,6 @@ test("diff indicator mode live-updates on the same component via config getter",
 		diffViewMode: "unified",
 		diffIndicatorMode: "classic",
 		editDiffCollapsedLines: 80,
-		expandedPreviewMaxLines: 200,
 	};
 	const component = renderRichToolResult(
 		"edit",
@@ -257,7 +324,7 @@ test("diff indicator mode live-updates on the same component via config getter",
 	assert.match(classicText, /\+.*added line/, "classic mode uses +/- content markers");
 	assert.doesNotMatch(
 		classicText,
-		/• \d+ hunks? • \d+ files?/,
+		/· \d+ hunks? · \d+ files?/,
 		"unified headers omit redundant hunk and file counts",
 	);
 
@@ -473,53 +540,50 @@ test("write metadata is bounded, clearable, and failures do not retain entries",
 	assert.equal(store.get("failed"), undefined);
 });
 
-test("write collapsed preview uses writeDiffCollapsedLines independently of edit", () => {
-	const lines = Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join(
-		"\n",
-	);
+test("a completed write reports UTF-8 bytes and keeps metadata after abort", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-abort-"));
+	const path = join(directory, "target.txt");
 	const store = new WriteExecutionMetadataStore();
-	store.set("write", { fileExistedBeforeWrite: false });
-	const write = renderRichToolResult(
-		"write",
-		{ content: [{ type: "text", text: "ok" }] },
-		{ expanded: false },
-		theme,
-		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
-		store,
-		{
-			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			editDiffCollapsedLines: 24,
-			writeDiffCollapsedLines: 4,
+	let abortReads = 0;
+	const signal = {
+		get aborted() {
+			abortReads++;
+			return abortReads >= 4;
 		},
-	);
-	// shiki 高亮是预期特性：断言文本层，先剥 ANSI（存量缺陷，否则 CI 常红）。
-	const writeText = stripVTControlCharacters(output(write).join("\n"));
-	assert.match(writeText, /created/);
-	assert.match(writeText, /more/);
-	assert.match(writeText, /const value0 = 0/);
-	assert.doesNotMatch(writeText, /const value10 = 10/);
+	} as AbortSignal;
+	try {
+		await writeFile(path, "before");
+		const result = await executeWriteWithMetadata(
+			store,
+			"completed",
+			{ path, content: "你好" },
+			signal,
+			directory,
+		);
+		assert.equal(await readFile(path, "utf8"), "你好");
+		assert.equal(store.get("completed")?.previousContent, "before");
+		assert.match(result.content[0]?.text ?? "", /6 bytes/);
+		assert.equal(abortReads, 3);
 
-	const editDiff = ["@@ -1,40 +1,40 @@"];
-	for (let index = 1; index <= 40; index++) {
-		editDiff.push(`-${index}|old value ${index}`, `+${index}|new value ${index}`);
+		const empty = await executeWriteWithMetadata(
+			store,
+			"empty",
+			{ path, content: "" },
+			undefined,
+			directory,
+		);
+		const ascii = await executeWriteWithMetadata(
+			store,
+			"ascii",
+			{ path, content: "ab" },
+			undefined,
+			directory,
+		);
+		assert.match(empty.content[0]?.text ?? "", /0 bytes/);
+		assert.match(ascii.content[0]?.text ?? "", /2 bytes/);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
 	}
-	const edit = renderRichToolResult(
-		"edit",
-		{ details: { diff: editDiff.join("\n") }, content: [] },
-		{ expanded: false },
-		theme,
-		{ args: { path: "sample.ts" } },
-		store,
-		{
-			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			editDiffCollapsedLines: 24,
-			writeDiffCollapsedLines: 0,
-		},
-	);
-	const editText = stripVTControlCharacters(output(edit).join("\n"));
-	assert.match(editText, /value 1/);
-	assert.match(editText, /more/);
-	assert.doesNotMatch(editText, /\+40 -0/, "edit must not use write stats-only collapse");
 });
 
 test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
@@ -545,7 +609,7 @@ test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
 	assert.match(collapsedText, /created/);
 	assert.match(collapsedText, /more/);
 	assert.doesNotMatch(collapsedText, /const value/);
-	assert.doesNotMatch(collapsedText, /\+40 -0/, "stats stay on the title, not the result line");
+	assert.match(collapsedText, /\+40 -0/, "0 行折叠时计数由正文行显示（上游 1.0 口径）");
 
 	const expanded = renderRichToolResult(
 		"write",
@@ -581,8 +645,9 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 		const text = output(write, 120)
 			.join("\n")
 			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-		assert.match(text, /Write out\.ts \(\+1 -0\)/);
-		assert.match(text, /created • click to show more/);
+		// 折叠 0 行预览时计数在正文那行，标题不重复。
+		assert.doesNotMatch(text, /Write out\.ts \(\+\d+ -\d+\)/);
+		assert.match(text, /↳ diff \+1 -0 · created · click to show more/);
 		assert.doesNotMatch(text, /▌/);
 	} finally {
 		config.mode = previousMode;
@@ -698,4 +763,97 @@ test("流式头预览：头部钉死 6 行 + more 计数 + 空回落", () => {
 	// 短内容无 more 尾。
 	const short = buildStreamingWritePreview("a\nb", 100, theme, "", "   ↳");
 	assert.ok(short && short.rows.length === 2);
+});
+
+test("insetComponent strictly clamps lines within given width even with arrow markers", () => {
+	const warningTheme = {
+		fg(_color: string, text: string) {
+			return `\x1b[33m${text}\x1b[39m`;
+		},
+	};
+	const dummyComponent = {
+		render(width: number) {
+			return [
+				truncateToWidth(
+					warningTheme.fg("warning", "↳ diff unavailable: execution metadata is unavailable"),
+					Math.max(0, width),
+					"",
+				),
+				"x".repeat(width),
+			];
+		},
+	};
+
+	const wrapped = insetComponent(dummyComponent);
+
+	for (const width of [10, 20, 41, 60, 80]) {
+		const lines = wrapped.render(width);
+		for (const line of lines) {
+			assert.ok(
+				visibleWidth(line) <= width,
+				`Rendered line exceeds terminal width: ${visibleWidth(line)} > ${width} (line: "${line}")`,
+			);
+		}
+		assert.equal(visibleWidth(lines[1]), width, "non-arrow body keeps the full width after indent");
+	}
+});
+
+/** 内置 write 归还所有权，避免影响后续用例。 */
+function restoreBuiltinWriteOwnership(): void {
+	installWriteOverride({
+		getAllTools: () => [
+			{ name: "write", sourceInfo: { source: "builtin", path: "<builtin:write>" } },
+		],
+		registerTool: () => {},
+	} as any);
+}
+
+test("external write owner disables rich diff instead of degrading every card", () => {
+	const registered: unknown[] = [];
+	const notices: string[] = [];
+	const store = new WriteExecutionMetadataStore();
+	try {
+		installWriteOverride(
+			{
+				getAllTools: () => [
+					{ name: "write", sourceInfo: { source: "extension", path: "sol-pi/action-fusion" } },
+				],
+				registerTool: (tool: unknown) => registered.push(tool),
+			} as any,
+			store,
+			(owner) => notices.push(owner.path),
+		);
+
+		assert.deepEqual(registered, [], "让位后不再注册 write");
+		assert.equal(ownsWriteTool(), false);
+		assert.equal(
+			renderRichToolResult(
+				"write",
+				{ content: [] },
+				{},
+				theme,
+				{ args: { path: "a.ts" }, toolCallId: "w-external" },
+				store,
+			),
+			undefined,
+			"让位后交回普通结果行，不再输出 unavailable 卡片",
+		);
+		assert.deepEqual(notices, ["sol-pi/action-fusion"], "提示冲突来源");
+	} finally {
+		restoreBuiltinWriteOwnership();
+	}
+
+	assert.equal(ownsWriteTool(), true, "内置 write 恢复后继续提供富 diff");
+	// 恢复后缺元数据仍是 ccstyle 自己的降级提示（真异常，不是冲突）。
+	assert.notEqual(
+		renderRichToolResult(
+			"write",
+			{ content: [] },
+			{},
+			theme,
+			{ args: { path: "a.ts" }, toolCallId: "w-restored" },
+			store,
+		),
+		undefined,
+	);
 });

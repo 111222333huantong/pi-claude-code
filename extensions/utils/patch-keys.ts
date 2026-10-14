@@ -29,6 +29,8 @@ export const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-
 export const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for(
 	"pi.ccstyle.tool-expanded-background-patch",
 );
+// write 归属：注册期确认一次，渲染期据此决定是否提供 rich diff。
+export const WRITE_OWNERSHIP_SLOT = Symbol.for("pi.ccstyle.write-ownership");
 
 // ── 消息组件补丁 ──
 export const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
@@ -48,12 +50,22 @@ export const TOOL_GROUPING_PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patc
 export const TOOL_GROUPING_PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");
 export const TOOL_GROUPING_GENERATION_KEY = Symbol.for("pi.ccstyle.tool-grouping-generation");
 
+// ── regular 主屏渲染补丁 ──
+export const MAIN_SCREEN_DO_RENDER_PATCH = Symbol.for("pi.ccstyle.main-screen-do-render-patch");
+
+// ── fullscreen 粘性用户消息头 ──
+export const STICKY_PROMPT_MARKER_PATCH = Symbol.for("pi.ccstyle.sticky-prompt-marker-patch");
+export const STICKY_PROMPT_FRAME_PATCH = Symbol.for("pi.ccstyle.sticky-prompt-frame-patch");
+export const STICKY_PROMPT_STATE_SLOT = Symbol.for("pi.ccstyle.sticky-prompt-state");
+
 // ── 鼠标交互 ──
 export const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 export const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");
 export const SCROLL_BUTTON_STATE_SLOT = Symbol.for("pi.ccstyle.scroll-button-state");
 export const OFFICIAL_SCROLL_TO_END_KEY = Symbol.for("pi.ccstyle.official-scroll-to-end");
 export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-patch");
+export const EARLY_STARTUP_HEADER_PATCH = Symbol.for("pi.ccstyle.early-startup-header-patch");
+export const EARLY_STARTUP_HEADER_SWAP_KEY = Symbol.for("pi.ccstyle.early-startup-header-swap");
 export const TOOL_HOVER_STATE_KEY = Symbol.for("pi.ccstyle.tool-hover-state");
 
 // ── transcript 右缘内缩 ──

@@ -5,7 +5,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { clearAllAnimations } from "../extensions/renderer/tool/result.ts";
+import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 import { stripAnsi } from "../extensions/utils/ansi-text.ts";
 import { fitSegmentsByPriority, truncateSegmentEnd } from "../extensions/utils/fit-segments.ts";
 

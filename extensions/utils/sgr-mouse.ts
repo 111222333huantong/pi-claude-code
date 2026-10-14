@@ -59,6 +59,11 @@ export function isSgrLeftRelease(packet: SgrMousePacket): boolean {
 	return packet.final === "m" && baseButton === 0 && (packet.code & 32) === 0;
 }
 
+/** 无按键按住的指针移动（DECSET 1003 的 35）。左键拖动（32，文本选区）不是 hover。 */
+export function isSgrIdleMotion(packet: SgrMousePacket): boolean {
+	return packet.final === "M" && (packet.code & 32) !== 0 && mouseBaseButton(packet.code) === 3;
+}
+
 /** 剥离修饰键位（4/8/16/32：shift/meta/ctrl/motion），得到基础按键码。 */
 export function mouseBaseButton(code: number): number {
 	return code & ~(4 | 8 | 16 | 32);

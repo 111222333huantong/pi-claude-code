@@ -15,21 +15,40 @@ import {
 	TOOL_GROUPING_PATCH_KEY as PATCH_KEY,
 	patchRegistry,
 } from "../../utils/patch-keys.ts";
+import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import { getToolMouseTui } from "../mouse/scroll.ts";
 import {
-	pendingDotColor,
-	TOOL_LOADING_INTERVAL_MS,
-	toolLoadingIcon,
-} from "../../utils/tool-loading-icon.ts";
+	ASK_USER_QUESTION_TOOL_NAME,
+	type AskUserAnswer,
+	askUserAnswers,
+	askUserAnswerText,
+} from "./ask-user-question.ts";
 import {
-	fitToolCallSummary,
+	CODEMODE_TOOL_NAME,
+	codemodeCalls,
+	codemodeOutputLineCount,
+	codemodeSummaryParts,
+} from "./codemode.ts";
+import { mcpToolTitle } from "./mcp-title.ts";
+import {
+	collapseHintText,
 	humanizeToolLabel,
+	isToolTuiFullscreen,
+	renderToolSummary,
+	SHELL_TOOL_NAMES,
+	showMoreHintText,
 	type ToolCallSummary,
 	toolCallSummary,
 } from "./names.ts";
-import { outputLineCount } from "./result.ts";
-import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
+import {
+	formatToolDuration,
+	headTruncateToWidth,
+	outputLineCount,
+	toolViewportWidth,
+} from "./result.ts";
+import { isLiveToolCall } from "./tool-state.ts";
 
-const NON_GROUPABLE = new Set(["edit", "write", "apply_patch", "Agent", "subagent"]);
+const NON_GROUPABLE = new Set(["edit", "write", "apply_patch"]);
 
 type Patch = {
 	owner: object;
@@ -47,6 +66,19 @@ type Patch = {
 
 function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
+}
+
+/**
+ * 标题：MCP 工具用 adapter 暴露的真实工具名，其余回退工具名人性化。
+ */
+function toolTitle(tool: any): string {
+	const name = toolName(tool);
+	return (
+		mcpToolTitle({
+			toolName: name,
+			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
+		}) ?? humanizeToolLabel(name)
+	);
 }
 
 function isGroupable(value: unknown): boolean {
@@ -90,21 +122,43 @@ function statusIcon(value: ToolStatus): string {
 	return toolLoadingIcon();
 }
 
+/** 等待窗口或运行中的行：spinner 逐帧变化，分组卡要跟着跳帧。 */
+function isAnimatingTool(tool: any): boolean {
+	if (status(tool) !== "pending") return false;
+	return Boolean(tool?.executionStarted) || isLiveToolCall(tool?.toolCallId);
+}
+
 function scheduleGroupAnimation(patch: Patch): void {
 	if (patch.animationTimer || !patch.active) return;
 	patch.animationTimer = setTimeout(() => {
 		patch.animationTimer = null;
 		if (!patch.active) return;
+		let needsRender = false;
 		for (const group of patch.groups) {
-			if (
-				(group.children as any[]).some(
-					(tool) => tool?.executionStarted && status(tool) === "pending",
-				)
-			)
+			if ((group.children as any[]).some(isAnimatingTool)) {
 				group.invalidate();
+				// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
+				// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
+				needsRender = true;
+			}
 		}
+		if (needsRender) requestAnimationRender(patch);
 	}, TOOL_LOADING_INTERVAL_MS);
 	patch.animationTimer.unref?.();
+}
+
+/** 借用子工具卡的 ui 请求一帧；子卡缺失时回退到扩展持有的 TUI 槽。 */
+function requestAnimationRender(patch: Patch): void {
+	for (const group of patch.groups) {
+		const ui = (group.children as any[]).find(
+			(tool) => typeof tool?.ui?.requestRender === "function",
+		)?.ui;
+		if (ui) {
+			ui.requestRender();
+			return;
+		}
+	}
+	getToolMouseTui()?.requestRender?.();
 }
 
 function visibleLines(lines: string[]): string[] {
@@ -155,15 +209,147 @@ export function paddedBackgroundRow(
 
 function toolSummary(tool: any): ToolCallSummary {
 	return toolCallSummary(toolName(tool), tool?.args ?? {}, {
+		title: toolTitle(tool),
 		variant: "grouping",
 		cwd: tool?.cwd,
 	});
 }
 
+/**
+ * codemode 的折叠行：有结果就报该次调用的统计（与单卡汇总行同一套口径），
+ * 免得一张卡里几行长代码预览互相看不出区别。还没结果时退回代码预览。
+ */
+/**
+ * ask_user_question 的折叠行：有结果就报「问题 -> 回答」，
+ * 多题压成一行并标注剩余条数。还没结果时退回问题预览。
+ */
+function askUserResultSummary(tool: any): ToolCallSummary | undefined {
+	if (toolName(tool) !== ASK_USER_QUESTION_TOOL_NAME || !tool?.result) return undefined;
+	const answers = askUserAnswers(tool.result)
+		.map((answer: AskUserAnswer, index: number) => ({ answer, index }))
+		.sort((left, right) => {
+			const leftIndex = Number(left.answer.questionIndex);
+			const rightIndex = Number(right.answer.questionIndex);
+			const leftMissing = !Number.isFinite(leftIndex);
+			const rightMissing = !Number.isFinite(rightIndex);
+			if (leftMissing || rightMissing) {
+				if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+				return left.index - right.index;
+			}
+			return leftIndex - rightIndex;
+		})
+		.map((entry) => entry.answer);
+	if (answers.length === 0) {
+		const label = tool.result?.details?.cancelled === true ? "Declined" : "Done";
+		return { main: `${toolTitle(tool)} ${label}`, detail: "" };
+	}
+	const first = answers[0]!;
+	const question = String(first.question ?? "").trim() || "Question";
+	const more = answers.length > 1 ? ` (+${answers.length - 1})` : "";
+	return {
+		main: `${toolTitle(tool)} ${question} -> ${askUserAnswerText(first)}${more}`,
+		detail: "",
+	};
+}
+
+function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
+	if (toolName(tool) !== CODEMODE_TOOL_NAME || !tool?.result) return undefined;
+	const parts = codemodeSummaryParts(
+		codemodeCalls(tool.result),
+		codemodeOutputLineCount(tool.result),
+		tool?.isPartial === true,
+	);
+	return { main: `${toolTitle(tool)} ${parts.join(" · ")}`, detail: "" };
+}
+
+/**
+ * 组内 shell 行的尾巴：只报耗时（`· 12.4s`）。输出和错误正文都在展开后看；
+ * 失败靠行首的 ✗，组头另有 failed 计数。
+ * 耗时取 pi 记在结果上的 durationMs（单卡渲染上下文里的同一个值），运行中还拿不到就不报。
+ */
+function shellResultTail(
+	tool: any,
+	fg: (color: string, text: string) => string,
+	toolStatus: ToolStatus,
+): string {
+	if (!SHELL_TOOL_NAMES.has(toolName(tool)) || tool?.result == null) return "";
+	// 本 fork：bash 执行中在 glance 行直接报输出行数（读组件 partial 结果，无跨帧延迟）。
+	if (
+		config.liveToolPreview !== false &&
+		toolStatus === "pending" &&
+		toolName(tool) === "bash" &&
+		(tool as any)?.executionStarted
+	) {
+		const liveTotal = outputLineCount((tool as any)?.result);
+		if (liveTotal > 0) return ` ${fg("dim", `· ${liveTotal} lines`)}`;
+	}
+	if (toolStatus === "pending") return "";
+	const durationMs = tool.result?.durationMs;
+	const duration =
+		typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
+			? formatToolDuration(durationMs)
+			: "";
+	return duration ? ` ${fg("dim", `· ${duration}`)}` : "";
+}
+
+/** 分组折叠态的一行子工具：`├/└` + 状态图标 + 与组内同一套摘要。 */
+function collapsedGroupToolLine(
+	tool: any,
+	last: boolean,
+	fg: (color: string, text: string) => string,
+	width: number,
+): string {
+	const toolStatus = status(tool);
+	const color = toolStatus === "pending" ? "accent" : toolStatus;
+	const summary = askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
+	const prefix = ` ${fg("dim", last ? "└" : "├")} ${fg(color, statusIcon(toolStatus))} `;
+	const detail = fg("dim", summary.detail);
+	const result = shellResultTail(tool, fg, toolStatus);
+	const rowWidth = toolViewportWidth(width);
+	const mainWidth = Math.max(
+		0,
+		rowWidth - visibleWidth(prefix) - visibleWidth(detail) - visibleWidth(result),
+	);
+	return truncateToWidth(
+		`${prefix}${renderToolSummary(summary, mainWidth, fg)}${detail}${result}`,
+		rowWidth,
+		"",
+	);
+}
+
+type GroupHeaderCounts = { pending: number; success: number; error: number };
+
+/** 组头计数：`2 done · 1 failed`。没有计数时返回空串。 */
+function groupCountText(
+	counts: GroupHeaderCounts,
+	fg: (color: string, text: string) => string,
+): string {
+	return (["pending", "success", "error"] as const)
+		.filter((key) => counts[key])
+		.map((key) => {
+			const label = key === "pending" ? "running" : key === "success" ? "done" : "failed";
+			const color = key === "pending" ? "accent" : key;
+			return `${fg(color, String(counts[key]))} ${label}`;
+		})
+		.join(` ${fg("dim", "·")} `);
+}
+
+/** 组头圆点色：有失败取 error，否则有运行中取 accent，否则 success。 */
+function groupOverallStatus(counts: GroupHeaderCounts): ToolStatus {
+	return counts.error ? "error" : counts.pending ? "pending" : "success";
+}
+
+/**
+ * 组头的工具列表：名称用与单组标题、子行同一套人性化写法，次数一律带上（各跑一次也报 ×1）。
+ * 同名（同显示标题）的合并成一项，避免 `MCP call×1, MCP call×1` 这种重复。
+ */
 function toolNameList(tools: any[]): string {
 	const counts = new Map<string, number>();
-	for (const tool of tools) counts.set(toolName(tool), (counts.get(toolName(tool)) ?? 0) + 1);
-	return [...counts].map(([name, count]) => `${name}${count > 1 ? `×${count}` : ""}`).join(", ");
+	for (const tool of tools) {
+		const label = toolTitle(tool);
+		counts.set(label, (counts.get(label) ?? 0) + 1);
+	}
+	return [...counts].map(([label, count]) => `${label}×${count}`).join(", ");
 }
 
 let nextGroupId = 1;
@@ -179,6 +365,17 @@ type SettledGroupCache = {
 	lines: string[];
 };
 
+type ExpandedGroupCache = {
+	width: number;
+	hover: boolean;
+	theme: unknown;
+	fullscreen: boolean;
+	/** 背景槽位参与命中判断：改配置后已展开的分组不能继续用旧底色。 */
+	bgSlot: string;
+	paints: readonly unknown[];
+	lines: string[];
+};
+
 export class ToolGroupComponent extends Container {
 	readonly toolCallId = `ccstyle-tool-group-${nextGroupId++}`;
 	readonly toolName = "Tool group";
@@ -189,8 +386,10 @@ export class ToolGroupComponent extends Container {
 	}
 	private hintHovered = false;
 	private readonly patch: Patch;
-	/** 仅缓存已完成且折叠的分组；pending / expanded 每帧现算。 */
+	/** 仅缓存已完成且折叠的分组；pending 每帧现算。 */
 	private settledCache: SettledGroupCache | undefined;
+	/** 展开分组：子工具 paint 引用未变则复用整卡行。 */
+	private expandedPaintCache: ExpandedGroupCache | undefined;
 
 	constructor(patch: Patch) {
 		super();
@@ -198,14 +397,19 @@ export class ToolGroupComponent extends Container {
 		patch.groups.add(this);
 	}
 
-	addTool(tool: any): void {
+	private clearPaintCache(): void {
 		this.settledCache = undefined;
+		this.expandedPaintCache = undefined;
+	}
+
+	addTool(tool: any): void {
+		this.clearPaintCache();
 		this.children.push(tool);
 		tool[PARENT_KEY] = this;
 	}
 
 	releaseTools(): any[] {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		const tools = [...this.children];
 		this.children.length = 0;
 		this.patch.groups.delete(this);
@@ -213,21 +417,21 @@ export class ToolGroupComponent extends Container {
 	}
 
 	removeTool(tool: any): void {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		const index = this.children.indexOf(tool);
 		if (index >= 0) this.children.splice(index, 1);
 		if (tool?.[PARENT_KEY] === this) delete tool[PARENT_KEY];
 	}
 
 	setExpanded(expanded: boolean): void {
-		if (this._expanded !== expanded) this.settledCache = undefined;
+		if (this._expanded !== expanded) this.clearPaintCache();
 		this._expanded = expanded;
 		for (const tool of this.children)
 			(tool as Component & { setExpanded?: (expanded: boolean) => void }).setExpanded?.(expanded);
 	}
 
 	setHintHovered(hovered: boolean): void {
-		if (this.hintHovered !== hovered) this.settledCache = undefined;
+		if (this.hintHovered !== hovered) this.clearPaintCache();
 		this.hintHovered = hovered;
 	}
 
@@ -256,7 +460,7 @@ export class ToolGroupComponent extends Container {
 	}
 
 	invalidate(): void {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		for (const tool of this.children) tool.invalidate?.();
 	}
 
@@ -307,37 +511,46 @@ export class ToolGroupComponent extends Container {
 		const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
 		const counts = { pending: 0, success: 0, error: 0 };
 		for (const tool of this.children) counts[status(tool)]++;
-		const countText = (["pending", "success", "error"] as const)
-			.filter((key) => counts[key])
-			.map((key) => {
-				const label = key === "pending" ? "running" : key === "success" ? "done" : "failed";
-				const color = key === "pending" ? "accent" : key;
-				return `${fg(color, String(counts[key]))} ${label}`;
-			})
-			.join(` ${fg("dim", "•")} `);
+		const countText = groupCountText(counts, fg);
 		const names = new Set(this.children.map(toolName));
-		const label =
-			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
-		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
-		const hasRunning = (this.children as any[]).some(
-			(tool) => tool?.executionStarted && status(tool) === "pending",
-		);
-		if (hasRunning) scheduleGroupAnimation(this.patch);
-		// 执行中圆点呼吸（accent↔dim，由分组动画 tick 驱动重绘）；排队未起跑保持 accent 常亮。
-		const overallColor =
-			overall === "pending" ? (hasRunning ? pendingDotColor() : "accent") : overall;
-		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
+		const label = names.size === 1 ? toolTitle(this.children[0]) : "Multiple Tools";
+		const overall = groupOverallStatus(counts);
+		if ((this.children as any[]).some(isAnimatingTool)) scheduleGroupAnimation(this.patch);
+		const overallColor = overall === "pending" ? "accent" : overall;
 		// 圆点保持 dim；hover 只高亮可点击文字。
-		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
-		const lines = [
-			"",
-			truncateToWidth(
-				` ${fg(overallColor, "●")} ${label}: ${countText}${nameList} ${hint}`,
-				width,
-				"…",
-			),
-		];
+		const hintText = this._expanded ? collapseHintText() : showMoreHintText();
+		const hint = `${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
+		const rowWidth = toolViewportWidth(width);
+		// 工具列表让位给展开提示：提示被截断的话，鼠标层要在行尾找 `click to show more`
+		// 就找不到，整张卡在窄宽度下点不开。名字截断后子行里仍能看全。
+		const head = ` ${fg(overallColor, "●")} ${label}: ${countText}`;
+		const tail = ` ${hint}`;
+		const listRoom = rowWidth - visibleWidth(head) - visibleWidth(tail) - 3;
+		// 连一个工具名都放不下就不放列表：退化成 `· …` 只会把行撑爆。
+		const nameList =
+			names.size > 1 && listRoom >= 4
+				? ` ${fg("dim", `· ${headTruncateToWidth(toolNameList(this.children), listRoom)}`)}`
+				: "";
+		const lines = ["", truncateToWidth(`${head}${nameList}${tail}`, rowWidth, "")];
 		const total = this.children.length;
+		const childPaints = this._expanded
+			? (this.children as any[]).map((tool) => tool.render?.(Math.max(1, width - 2)))
+			: undefined;
+		if (this._expanded && childPaints) {
+			const expandedHit = this.expandedPaintCache;
+			if (
+				expandedHit &&
+				expandedHit.width === width &&
+				expandedHit.hover === this.hintHovered &&
+				expandedHit.theme === this.patch.theme &&
+				expandedHit.fullscreen === isToolTuiFullscreen() &&
+				expandedHit.bgSlot === config.expandedCardBackground &&
+				expandedHit.paints.length === childPaints.length &&
+				expandedHit.paints.every((paint, index) => paint === childPaints[index])
+			) {
+				return expandedHit.lines;
+			}
+		}
 		const expandedLines: string[] = [];
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
@@ -346,31 +559,10 @@ export class ToolGroupComponent extends Container {
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
 			if (!this._expanded) {
-				const summary = toolSummary(tool);
-				const prefix = ` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `;
-				// bash live 行数：glance 行直接读组件 partial 结果，无跨帧延迟。
-				let detailText = summary.detail;
-				if (
-					config.liveToolPreview !== false &&
-					toolStatus === "pending" &&
-					toolName(tool) === "bash" &&
-					(tool as any)?.executionStarted
-				) {
-					const liveTotal = outputLineCount((tool as any)?.result);
-					if (liveTotal > 0) detailText = `${detailText} · ${liveTotal} lines`;
-				}
-				const detail = fg("dim", detailText);
-				const mainWidth = Math.max(0, width - visibleWidth(prefix) - visibleWidth(detail));
-				lines.push(
-					truncateToWidth(
-						`${prefix}${fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${detail}`,
-						width,
-						"",
-					),
-				);
+				lines.push(collapsedGroupToolLine(tool, index === total - 1, fg, width));
 				continue;
 			}
-			const rendered = visibleLines(tool.render(Math.max(1, width - 2)));
+			const rendered = visibleLines(Array.isArray(childPaints?.[index]) ? childPaints[index] : []);
 			if (rendered.length) {
 				rendered[0] = stripLeadingStatusIcon(rendered[0])
 					.replace(/^ +/, "")
@@ -389,12 +581,21 @@ export class ToolGroupComponent extends Container {
 			}
 		}
 		if (this._expanded) {
-			// 展开面板统一用 user message 背景色（ccstyle 约定），不按状态区分。
-			const backgroundSlot = "userMessageBg";
+			// 展开面板统一一个背景槽位（ccstyle 约定），不按状态区分。
+			const backgroundSlot = config.expandedCardBackground;
 			for (const line of expandedLines) {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}
 			lines.push(paddedBackgroundRow(theme, backgroundSlot, "", width));
+			this.expandedPaintCache = {
+				width,
+				hover: this.hintHovered,
+				theme: this.patch.theme,
+				fullscreen: isToolTuiFullscreen(),
+				bgSlot: backgroundSlot,
+				paints: childPaints ?? [],
+				lines,
+			};
 		} else if (counts.pending === 0) {
 			this.storeSettledCache(width, lines);
 		}

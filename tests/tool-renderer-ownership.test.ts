@@ -14,12 +14,136 @@ type AnyToolDefinition = ToolDefinition<any, any, any>;
 import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
-	humanizeMcpToolName,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/renderer/index.ts";
 
 initTheme("dark");
+
+for (const mode of ["on", "compact"] as const) {
+	test(`${mode} renders tools with renderer-only definitions`, async () => {
+		const previousMode = config.mode;
+		const events = new Map<string, Function>();
+		claudeCodeStyleExtension(
+			{
+				registerCommand() {},
+				registerShortcut() {},
+				on(name: string, handler: Function) {
+					events.set(name, handler);
+				},
+			} as any,
+			{ mode },
+		);
+		const ui = {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		};
+		const ctx = { mode: "tui", hasUI: true, ui } as any;
+		// Pi 1.0.3 accepts ToolRenderers without name/label; the object may be shared.
+		const renderers = { renderCall: () => new Text("original", 0, 0) };
+		try {
+			await events.get("session_start")?.({}, ctx);
+			for (const name of ["read", "bash", "custom_lookup"]) {
+				const component = new ToolExecutionComponent(
+					name,
+					`${mode}-${name}`,
+					{},
+					{},
+					renderers as unknown as AnyToolDefinition,
+					ui as any,
+					process.cwd(),
+				);
+				const title = { read: "Read", bash: "Bash", custom_lookup: "Custom Lookup" }[name]!;
+				if (mode === "on") {
+					assert.match(component.render(100).join("\n"), new RegExp(title));
+				} else {
+					assert.deepEqual(component.render(100), [], "compact hides collapsed tool rows");
+				}
+				component.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+				for (const expanded of [false, true]) {
+					component.setExpanded(expanded);
+					const output = component.render(100).join("\n");
+					if (mode === "compact" && !expanded) {
+						assert.equal(output, "");
+						continue;
+					}
+					assert.match(output, new RegExp(title));
+					assert.match(output, expanded ? /done/ : /1 line (loaded|returned)/);
+				}
+			}
+			assert.equal("name" in renderers, false, "wrapping does not mutate Pi's renderers");
+		} finally {
+			await events.get("session_shutdown")?.({}, ctx);
+			config.mode = previousMode;
+		}
+	});
+}
+
+for (const kind of ["prototype", "non-enumerable"] as const) {
+	test(`off mode preserves ${kind} renderer methods after wrapping`, async () => {
+		const previousMode = config.mode;
+		const events = new Map<string, Function>();
+		claudeCodeStyleExtension(
+			{
+				registerCommand() {},
+				registerShortcut() {},
+				on(name: string, handler: Function) {
+					events.set(name, handler);
+				},
+			} as any,
+			{ mode: "on" },
+		);
+		const ui = {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		};
+		const ctx = { mode: "tui", hasUI: true, ui } as any;
+		const methods = {
+			renderCall: () => new Text("original call", 0, 0),
+			renderResult: () => new Text("original result", 0, 0),
+		};
+		const renderers =
+			kind === "prototype"
+				? Object.create(methods)
+				: Object.defineProperties(
+						{},
+						{
+							renderCall: { value: methods.renderCall },
+							renderResult: { value: methods.renderResult },
+						},
+					);
+		const descriptors = Object.getOwnPropertyDescriptors(renderers);
+		try {
+			await events.get("session_start")?.({}, ctx);
+			const component = new ToolExecutionComponent(
+				"custom_lookup",
+				"preserve-methods",
+				{},
+				{},
+				renderers,
+				ui as any,
+				process.cwd(),
+			) as any;
+			const call = component.getCallRenderer();
+			const result = component.getResultRenderer();
+			assert.match(component.render(100).join("\n"), /Custom Lookup/);
+			config.mode = "off";
+			assert.match(call({}, ui.theme, {}).render(100).join("\n"), /original call/);
+			assert.match(
+				result({ content: [], isError: false }, {}, ui.theme, {}).render(100).join("\n"),
+				/original result/,
+			);
+			component.invalidate();
+			assert.match(component.render(100).join("\n"), /original call/);
+			assert.deepEqual(Object.getOwnPropertyDescriptors(renderers), descriptors);
+		} finally {
+			await events.get("session_shutdown")?.({}, ctx);
+			config.mode = previousMode;
+		}
+	});
+}
 
 test("claude-code-style registers the write override at session_start", async () => {
 	const registeredTools: unknown[] = [];
@@ -43,12 +167,18 @@ test("claude-code-style registers the write override at session_start", async ()
 	claudeCodeStyleExtension(pi as any);
 
 	// 加载阶段不注册 write override：此时其他扩展（如 pi-spark）尚未加载，
-	// 直接注册会与对方撞名。延迟到 session_start 后所有扩展已就绪再注册。
+	// 直接注册会与对方撞名。延后到 session_start 之后一拍，等所有扩展注册完再检测。
 	assert.deepEqual(
 		registeredTools.map((tool: any) => tool.name),
 		[],
 	);
 	await emit("session_start", {}, { mode: "print", hasUI: false });
+	assert.deepEqual(
+		registeredTools.map((tool: any) => tool.name),
+		[],
+	);
+	// 延后一拍：等所有扩展的 session_start 跑完，确认没有外部 write 后才注册。
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.deepEqual(
 		registeredTools.map((tool: any) => tool.name),
 		["write"],
@@ -66,11 +196,18 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		},
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
+	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40。
+	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走。
+	const CARD_BG_ANSI: Record<string, string> = {
+		userMessageBg: "\x1b[48;2;52;53;65m",
+		toolPendingBg: "\x1b[48;2;40;40;40m",
+		customMessageBg: "\x1b[48;2;60;50;70m",
+	};
+	const cardBgAnsi = (slot: string) => CARD_BG_ANSI[slot] ?? "\x1b[48;2;90;90;90m";
 	const ui = {
 		theme: {
 			fg: (_color: string, text: string) => text,
-			// userMsgBg #343541 → 48;2;52;53;65；toolSuccessBg #283228 → 48;2;40;50;40
-			bg: (_color: string, text: string) => `\x1b[48;2;52;53;65m${text}\x1b[49m`,
+			bg: (slot: string, text: string) => `${cardBgAnsi(slot)}${text}\x1b[49m`,
 		},
 		setStatus() {},
 		requestRender() {},
@@ -152,8 +289,9 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
 
 			const cardLines = component.render(60);
-			// 展开面板背景统一为 user message 背景色（userMsgBg #343541），不再按状态区分。
-			assert.ok(cardLines.some((line: string) => line.includes("\x1b[48;2;52;53;65m")));
+			// 展开面板背景取配置的槽位（默认 userMsgBg #343541），不再按状态区分。
+			const panelAnsi = cardBgAnsi(config.expandedCardBackground);
+			assert.ok(cardLines.some((line: string) => line.includes(panelAnsi)));
 			assert.ok(
 				cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
 				"no toolSuccessBg remains in the expanded panel",
@@ -170,6 +308,26 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			assert.match(plainCallLine, /✓ Bash .*…$/);
 			assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
 			assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
+
+			// issue 46：展开卡背景槽位可配，渲染时现读配置。
+			// 单卡 paint 缓存不含主题/槽位，靠面板的 refresh 走 invalidate 重画。
+			const previousSlot = config.expandedCardBackground;
+			const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
+			try {
+				config.expandedCardBackground = targetSlot;
+				component.invalidate();
+				const repainted = component.render(60);
+				assert.ok(
+					repainted.some((line: string) => line.includes(cardBgAnsi(targetSlot))),
+					"expanded card uses the configured background slot",
+				);
+				assert.ok(
+					repainted.every((line: string) => !line.includes(cardBgAnsi(previousSlot))),
+					"the previous slot leaves no expanded row behind",
+				);
+			} finally {
+				config.expandedCardBackground = previousSlot;
+			}
 			component.setExpanded(false);
 			assert.equal(component.children.includes(component.selfRenderContainer), true);
 
@@ -229,15 +387,12 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 test("MCP detection, titles, details, and custom tools use the global wrapper", async () => {
 	const previousOutputLines = config.expandedOutputMaxLines;
 	config.expandedOutputMaxLines = 80;
-	assert.equal(isMcpToolDefinition({ label: "MCP: Files" }, "read_file"), true);
 	assert.equal(isMcpToolDefinition({}, "mcp__filesystem__read_file"), true);
-	assert.equal(isMcpToolDefinition({ description: "Model Context Protocol tool" }, "remote"), true);
-	assert.equal(
-		isMcpToolDefinition({ label: "Ordinary", description: "mentions MCP" }, "remote"),
-		false,
-	);
-	assert.equal(isMcpToolDefinition({ description: "not an MCP tool" }, "remote"), false);
-	assert.equal(humanizeMcpToolName("mcp__filesystem__read_file"), "Filesystem Read File");
+	// 名字里没有 mcp 片段时靠 adapter 的 label 判定
+	assert.equal(isMcpToolDefinition({ label: "MCP: read_file" }, "read_file"), true);
+	assert.equal(isMcpToolDefinition({ label: "read" }, "read"), false);
+	assert.equal(isMcpToolDefinition({}, "remote"), false);
+	assert.equal(isMcpToolDefinition({}, "github_search_code"), false);
 
 	const events = new Map<string, Function>();
 	claudeCodeStyleExtension(
@@ -259,7 +414,8 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 	try {
 		await events.get("session_start")?.({}, ctx);
 		for (const [name, expected] of [
-			["mcp__filesystem__read_file", "Filesystem Read File"],
+			// MCP 工具标题用真实工具名
+			["mcp__filesystem__read_file", "mcp__filesystem__read_file"],
 			["openai_custom_search", "Openai Custom Search"],
 			["custom_lookup", "Custom Lookup"],
 		] as const) {
@@ -350,7 +506,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		});
 		assert.match(
 			taskList.render(120).join("\n"),
-			/3 tasks • 1 in progress • 1 pending • 1 completed/,
+			/3 tasks · 1 in progress · 1 pending · 1 completed/,
 		);
 		taskList.setExpanded(true);
 		assert.match(

@@ -1,4 +1,4 @@
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "../names.ts";
 import { normalizeDiffRenderWidth } from "./diff-presentation.ts";
 import { pluralize } from "./diff-text.ts";
 
@@ -71,13 +71,14 @@ export function buildCollapsedDiffHintText(
 				? `${options.hiddenHunks} ${pluralize(options.hiddenHunks, "hunk")}`
 				: undefined;
 
+		// 括号去掉：与工具卡的同名提示一致，只用小圆点连接
 		const candidates = [
-			`… (${[remainingText, hiddenHunksText, showMoreHintText()].filter(Boolean).join(" • ")})`,
-			`… (${[remainingText, hiddenHunksText].filter(Boolean).join(" • ")})`,
-			`… (${[shortRemainingText, shortHiddenHunksText].filter(Boolean).join(" • ")})`,
+			`… ${[remainingText, hiddenHunksText, showMoreHintText()].filter(Boolean).join(" · ")}`,
+			`… ${[remainingText, hiddenHunksText].filter(Boolean).join(" · ")}`,
+			`… ${[shortRemainingText, shortHiddenHunksText].filter(Boolean).join(" · ")}`,
 			options.hiddenHunks > 0
-				? `… (+${options.remainingLines} • +${options.hiddenHunks}h)`
-				: `… (+${options.remainingLines})`,
+				? `… +${options.remainingLines} · +${options.hiddenHunks}h`
+				: `… +${options.remainingLines}`,
 			"…",
 		];
 

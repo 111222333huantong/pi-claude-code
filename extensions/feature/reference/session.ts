@@ -1,3 +1,6 @@
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences } from "../../utils/ansi-text.ts";
+
 export const SESSION_REFERENCE_CUSTOM_TYPE = "session-reference";
 export const SESSION_REFERENCE_PREFIX = "@session:";
 
@@ -45,11 +48,102 @@ export function extractSessionReferenceIds(text: string): string[] {
 	return ids;
 }
 
+const EMPTY_SESSION_TITLE = "(no messages)";
+
 export function sessionTitle(info: ReferenceSessionInfo, maxLength = 80): string {
-	const source = info.name?.trim() || info.firstMessage || "(no messages)";
+	const source = info.name?.trim() || info.firstMessage || EMPTY_SESSION_TITLE;
 	const normalized = source.replace(CONTROL_CHARACTERS, " ").replace(/\s+/g, " ").trim();
 	if (normalized.length <= maxLength) return normalized;
 	return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+/**
+ * 编辑器里的 `@session:[…]` 是行内文本，token 按显示宽度收口，
+ * 不让首条消息整段挤进输入行。同名会话靠后缀消歧，不受它影响。
+ */
+export const REFERENCE_TOKEN_MAX_WIDTH = 32;
+
+/** Editor `@session:[…]` text: the readable title, never a placeholder or brackets. */
+export function sessionReferenceLabel(
+	info: ReferenceSessionInfo,
+	maxWidth = REFERENCE_TOKEN_MAX_WIDTH,
+): string {
+	const title = sessionTitle(info).replace(/[[\]]/g, "").trim();
+	if (!title || title === EMPTY_SESSION_TITLE) return "";
+	// truncateToWidth 会在省略号前后补 ANSI reset，token 是明文，去掉。
+	return stripTerminalSequences(truncateToWidth(title, maxWidth, "…")).trim();
+}
+
+export interface ReferenceTokenSource {
+	referenceIds: string[];
+	info: ReferenceSessionInfo;
+}
+
+/** UTC keeps the disambiguator identical across timezones (same-day drift is harmless). */
+function referenceTokenDate(date: Date): string {
+	const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+	const day = String(date.getUTCDate()).padStart(2, "0");
+	return `${month}-${day}`;
+}
+
+function referenceTokenTime(date: Date): string {
+	const hours = String(date.getUTCHours()).padStart(2, "0");
+	const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+	return `${hours}:${minutes}`;
+}
+
+/** Title first; date then time widen the disambiguation before the ID fallback. */
+function referenceTokenCandidates(reference: ReferenceTokenSource): string[] {
+	const title = sessionReferenceLabel(reference.info);
+	const stableId = reference.referenceIds[0] ?? reference.info.id;
+	if (!title) return [stableId];
+	const date = referenceTokenDate(reference.info.modified);
+	return [
+		title,
+		`${title} ${date}`,
+		`${title} ${date} ${referenceTokenTime(reference.info.modified)}`,
+		stableId,
+	];
+}
+
+/**
+ * Assign each reference a unique editor token. Same-named sessions keep a readable
+ * title plus a date/time suffix; the stable ID is only the last resort.
+ */
+export function assignReferenceTokens<T extends ReferenceTokenSource>(
+	references: T[],
+): Map<T, string> {
+	const candidates = new Map<T, string[]>();
+	let levels = 0;
+	for (const reference of references) {
+		const options = referenceTokenCandidates(reference);
+		levels = Math.max(levels, options.length);
+		candidates.set(reference, options);
+	}
+
+	const tokens = new Map<T, string>();
+	const taken = new Set<string>();
+	for (let level = 0; level < levels && tokens.size < references.length; level++) {
+		const counts = new Map<string, number>();
+		for (const [reference, options] of candidates) {
+			const candidate = tokens.has(reference) ? undefined : options[level];
+			if (candidate) counts.set(candidate, (counts.get(candidate) ?? 0) + 1);
+		}
+		for (const [reference, options] of candidates) {
+			if (tokens.has(reference)) continue;
+			const candidate = options[level];
+			if (candidate && counts.get(candidate) === 1 && !taken.has(candidate)) {
+				tokens.set(reference, candidate);
+				taken.add(candidate);
+			}
+		}
+	}
+	for (const reference of references) {
+		if (!tokens.has(reference)) {
+			tokens.set(reference, reference.referenceIds[0] ?? reference.info.id);
+		}
+	}
+	return tokens;
 }
 
 function byteLength(text: string): number {

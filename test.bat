@@ -1,4 +1,19 @@
 @echo off
-cd /d "%~dp0"
+setlocal EnableExtensions
 
-pwsh.exe -NoProfile -Command "& { $local = (Get-Location).Path; pi remove npm:pi-claude-code; $settings = Get-Content -Raw (Join-Path $HOME '.pi/agent/settings.json') | ConvertFrom-Json; if (@($settings.packages) -notcontains $local) { pi install $local; $settings = Get-Content -Raw (Join-Path $HOME '.pi/agent/settings.json') | ConvertFrom-Json }; $settings.packages | ForEach-Object { Write-Host ('[Loaded] ' + $(if ($_ -is [string]) { $_ } else { $_.source })) }; try { & pi @args } finally { pi remove $local; Write-Host '[Removed] temporary extension config' } }" %*
+rem 使用 Git for Windows 的 bash。PATH 里的 bash 多半是 WSL，那里没有 Windows 的 node。
+set "BASH="
+for /f "delims=" %%G in ('where git 2^>nul') do (
+  if not defined BASH if exist "%%~dpG..\bin\bash.exe" set "BASH=%%~dpG..\bin\bash.exe"
+)
+if not defined BASH if exist "%ProgramFiles%\Git\bin\bash.exe" set "BASH=%ProgramFiles%\Git\bin\bash.exe"
+if not defined BASH if exist "%ProgramFiles(x86)%\Git\bin\bash.exe" set "BASH=%ProgramFiles(x86)%\Git\bin\bash.exe"
+if not defined BASH if exist "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" set "BASH=%LOCALAPPDATA%\Programs\Git\bin\bash.exe"
+
+if not defined BASH (
+  echo Git Bash not found. Install Git for Windows, or run test.sh from Git Bash. 1>&2
+  exit /b 127
+)
+
+"%BASH%" "%~dp0test.sh" %*
+exit /b %ERRORLEVEL%

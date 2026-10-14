@@ -1,5 +1,6 @@
 import {
 	type BuildSystemPromptOptions,
+	copyToClipboard,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	estimateTokens,
@@ -7,7 +8,7 @@ import {
 	getMarkdownTheme,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import { Key, Markdown, matchesKey } from "@earendil-works/pi-tui";
+import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { formatTokens, padLine } from "../utils/format.ts";
 import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
@@ -74,6 +75,30 @@ export function contextHealth(percent: number | null): {
 	return { label: "Plenty of room", color: "success" };
 }
 
+const COPY_LABEL = "[copy]";
+const ESC_LABEL = "[esc]";
+
+/** 测试可替换；生产使用 pi 的剪贴板实现。 */
+let copyTextImpl: (text: string) => Promise<void> = (text) => copyToClipboard(text);
+
+export function setPreviewCopyImpl(impl: ((text: string) => Promise<void>) | null): void {
+	copyTextImpl = impl ?? ((text) => copyToClipboard(text));
+}
+
+/** 1-based terminal hitbox of the [copy] button, one space left of [esc] on the same title row. */
+export function copyButtonHitbox(bounds: DialogBounds): {
+	row: number;
+	startCol: number;
+	endCol: number;
+} {
+	const esc = escCloseHitbox(bounds);
+	return {
+		row: esc.row,
+		startCol: esc.startCol - visibleWidth(COPY_LABEL) - 1,
+		endCol: esc.startCol - 2,
+	};
+}
+
 let activeContextOverlays = 0;
 
 /** fullscreen 输入包装用于把鼠标事件继续传给当前 context 主弹框或文本预览 overlay。 */
@@ -101,7 +126,9 @@ export async function showTextPreview(
 				let pageSize = 1;
 				let totalLines = 1;
 				let escHovered = false;
+				let copyHovered = false;
 				let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
+				let copyHitbox: { row: number; startCol: number; endCol: number } | undefined;
 				let scrollbarHitbox:
 					| {
 							col: number;
@@ -126,6 +153,24 @@ export async function showTextPreview(
 					if (hovered === escHovered) return;
 					escHovered = hovered;
 					tui.requestRender();
+				};
+
+				const setCopyHovered = (hovered: boolean): void => {
+					if (hovered === copyHovered) return;
+					copyHovered = hovered;
+					tui.requestRender();
+				};
+
+				const copyPreview = (): void => {
+					void copyTextImpl(content)
+						.then(() => {
+							const flash = (tui as { flash?: (message: string) => void }).flash;
+							if (typeof flash === "function") flash("Copied!");
+							else ctx.ui.notify("Copied preview to clipboard", "info");
+						})
+						.catch((error: unknown) => {
+							ctx.ui.notify(error instanceof Error ? error.message : "Copy failed", "error");
+						});
 				};
 
 				const dragScrollbarTo = (mouseRow: number): void => {
@@ -171,12 +216,23 @@ export async function showTextPreview(
 									mouse.col >= escHitbox.startCol &&
 									mouse.col <= escHitbox.endCol,
 							);
+							const overCopy = Boolean(
+								copyHitbox &&
+									mouse.row === copyHitbox.row &&
+									mouse.col >= copyHitbox.startCol &&
+									mouse.col <= copyHitbox.endCol,
+							);
 							setEscHovered(overEsc);
+							setCopyHovered(overCopy);
 							const button = mouseBaseButton(mouse.code);
 							const motion = (mouse.code & 32) !== 0;
 							if (button === 0 && !motion) {
 								if (overEsc) {
 									done(undefined);
+									return;
+								}
+								if (overCopy) {
+									copyPreview();
 									return;
 								}
 								if (
@@ -207,6 +263,7 @@ export async function showTextPreview(
 
 					render(width: number) {
 						const inner = Math.max(1, width - 2);
+						const actionsWidth = visibleWidth(`${COPY_LABEL} ${ESC_LABEL}`);
 						const bodyInner = Math.max(1, inner - 1);
 						const bodyWidth = Math.max(1, bodyInner - 1);
 						const terminalHeight = Math.max(1, tui.terminal.rows);
@@ -224,6 +281,7 @@ export async function showTextPreview(
 						const overlayTop = 2 + Math.floor((availableHeight - viewportHeight) / 2);
 						const overlayLeft = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
 						escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
+						copyHitbox = copyButtonHitbox({ left: overlayLeft, top: overlayTop, width });
 						const visible = wrapped.slice(scrollOffset, scrollOffset + pageSize);
 						const border = (text: string) => theme.fg("border", text);
 						const scrollable = totalLines > pageSize;
@@ -257,15 +315,12 @@ export async function showTextPreview(
 						});
 						const start = totalLines === 0 ? 0 : scrollOffset + 1;
 						const end = Math.min(totalLines, scrollOffset + pageSize);
-						// [esc] 关闭键已由顶边 meta 按钮承担，状态行只留位置与导航键。
-						const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End`;
+						const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · [copy] · [esc] close`;
 
 						return [
-							frameHeader(theme, width, title, {
-								meta: "[esc]",
-								metaColor: escHovered ? "text" : "muted",
-							}),
-							frameDivider(theme, width),
+							border(`╭${"─".repeat(inner)}╮`),
+							`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`, inner - actionsWidth)}${theme.fg(copyHovered ? "text" : "muted", COPY_LABEL)} ${theme.fg(escHovered ? "text" : "muted", ESC_LABEL)}${border("│")}`,
+							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 							...bodyRows,
 							frameDivider(theme, width),
 							frameRow(theme, width, theme.fg("dim", status)),
@@ -295,6 +350,27 @@ const tokenEstimate = (value: unknown): number => {
 	const text = typeof value === "string" ? value : JSON.stringify(value);
 	return Math.max(0, Math.ceil(text.length / 4));
 };
+
+/** system 消息对请求的贡献：正文 + 各 section 文本 + 声明的工具 schema，与 pi 的 estimateTokens 同口径。 */
+function systemMessageTokens(message: {
+	content?: unknown;
+	sections?: Record<string, string | null> | null;
+	toolsAdded?: unknown;
+	toolsRemoved?: unknown;
+}): number {
+	let chars = typeof message.content === "string" ? message.content.length : 0;
+	for (const section of Object.values(message.sections ?? {})) {
+		if (typeof section === "string") chars += section.length;
+	}
+	if (message.toolsAdded) chars += JSON.stringify(message.toolsAdded).length;
+	if (message.toolsRemoved) chars += JSON.stringify(message.toolsRemoved).length;
+	return Math.ceil(chars / 4);
+}
+
+/** prompt 组装会把 CRLF 归一成 LF，匹配前对齐行尾。 */
+function normalizeLineEndings(text: string): string {
+	return text.replace(/\r\n?/g, "\n");
+}
 
 /** 只统计确实嵌进 system prompt 的片段，避免源文件预览把占用加两遍。 */
 function embeddedTokens(prompt: string, chunk: string): number {
@@ -368,24 +444,24 @@ export function collectContextBreakdown(
 	allTools: ToolInfo[],
 ): ContextBreakdown {
 	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
-	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "";
 	const selectedTools = new Set(options.selectedTools ?? ["read", "bash", "edit", "write"]);
 	const toolDefinitionPreview: string[] = [];
 	const toolResultPreview: string[] = [];
 	const contextPreview: string[] = [];
+	const systemPromptPreview: string[] = [];
 	let toolDefinitionTokens = 0;
 	let toolResultTokens = 0;
 	let contextTokens = 0;
+	let systemTokens = 0;
 
 	const memoryPreview: string[] = [];
-	let memoryTokens = 0;
-	for (const file of options.contextFiles ?? []) {
-		memoryTokens += embeddedTokens(systemPrompt, file.content);
+	const contextFiles = options.contextFiles ?? [];
+	for (const file of contextFiles) {
 		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
 	}
 
-	const skillsText = formatSkillsForPrompt(options.skills ?? []).trim();
-	const skillsTokens = embeddedTokens(systemPrompt, skillsText);
+	const skills = options.skills ?? [];
+	const skillsText = formatSkillsForPrompt(skills).trim();
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
@@ -398,21 +474,51 @@ export function collectContextBreakdown(
 		toolDefinitionPreview.push(`## Definition: ${tool.name}\n\n${previewValue(definition)}`);
 	}
 
-	for (const entry of ctx.sessionManager.buildContextEntries()) {
-		if (entry.type === "message") {
-			const message = entry.message;
-			if (message.role === "assistant") {
+	let memoryTokens = 0;
+	let skillsTokens = 0;
+	for (const projected of ctx.sessionManager.buildSessionProjection().entries) {
+		const source = projected.sourceEntry;
+		for (const message of projected.messages) {
+			if (message.role === "system") {
+				systemTokens += systemMessageTokens(message);
+				// Memory / skills 按投影中的实际 section 文本切分，与 system prompt 增量互补、不重不漏。
+				const sections = (message.sections ?? {}) as Record<string, string | null>;
+				const projectContext =
+					typeof sections.project_context === "string"
+						? normalizeLineEndings(sections.project_context)
+						: "";
+				for (const file of contextFiles) {
+					const chunk = `<project_instructions path="${file.path}">\n${normalizeLineEndings(file.content)}\n</project_instructions>`;
+					memoryTokens += embeddedTokens(projectContext, chunk);
+					systemTokens -= embeddedTokens(projectContext, chunk);
+				}
+				const skillsSection =
+					typeof sections.skills === "string" ? normalizeLineEndings(sections.skills) : "";
+				skillsTokens += embeddedTokens(skillsSection, skillsText);
+				systemTokens -= embeddedTokens(skillsSection, skillsText);
+				systemPromptPreview.push(
+					(source.type === "compaction"
+						? "## System prompt snapshot at compaction\n\n"
+						: "## System prompt update\n\n") +
+						previewValue({
+							content: message.content,
+							sections: message.sections,
+							toolsAdded: (message.toolsAdded ?? []).map((tool: { name?: string }) => tool?.name),
+							toolsRemoved: (message.toolsRemoved ?? []).map(
+								(tool: { name?: string }) => tool?.name,
+							),
+						}),
+				);
+			} else if (message.role === "assistant") {
+				contextTokens += estimateTokens(message);
 				for (const block of message.content) {
 					if (block.type === "toolCall") {
-						contextTokens += tokenEstimate(block.name) + tokenEstimate(block.arguments);
 						contextPreview.push(
 							`## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
 						);
 					} else if (block.type === "text") {
-						contextTokens += tokenEstimate(block.text);
 						contextPreview.push(`## Assistant\n\n${block.text}`);
 					} else if (block.type === "thinking") {
-						contextTokens += tokenEstimate(block.thinking);
 						contextPreview.push(`## Assistant thinking\n\n${block.thinking}`);
 					}
 				}
@@ -422,8 +528,8 @@ export function collectContextBreakdown(
 					`## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
 				);
 			} else if (message.role === "bashExecution") {
-				toolResultTokens += estimateTokens(message);
-				toolResultPreview.push(
+				contextTokens += estimateTokens(message);
+				contextPreview.push(
 					`## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
 				);
 			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
@@ -433,18 +539,10 @@ export function collectContextBreakdown(
 				contextTokens += estimateTokens(message);
 				contextPreview.push(`## ${message.role}\n\n${previewValue(message.content)}`);
 			}
-		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
-			contextTokens += tokenEstimate(entry.summary);
-			contextPreview.push(
-				`## ${entry.type === "compaction" ? "Compaction" : "Branch summary"}\n\n${entry.summary}`,
-			);
-		} else if (entry.type === "custom_message") {
-			contextTokens += tokenEstimate(entry.content);
-			contextPreview.push(`## Custom: ${entry.customType}\n\n${previewValue(entry.content)}`);
 		}
 	}
 
-	const systemTokens = Math.max(0, tokenEstimate(systemPrompt) - memoryTokens - skillsTokens);
+	systemTokens = Math.max(0, systemTokens);
 	return {
 		parts: [
 			{ label: "System prompt", tokens: systemTokens, color: "accent" },
@@ -455,7 +553,10 @@ export function collectContextBreakdown(
 			{ label: "Context", tokens: contextTokens, color: "warning" },
 		] satisfies ContextPart[],
 		previews: {
-			systemPrompt: systemPrompt || "No system prompt.",
+			systemPrompt:
+				systemPromptPreview.join("\n\n") ||
+				(typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "") ||
+				"No system prompt.",
 			memoryFiles: memoryPreview.join("\n\n") || "No memory files in context.",
 			skills: skillsText || "No skills in context.",
 			tools: toolDefinitionPreview.join("\n\n") || "No active tool definitions.",

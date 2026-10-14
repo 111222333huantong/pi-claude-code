@@ -7,7 +7,7 @@ import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { showMoreHintText } from "./names.ts";
 
 /**
  * 接管三个消息组件（`<skill>` 块、压缩摘要、分支摘要），ccstyle on 时渲染为
@@ -74,15 +74,15 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 	const title = theme.fg("toolTitle", kind.title(component));
 	if (!component.expanded) {
 		const hovered = component.hintHovered === true;
-		const hint = `${theme.fg("dim", " • ")}${theme.fg(hovered ? "text" : "dim", showMoreHintText())}`;
+		const hint = `${theme.fg("dim", " · ")}${theme.fg(hovered ? "text" : "dim", showMoreHintText())}`;
 		component.addChild(new Text(`${icon} ${title}${hint}`, 0, 0));
 		return;
 	}
-	// 展开卡与 tool 一致：userMessageBg + 上下左右 1 格
+	// 展开卡与 tool 一致：同一个展开卡背景 + 上下左右 1 格
 	component.paddingX = 1;
 	component.paddingY = 1;
 	if (typeof theme.bg === "function" && typeof component.setBgFn === "function") {
-		component.setBgFn((text: string) => theme.bg("userMessageBg", text));
+		component.setBgFn((text: string) => theme.bg(config.expandedCardBackground, text));
 	}
 	component.addChild(new Text(`${icon} ${title}`, 0, 0));
 	component.addChild(new Spacer(1));

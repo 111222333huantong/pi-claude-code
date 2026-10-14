@@ -1,8 +1,8 @@
 # 工具 Render 示例（ccstyle · default）
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
-> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.10.0 · mode=`on`。
+> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
+> 当前版本：ccstyle 1.1.0 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -11,21 +11,52 @@
  ● Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 
  ✗ Read missing.ts
-   ↳ Error: ENOENT: …en 'missing.ts' • click to show more
+   ↳ Error: ENOENT: …en 'missing.ts' · click to show more
 ```
 
 - 运行中：call 行使用 Braille 转轮。
 - 完成/失败：`✓` / `✗`；结果行缩进 3 格（`   ↳`）。
 - 可展开结果附带 `click to show more`（fullscreen 文案）。
 
+### shell 耗时
+
+```text
+ ⠋ Bash sleep 30
+   ↳ Pending… · 0ms
+
+ ✓ Bash npm test
+   ↳ 1 line returned · 12.4s · click to show more
+
+ ✓ Bash npm test
+ ├ Input
+ │ command: npm test
+ │
+ └ Output
+   line 1
+   line 2
+   line 3
+   line 4
+   line 5
+   line 6
+   line 7
+   line 8
+   line 9
+   line 10
+   … 6 more lines · 12.4s · click to show more
+```
+
+Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的通用折叠行把它盖掉了，这里接回来。
+运行中报已用时间（随动画 tick 更新，快照固定时钟所以是 `0ms`）；完成态优先用 Pi 记录的 `durationMs`，拿不到再退回渲染器自己的时钟。
+折叠态接在摘要后、展开提示前；展开态同样挂在 Output 的 show-more 行上、提示前（Output 未截断时没有那一行，才单独成行）。只对 shell（bash / powershell / pwsh / sh / zsh / cmd）生效。
+
 ## 2. read 参数详情
 
 ```text
  ✓ Read extensions/index.ts (offset=10, limit=50)
-   ↳ 40 lines loaded • click to show more
+   ↳ 40 lines loaded · click to show more
 ```
 
 ## 3. 单工具展开（Input/Output 树）
@@ -47,7 +78,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 
 ```text
  ✓ Edit sample.ts
-   ↳ diff • +2 • -1 • unified [━━━━━━━━]
+   ↳ diff · +2 · -1 · unified [━━━━━━━━]
  ─────────────────────────────────────────────
  @@ -1,3 +1,4 @@
     1 │ import { run } from "./runner";
@@ -58,15 +89,22 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
  ─────────────────────────────────────────────
 ```
 
+`editDiffCollapsedLines: 0` shows a one-line change-count summary and expand hint; expanding still shows the full diff:
+
+```text
+ ✓ Edit sample.ts
+   ↳ diff +2 -1 · click to show more
+```
+
 长 diff 提示：
 
 ```text
-… (79 more diff lines • click to show more)
+… 79 more diff lines · click to show more
 ```
 
 - hover `click to show more` 时由 muted 切换为白色 text。
-- 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。
-- 展开态下 diff 行数提示为 warning 色。
+- 点击提示展开工具，展开态 diff 全量显示，不再截断。
+- 折叠态 diff 行数提示为 muted 色。
 
 write 新建 / 覆盖：
 
@@ -87,8 +125,8 @@ write 新建 / 覆盖：
 
 ```text
  ✓ Task List task list
-   ↳ 3 tasks • 1 … 1 completed • click to show more
- ↳ 3 tasks • 1 in progress • 1 pending • 1 completed
+   ↳ 3 tasks · 1 … 1 completed · click to show more
+ ↳ 3 tasks · 1 in progress · 1 pending · 1 completed
    #1 in_progress 重构 renderer
    #2 pending 补充测试
    #3 completed 发布 0.8.29
@@ -106,10 +144,10 @@ write 新建 / 覆盖：
  ↳ Stopped Task #1
 
  ✓ Task Get 3
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 
  ✓ Task Output 1
-   ↳ 2 lines returned • click to show more
+   ↳ 2 lines returned · click to show more
 ```
 
 ## 6. Agent 家族
@@ -126,32 +164,32 @@ write 新建 / 覆盖：
  Agent ID: 7d535698-4ad6-47a
 
  ✓ Get Subagent Result 7d535698
-   ↳ 4 lines returned • click to show more
+   ↳ 4 lines returned · click to show more
 
  ✓ Steer Subagent 7d535698
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ Agents 并行调研
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 ```
 
 ## 7. 外部工具
 
 ```text
  ✓ Skill ponytail
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 
  ✓ Enter Plan Mode enable read-only planning
    ↳ 1 line returned
 
  ✓ Exit Plan Mode present plan
-   ↳ 3 lines returned • click to show more
+   ↳ 3 lines returned · click to show more
 
  ✓ Web Search pi coding agent extension
-   ↳ 3 lines returned • click to show more
+   ↳ 3 lines returned · click to show more
 
  ✓ Fetch Content https://example.com
-   ↳ 1 line returned • click to show more
+   ↳ 1 line returned · click to show more
 ```
 
 - Enter Plan Mode 短结果可能无 `click to show more`。
@@ -159,37 +197,129 @@ write 新建 / 覆盖：
 ## 8. MCP / 自定义工具
 
 ```text
- ✓ MCP Github Search (1 arg)
-   ↳ 1 line returned • click to show more
+ ✓ MCP call github_search_code {"query":"pi"}
+   ↳ 1 line returned · click to show more
 
- ✓ Custom Translate
-   ↳ 1 line returned • click to show more
+ ✓ MCP list chrome-devtools
+   ↳ 1 line returned · click to show more
+
+ ✓ MCP search screenshot (regex)
+   ↳ 1 line returned · click to show more
+
+ ✓ MCP Script emit(1)
+   ↳ 1 line returned · click to show more
+
+ ✓ mcp__github_search_code pi
+   ↳ 1 line returned · click to show more
+
+ ✓ Custom Translate {"text":"hi"}
+   ↳ 1 line returned · click to show more
 ```
 
-## 9. 工具组（tool-grouping）
+网关的标题沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格（`list` / `search` / `describe` / `call` / `connect` / `status`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（`regex` / `includeSchemas`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 `mcp__github_search_code`），入参先走字段链（`query` / `url` / `command` / `path` …），字段链认不出的键（命名空间代理的 `tool`+`args`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：`MCP` / `MCP Script`。超过卡片宽度与 Input clip 的部分尾部截断。
+
+## 9. ask_user_question（第三方）
+
+```text
+ ● Ask User Question (+3)
+ ↳ Pending…
+
+ ✓ Ask User Question (+3)
+ ├ Which library should we … -> Read
+ ├ Which paths should the c… -> src and tests
+ ├ Which checks should run? -> typecheck, unit tests, li…
+ └ 3 answered · click to show more
+
+ ✓ Ask User Question (+3)
+ ├ Input
+ │ questions:
+ │   [
+ │     {
+ │       "question": "Which library should we use?",
+ │       "header": "Library"
+ │ … 12 more lines · click to show more
+ │
+ └ Output
+   Which library should we use?
+     Read
+
+   Which paths should the change cover?
+     src and tests
+     notes: renderer only
+
+   Which checks should run?
+     typecheck, unit tests, lint
+
+   … 1 more lines · click to show more
+
+ ✓ Ask User Question (+3)
+ Declined
+```
+
+标题只留工具名和问题数（调用期间就从入参数起，不先闪出第一个问题）；问题原文与所选在折叠态逐条列出，问题行全用 `├`、最后一行用 `└` 收 `N answered` 并挂展开入口，多选把标签用 `, ` 拼在一行。展开态按「问题 / 所选 / 备注」分组，并带上总备注。没有作答（用户取消、校验失败）时不画树，只有一行 `Declined`。分组卡里空间只够一行，压成 `问题 -> 回答 (+N)`。
+
+## 10. codemode（内置）
+
+```text
+ ● Codemode
+ ├ ⠋ Ffgrep "mcp" in src/
+ ├ ⠋ Fffind "mcp"
+ └ 2 calls running
+
+ ✓ Codemode
+ ├ ✓ Ffgrep "mcp" in src/ 31ms
+ ├ ✓ Fffind "mcp" 12ms
+ ├ ✗ mcp__chrome_devtools__list_pages 240ms
+ └ 3 calls · 1 failed · click to show more
+
+ ✓ Codemode
+ ├ Input
+ │   // @options: {"max_output_tokens": 1000}
+ │   const [g, f] = await Promise.all([
+ │     tools.ffgrep({ pattern: "mcp", path: "src/" }),
+ │     tools.fffind({ pattern: "mcp" }),
+ │   ])
+ │ … 1 more lines · click to show more
+ │
+ └ Output
+   ffgrep {"pattern":"mcp","path":"src/"} 31ms
+   fffind {"pattern":"mcp"} 12ms
+   mcp__chrome_devtools__list_pages {} 240ms
+       server disconnected
+
+   --- grep ---
+   extensions/renderer/tool/mcp-title.ts
+   extensions/renderer/tool/names.ts
+
+   Full output: C:\tmp\pi-codemode-out.txt
+```
+
+内置 codemode 的调用行只报工具名（脚本在展开后的 Input 里看）；折叠态把子调用按工具组的树摊开，子调用全用 `├`、最后一行用 `└` 收汇总（运行中报进度），只有汇总行是展开入口。数据来自 `result.details.calls`，展开后依次是 Input 代码、全部子调用（含 error）、去掉 `Script completed / Wall time / Output:` 头的结果与全量输出路径。
+
+## 11. 工具组（tool-grouping）
 
 ### 收起：运行中
 
 ```text
- ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠇ Read extensions/index.ts
- ├ ⠇ Bash npm test
- └ ⠇ Ffgrep extensions/
+ ● Multiple Tools: 3 running · Read… · click to show more
+ ├ ⠋ Read extensions/index.ts
+ ├ ⠋ Bash npm test
+ └ ⠋ Ffgrep "renderCall" in extensions/
 ```
 
 ### 收起：完成/失败
 
 ```text
- ● Multiple Tools: 2 done • 1 failed • read, bash, ffgrep • click to sh…
+ ● Multiple Tools: 2 done · 1 failed · click to show more
  ├ ✓ Read extensions/index.ts
- ├ ✓ Bash npm test
- └ ✗ Ffgrep extensions/
+ ├ ✓ Bash npm test · 12.4s
+ └ ✗ Ffgrep "renderCall" in extensions/
 ```
 
 ### 展开：完整背景卡片
 
 ```text
- ● Multiple Tools: 2 done • 1 failed • read, bash, ffgrep • click to sh…
+ ● Multiple Tools: 2 done · 1 failed · Read… · ↑ Collapse
  ├ ✓ Read extensions/index.ts
  │ ├ Input
  │ │ path: extensions/index.ts
@@ -204,15 +334,16 @@ write 新建 / 覆盖：
  │   L6
  │   L7
  │   L8
- │   … +30 more lines • click to show more
- │   L39
+ │   L9
+ │   … 30 more lines · click to show more
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
  │ │
  │ └ Output
  │   pass 79/79
- └ ✗ Ffgrep extensions/
+ │   12.4s
+ └ ✗ Ffgrep "renderCall" in extensions/
    ├ Input
    │ path: extensions/
    │ pattern: renderCall
@@ -224,14 +355,16 @@ write 新建 / 覆盖：
 ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 
 - 组头始终使用状态色圆点 `●`。
+- 组头工具列表用与子行同一套人性化标题，次数一律带上（`Bash×1, PowerShell×1`）；宽度不够时先截列表，保住行尾的展开提示。
 - 内部工具使用 `✓`、`✗` 或 Braille loading spinner。
+- 组内 shell 行只报耗时（`· 12.4s`），行数是冗余信息；失败另报错误首行。
 - 展开区统一绘制完整状态背景，左右和底部各 1 格 padding，无顶部 padding。
 - 外层树在收起/展开时位置不变；Input/Output 树线与上方状态图标对齐。
 - Input/Output 之间各有一个空白 rail 行。
 - 点击展开区任意行、任意列（含底部 padding）均可收起。
 - 组末尾不再额外追加空白行。
 
-## 10. Working footer
+## 12. Working footer
 
 保留 Pi 原生 spinner，仅扩展文本：
 

@@ -1,12 +1,14 @@
 import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { structuredPatch } from "diff";
+import type { ToolDisplayConfig } from "../../../config/config.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "../names.ts";
 import {
 	createDiffRenderCache,
 	type DiffRenderOptions,
 	type DisplayConfigInput,
 	displayConfigCacheKey,
+	normalizeCollapsedHintLine,
 	RICH_DIFF_COMPONENT,
 	resolveDiffIndicatorMode,
 	resolveLiveDisplayConfig,
@@ -54,6 +56,7 @@ import {
 	type DiffPresentationMode,
 	normalizeDiffRenderWidth,
 	resolveDiffPresentationMode,
+	styleDiffSummaryLine,
 } from "./diff-presentation.ts";
 import { splitWriteContentLines } from "./diff-text.ts";
 
@@ -343,13 +346,14 @@ function renderWriteOverwriteGuardRows(
 	return renderSingleDiffRow(buildWriteOverwriteGuardText(guard, width), "warning", width, theme);
 }
 
-/** Folded write with `writeDiffCollapsedLines: 0`: `↳ created • click to show more`. */
+/** Folded write with `writeDiffCollapsedLines: 0`: `↳ diff +A -D · created · click to show more`. */
 function renderWriteCollapsedHintLine(
 	wasOverwrite: boolean,
 	width: number,
 	theme: DiffTheme,
 	hovered: boolean,
 	headerLabel?: string,
+	stats?: { added: number; removed: number },
 ): string[] {
 	const safeWidth = normalizeDiffRenderWidth(width);
 	if (safeWidth === 0) {
@@ -357,7 +361,20 @@ function renderWriteCollapsedHintLine(
 	}
 	const actionLabel = headerLabel?.trim() || (wasOverwrite ? "overwritten" : "created");
 	const clickLabel = showMoreHintText();
-	const candidates = [`↳ ${actionLabel} • ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
+	const counts = stats ? `+${stats.added} -${stats.removed}` : "";
+	const candidates = stats
+		? [
+				`↳ diff ${counts} · ${actionLabel} · ${clickLabel}`,
+				`↳ diff ${counts} · ${clickLabel}`,
+				`↳ diff ${counts} · ${actionLabel}`,
+				`↳ diff ${counts}`,
+				`↳ ${counts} · ${clickLabel}`,
+				`↳ ${actionLabel} · ${clickLabel}`,
+				`↳ ${actionLabel}`,
+				actionLabel,
+				"…",
+			]
+		: [`↳ ${actionLabel} · ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
 	let text = candidates[candidates.length - 1] ?? "…";
 	for (const candidate of candidates) {
 		if (visibleWidth(candidate) <= safeWidth) {
@@ -368,20 +385,25 @@ function renderWriteCollapsedHintLine(
 	if (visibleWidth(text) > safeWidth) {
 		text = truncateToWidth(text, safeWidth, "");
 	}
-	const clickIndex = text.lastIndexOf(clickLabel);
-	const styled =
-		hovered && clickIndex >= 0
-			? theme.fg("muted", text.slice(0, clickIndex)) +
-				theme.fg("text", clickLabel) +
-				theme.fg("muted", text.slice(clickIndex + clickLabel.length))
-			: theme.fg("muted", text);
+	const styled = styleDiffSummaryLine(text, stats, clickLabel, theme, hovered);
 	return [clampDiffLineToWidth(styled, safeWidth)];
 }
 
 /**
- * write 变更行统计（compact 单行用）：与正文同一套 Myers 算法。
- * 新文件 = 全部新内容为 added；覆盖已有文件精确统计。
- * content 非字符串、元数据缺失或超出行数/字符预算时返回 undefined（不显示计数）。
+ * 折叠 0 行预览时计数由正文那行显示（`↳ diff +A -D · created · click to show more`），
+ * 标题不再重复。compact 与 default 两个模式的写标题共用这条口径。
+ */
+export function writeStatsInCollapsedBody(
+	expanded: boolean,
+	display: Pick<ToolDisplayConfig, "writeDiffCollapsedLines">,
+): boolean {
+	return !expanded && resolveWriteCollapsedLimit(display) === 0;
+}
+
+/**
+ * write 变更行统计（compact 单行用）：复用当前 write diff 算法。
+ * 新文件 = 全部新内容为 added；覆盖已有文件用 LCS 精确统计。
+ * content 非字符串、元数据缺失或超过矩阵预算时返回 undefined（不显示计数）。
  */
 export function countWriteDiffStats(
 	content: string | undefined,
@@ -531,6 +553,15 @@ export function renderWriteDiffResult(
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** 鼠标层只在真正的 remainder 行上提供展开入口。 */
+		isCollapsedHintLine(plainLine: string): boolean {
+			const hint = cache.getHintLine();
+			return hint !== undefined && normalizeCollapsedHintLine(plainLine) === hint;
+		},
+		/** 折叠 0 行预览时正文那行自带 +A -D：标题不再重复计数。 */
+		bodyShowsStats(): boolean {
+			return writeStatsInCollapsedBody(options.expanded, resolveLiveDisplayConfig(config));
+		},
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -557,22 +588,22 @@ export function renderWriteDiffResult(
 			const writeCollapsedLimit = resolveWriteCollapsedLimit(live);
 			const statsOnlyCollapsed = !options.expanded && writeCollapsedLimit === 0;
 			if (statsOnlyCollapsed) {
+				const hintLines = renderWriteCollapsedHintLine(
+					options.fileExistedBeforeWrite === true,
+					safeWidth,
+					theme,
+					hovered,
+					options.headerLabel,
+					countWriteDiffStats(content, options.previousContent, options.fileExistedBeforeWrite),
+				);
 				return cache.set(
 					safeWidth,
 					options.expanded,
 					mode,
 					configKey,
 					hovered,
-					clampDiffLinesToWidth(
-						renderWriteCollapsedHintLine(
-							options.fileExistedBeforeWrite === true,
-							safeWidth,
-							theme,
-							hovered,
-							options.headerLabel,
-						),
-						safeWidth,
-					),
+					clampDiffLinesToWidth(hintLines, safeWidth),
+					normalizeCollapsedHintLine(hintLines[0]),
 				);
 			}
 
@@ -624,11 +655,7 @@ export function renderWriteDiffResult(
 			}
 
 			const data = getDetailedData();
-			const displayLimit = resolveDiffDisplayLimit(
-				options.expanded,
-				writeCollapsedLimit,
-				live.expandedPreviewMaxLines,
-			);
+			const displayLimit = resolveDiffDisplayLimit(options.expanded, writeCollapsedLimit);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			const entryBudget = takeEntriesForLineBudget(data.entries, processBudget);
 			const splitBudget = takeSplitRowsForBudget(data.splitRows, processBudget);
@@ -665,7 +692,6 @@ export function renderWriteDiffResult(
 				safeWidth,
 				options.expanded,
 				writeCollapsedLimit,
-				live.expandedPreviewMaxLines,
 				data.hunkCount,
 				theme,
 				unprocessedLogicalRows,
@@ -673,9 +699,19 @@ export function renderWriteDiffResult(
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
-				mode === "unified" ? [header, frame, ...bodyWithLimit, frame] : [header, ...bodyWithLimit];
+				mode === "unified"
+					? [header, frame, ...bodyWithLimit.lines, frame]
+					: [header, ...bodyWithLimit.lines];
 			const finalLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, finalLines);
+			return cache.set(
+				safeWidth,
+				options.expanded,
+				mode,
+				configKey,
+				hovered,
+				finalLines,
+				normalizeCollapsedHintLine(bodyWithLimit.hintLine),
+			);
 		},
 		invalidate: cache.invalidate,
 	} as Component;

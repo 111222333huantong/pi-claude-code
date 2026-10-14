@@ -7,7 +7,9 @@
  * the native-hints right column are original to this package.
  */
 
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -224,7 +226,54 @@ export type HeaderMeta = {
 	model?: { provider?: string; id?: string } | null;
 	thinkingLevel?: string;
 	cwd?: string;
+	/** AGENTS.md 存在性标记：Aa=全局+项目都有，A=仅全局，a=仅项目，无则空串。 */
+	agentsFlag?: string;
+	/** slogan 文案（空串关闭）；颜色走 sloganColor 独立槽位。 */
+	slogan?: string;
+	sloganColor?: string;
 };
+
+/** AGENTS.md 标记（抄 pi-cc-header 的 Aa/a）：随 cwd 缓存，与盘点同生命周期。 */
+let cachedAgentsFlag: string | undefined;
+let cachedAgentsFlagCwd: string | undefined;
+
+export function resolveAgentsFlag(cwd: string, agentDir: string): string {
+	if (cachedAgentsFlag !== undefined && cachedAgentsFlagCwd === cwd) return cachedAgentsFlag;
+	let flag = "";
+	try {
+		const hasGlobal = existsSync(join(agentDir, "AGENTS.md"));
+		const hasProject = !!cwd && existsSync(join(cwd, "AGENTS.md"));
+		flag = hasGlobal && hasProject ? "Aa" : hasGlobal ? "A" : hasProject ? "a" : "";
+	} catch {
+		flag = "";
+	}
+	cachedAgentsFlag = flag;
+	cachedAgentsFlagCwd = cwd;
+	return flag;
+}
+
+/** 启动小贴士：右栏固定文案的轮换池，每进程随机一条（均有仓库内实现对应）。 */
+const STARTUP_TIPS = [
+	"Run /ccstyle to configure the look",
+	"Run /context to inspect context usage",
+	"Mention @ to reference sessions and subagents",
+	"Double-Esc clears the draft",
+	"Click 'show more' to expand long tool cards",
+];
+
+let startupTip: string | undefined;
+
+export function pickStartupTip(): string {
+	if (!startupTip) startupTip = STARTUP_TIPS[Math.floor(Math.random() * STARTUP_TIPS.length)]!;
+	return startupTip;
+}
+
+/** 测试用：重置 AGENTS 标记缓存与 tip 抽选，保证用例确定性。 */
+export function resetHeaderMetaCache(): void {
+	cachedAgentsFlag = undefined;
+	cachedAgentsFlagCwd = undefined;
+	startupTip = undefined;
+}
 
 export function renderHeaderLines(
 	width: number,
@@ -252,18 +301,24 @@ export function renderHeaderLines(
 	const innerWidth = width - 2;
 	const { leftWidth, rightWidth, useRight } = headerColumnWidths(innerWidth);
 
-	// 左栏：标题 → mascot → 模型·档位 → 目录；右栏：Getting started + Loaded
+	// 左栏：标题 → mascot → 模型·档位[+AGENTS 标记] → 目录[ → slogan]；右栏：Getting started + Loaded
 	// 左栏行保持原始宽度，布局时再按实际 leftWidth 居中，避免预居中被截断。
+	const modelLine =
+		muted(`${model} · ${effort} effort`) + (meta.agentsFlag ? paint(`  ${meta.agentsFlag}`) : "");
+	const sloganText = meta.slogan?.trim() ? meta.slogan.trim() : "";
 	const leftLines = [
 		bold("pi-cc"),
 		...renderMascotLines({ accent: paint, muted }, frame),
-		muted(`${model} · ${effort} effort`),
+		modelLine,
 		dim(cwd),
+		...(sloganText
+			? [theme.fg(meta.sloganColor ?? "accent", truncateToWidth(sloganText, leftWidth, "…"))]
+			: []),
 	];
 	const divider = paint("─".repeat(Math.max(8, Math.min(rightWidth || 16, 16))));
 	const rightLines = [
 		paint(bold("Getting started")),
-		muted("Run /ccstyle to configure the look"),
+		muted(pickStartupTip()),
 		divider,
 		paint(bold("Loaded")),
 		loaded.counts,
@@ -395,10 +450,14 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 				const theme = ctx.ui.theme;
 				let meta: HeaderMeta = {};
 				try {
+					const cwdStr = typeof ctx.cwd === "string" ? ctx.cwd : "";
 					meta = {
 						model: ctx.model ?? null,
 						thinkingLevel: safeThinkingLevel(pi),
-						cwd: typeof ctx.cwd === "string" ? ctx.cwd : "",
+						cwd: cwdStr,
+						agentsFlag: resolveAgentsFlag(cwdStr, resolveAgentDir()),
+						slogan: config.startupSlogan,
+						sloganColor: config.startupSloganColor,
 					};
 				} catch {
 					/* ignore stale ctx */

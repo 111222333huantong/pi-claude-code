@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ThemeBg } from "@earendil-works/pi-coding-agent";
+import type { ThemeBg, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
 import {
 	DEFAULT_FOOTER_CHIP_LAYOUT,
@@ -73,6 +73,9 @@ export type Config = {
 	dimThinkingText: boolean;
 	showStartupHeader: boolean;
 	startupAnimation: boolean;
+	/** 启动头 slogan（空串关闭）；独立主题色，不跟随 logo/accent 以外文案。 */
+	startupSlogan: string;
+	startupSloganColor: ThemeColor;
 	quietStartup: boolean;
 	scrollStepLines: number;
 	/** 回合耗时超过 N 秒完成时响铃（BEL）；0 关闭。 */
@@ -120,6 +123,17 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const DIFF_PALETTE_MODES: DiffPaletteMode[] = ["theme", "claude"];
+/** slogan 独立色候选：前景槽位，走 theme.fg。 */
+export const STARTUP_SLOGAN_COLORS: ThemeColor[] = [
+	"accent",
+	"success",
+	"warning",
+	"error",
+	"text",
+	"muted",
+];
+/** slogan 最大长度（抄 pi-cc-header MAX_SLOGAN_LENGTH）。 */
+export const MAX_STARTUP_SLOGAN_LENGTH = 250;
 export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
 export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
@@ -194,6 +208,8 @@ export const DEFAULT_CONFIG: Config = {
 	dimThinkingText: false,
 	showStartupHeader: true,
 	startupAnimation: true,
+	startupSlogan: "",
+	startupSloganColor: "accent",
 	quietStartup: true,
 	scrollStepLines: 3,
 	completionBellAfterSec: 0,
@@ -345,6 +361,15 @@ export function normalizeConfig(input: unknown): Config {
 		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		startupAnimation: source.startupAnimation !== false,
+		startupSlogan:
+			typeof source.startupSlogan === "string"
+				? source.startupSlogan.slice(0, MAX_STARTUP_SLOGAN_LENGTH)
+				: "",
+		startupSloganColor: pickEnum(
+			source.startupSloganColor,
+			STARTUP_SLOGAN_COLORS,
+			DEFAULT_CONFIG.startupSloganColor,
+		),
 		quietStartup: source.quietStartup !== false,
 		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
 		completionBellAfterSec: pickPositiveInt(
@@ -440,6 +465,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
+		`startupSlogan=${source.startupSlogan ? `"${source.startupSlogan}"` : "off"}`,
 		`quietStartup=${source.quietStartup ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
 		`bellAfter=${source.completionBellAfterSec}s`,

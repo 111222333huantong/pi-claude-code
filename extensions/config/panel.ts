@@ -59,10 +59,12 @@ import {
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
 	LIVE_TOOL_PREVIEW_LINES_VALUES,
+	MAX_STARTUP_SLOGAN_LENGTH,
 	pickPositiveInt,
 	pickPositiveNumber,
 	pickToolLabelClip,
 	SCROLL_STEP_LINES_VALUES,
+	STARTUP_SLOGAN_COLORS,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
@@ -664,6 +666,43 @@ export async function showCcstylePanel(
 			currentValue: config.quietStartup ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const sloganDescription = (): string =>
+			config.startupSlogan
+				? `Header slogan below cwd, in its own color (${config.startupSloganColor}). Empty to hide.`
+				: "No header slogan. Set text to show a one-liner below cwd in its own color.";
+		const sloganSetting = {
+			id: "startupSlogan",
+			label: "Header slogan",
+			description: sloganDescription(),
+			currentValue: config.startupSlogan || "(off)",
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
+				nestedSubmenuOpen = true;
+				nestedHint = "  Enter to apply · Esc back to UI";
+				return buildValueInputSubmenu(
+					theme,
+					{
+						prompt: "  Header slogan — one line (empty hides):",
+						initial: config.startupSlogan,
+						hint: "  Enter to apply · Esc to go back",
+						accept: (raw) =>
+							raw.length > MAX_STARTUP_SLOGAN_LENGTH ? null : (raw as string | undefined),
+						invalid: (raw) => `Too long (${raw.length}/${MAX_STARTUP_SLOGAN_LENGTH}).`,
+					},
+					(selected) => {
+						nestedSubmenuOpen = false;
+						nestedHint = "";
+						closeSubmenu(selected);
+					},
+				);
+			},
+		};
+		const sloganColorSetting = {
+			id: "startupSloganColor",
+			label: "Slogan color",
+			description: `Theme slot for the header slogan (default accent, independent of body text).`,
+			currentValue: config.startupSloganColor,
+			values: [...STARTUP_SLOGAN_COLORS],
+		};
 		const scrollStepSetting = {
 			id: "scrollStepLines",
 			label: "Scroll step",
@@ -1181,6 +1220,14 @@ export async function showCcstylePanel(
 						? "Play the π mascot build-up once per process."
 						: "Always show the settled mascot frame (also skips replay on /reload).";
 					break;
+				case "startupSlogan":
+					updateConfig({ startupSlogan: value === "(off)" ? "" : value });
+					sloganSetting.currentValue = config.startupSlogan || "(off)";
+					sloganSetting.description = sloganDescription();
+					break;
+				case "startupSloganColor":
+					updateConfig({ startupSloganColor: value as Config["startupSloganColor"] });
+					break;
 				case "quietStartup": {
 					const on = value === "on";
 					updateConfig({ quietStartup: on });
@@ -1268,6 +1315,8 @@ export async function showCcstylePanel(
 					stickyUserMessageSetting,
 					startupHeaderSetting,
 					startupAnimationSetting,
+					sloganSetting,
+					sloganColorSetting,
 					quietStartupSetting,
 					scrollStepSetting,
 					completionBellSetting,

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import {
@@ -16,8 +19,11 @@ import {
 	ensureHeaderAnimTick,
 	headerAnimState,
 	installEarlyStartupHeader,
+	pickStartupTip,
 	renderHeaderLines,
 	resetHeaderAnimation,
+	resetHeaderMetaCache,
+	resolveAgentsFlag,
 } from "../extensions/feature/shell/startup-header.ts";
 
 // 模拟 pi 运行时：注册 app.* 键绑定（默认与 pi 内置一致）
@@ -280,4 +286,81 @@ test("重复安装只包一层，重装后仍只换一次头", async () => {
 	} finally {
 		setConfig(previous);
 	}
+});
+
+test("AGENTS 标记：全局/项目组合 → Aa/A/a/空", () => {
+	resetHeaderMetaCache();
+	const globalDir = mkdtempSync(join(tmpdir(), "agents-global-"));
+	const projDir = mkdtempSync(join(tmpdir(), "agents-proj-"));
+	const emptyDir = mkdtempSync(join(tmpdir(), "agents-empty-"));
+	writeFileSync(join(globalDir, "AGENTS.md"), "# global");
+	writeFileSync(join(projDir, "AGENTS.md"), "# project");
+	resetHeaderMetaCache();
+	assert.equal(resolveAgentsFlag(projDir, globalDir), "Aa");
+	resetHeaderMetaCache();
+	assert.equal(resolveAgentsFlag(emptyDir, globalDir), "A");
+	resetHeaderMetaCache();
+	assert.equal(resolveAgentsFlag(projDir, emptyDir), "a");
+	resetHeaderMetaCache();
+	assert.equal(resolveAgentsFlag(emptyDir, emptyDir), "");
+	resetHeaderMetaCache();
+});
+
+test("模型行追加 AGENTS 标记；无标记时不变", () => {
+	const withFlag = renderHeaderLines(120, theme, 12, fakeStats, { ...meta, agentsFlag: "Aa" });
+	assert.ok(withFlag.map(stripAnsi).join("\n").includes("medium effort  Aa"));
+	const without = renderHeaderLines(120, theme, 12, fakeStats, meta);
+	assert.ok(!without.map(stripAnsi).join("\n").includes("Aa"));
+});
+
+test("slogan：默认无行，设置后独立色单行", () => {
+	const plain = renderHeaderLines(120, theme, 12, fakeStats, meta);
+	assert.equal(plain.length, 9);
+	const withSlogan = renderHeaderLines(120, theme, 12, fakeStats, {
+		...meta,
+		slogan: "Code something that makes you proud",
+		sloganColor: "accent",
+	});
+	assert.equal(withSlogan.length, 10);
+	const body = withSlogan.map(stripAnsi).join("\n");
+	assert.ok(body.includes("Code something that makes you proud"));
+	// 超长 slogan 按左栏截断，不撑破盒子。
+	const long = renderHeaderLines(120, theme, 12, fakeStats, { ...meta, slogan: "x".repeat(200) });
+	assert.ok(long.every((line) => visibleWidth(line) <= 120));
+});
+
+test("slogan 走独立颜色槽位，不跟随正文 muted", () => {
+	const seen: string[] = [];
+	const recTheme = {
+		getFgAnsi: () => "",
+		fg: (name: string, text: string) => {
+			seen.push(name);
+			return text;
+		},
+		bold: (text: string) => text,
+	};
+	renderHeaderLines(120, recTheme, 12, fakeStats, {
+		...meta,
+		slogan: "hi",
+		sloganColor: "warning",
+	});
+	assert.ok(seen.includes("warning"), "slogan 用独立槽位");
+	assert.ok(seen.includes("muted"), "正文仍走 muted");
+});
+
+test("tip 轮换：进程内稳定且出自池", () => {
+	resetHeaderMetaCache();
+	const first = pickStartupTip();
+	assert.ok(first.length > 0);
+	assert.equal(pickStartupTip(), first);
+	const body = renderHeaderLines(120, theme, 12, fakeStats, meta).map(stripAnsi).join("\n");
+	assert.ok(body.includes(first));
+	resetHeaderMetaCache();
+});
+
+test("slogan 配置归一化：截断 250 + 非法颜色回退 accent", () => {
+	assert.equal(normalizeConfig({}).startupSlogan, "");
+	assert.equal(normalizeConfig({ startupSloganColor: "nope" }).startupSloganColor, "accent");
+	assert.equal(normalizeConfig({ startupSloganColor: "warning" }).startupSloganColor, "warning");
+	assert.equal(normalizeConfig({ startupSlogan: "y".repeat(300) }).startupSlogan.length, 250);
 });

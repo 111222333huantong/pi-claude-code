@@ -10,7 +10,11 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
-import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import {
+	humanizeToolLabel,
+	renderToolSummary,
+	toolCallSummary,
+} from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
@@ -299,8 +303,8 @@ test("group status and tool labels use the injected active theme", () => {
 		assert.match(rendered, /<success>●<\/success>/, "group header stays a status dot");
 		assert.match(rendered, /<dim>[├└]<\/dim> <success>✓<\/success>/, "children use checks");
 		assert.match(rendered, /<success>2<\/success> done/);
-		assert.match(rendered, /<toolTitle>Read /);
-		assert.match(rendered, /<toolTitle>Bash /);
+		assert.match(rendered, /<toolTitle>Read<\/toolTitle>/);
+		assert.match(rendered, /<toolTitle>Bash<\/toolTitle>/);
 
 		const group = parent.children[0] as ToolGroupComponent;
 		group.setHintHovered(true);
@@ -500,6 +504,7 @@ test("powershell 分组行显示具体命令（issue 26）", () => {
 });
 
 test("default 与 grouping 共用同一份摘要取值链", () => {
+	const plain = (_color: string, text: string) => text;
 	const cases: Array<[string, any, string]> = [
 		["powershell", { command: "npm test" }, "PowerShell npm test"],
 		["bash", { command: "npm test" }, "Bash npm test"],
@@ -514,11 +519,8 @@ test("default 与 grouping 共用同一份摘要取值链", () => {
 	];
 	for (const [name, args, expected] of cases) {
 		for (const variant of ["default", "grouping"] as const) {
-			assert.equal(
-				toolCallSummary(name, args, { variant, cwd: process.cwd() }).main,
-				expected,
-				`${name} / ${variant}`,
-			);
+			const summary = toolCallSummary(name, args, { variant, cwd: process.cwd() });
+			assert.equal(renderToolSummary(summary, 400, plain), expected, `${name} / ${variant}`);
 		}
 	}
 });

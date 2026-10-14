@@ -235,14 +235,15 @@ function askUserResultSummary(tool: any): ToolCallSummary | undefined {
 		.map((entry) => entry.answer);
 	if (answers.length === 0) {
 		const label = tool.result?.details?.cancelled === true ? "Declined" : "Done";
-		return { main: `${toolTitle(tool)} ${label}`, detail: "" };
+		return { main: toolTitle(tool), detail: "", payload: label };
 	}
 	const first = answers[0]!;
 	const question = String(first.question ?? "").trim() || "Question";
 	const more = answers.length > 1 ? ` (+${answers.length - 1})` : "";
 	return {
-		main: `${toolTitle(tool)} ${question} -> ${askUserAnswerText(first)}${more}`,
+		main: toolTitle(tool),
 		detail: "",
+		payload: `${question} -> ${askUserAnswerText(first)}${more}`,
 	};
 }
 
@@ -253,7 +254,7 @@ function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
 		codemodeOutputLineCount(tool.result),
 		tool?.isPartial === true,
 	);
-	return { main: `${toolTitle(tool)} ${parts.join(" · ")}`, detail: "" };
+	return { main: toolTitle(tool), detail: "", payload: parts.join(" · ") };
 }
 
 /**

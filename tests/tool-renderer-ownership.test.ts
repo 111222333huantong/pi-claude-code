@@ -275,7 +275,9 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
 			"no toolSuccessBg remains in the expanded panel",
 		);
-		const callLine = cardLines.find((line: string) => line.includes("Bash "));
+		const callLine = cardLines.find((line: string) =>
+			line.replace(/\x1b\[[0-9;]*m/g, "").includes("Bash "),
+		);
 		assert.ok(callLine);
 		assert.equal(
 			visibleWidth(callLine),
@@ -435,7 +437,13 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			ui as any,
 			process.cwd(),
 		) as any;
-		assert.match(agentResult.render(100).join("\n"), /Get Subagent Result agent-123/);
+		assert.match(
+			agentResult
+				.render(100)
+				.join("\n")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
+			/Get Subagent Result agent-123/,
+		);
 
 		for (const [name, args, expected] of [
 			["Agents", { description: "review changes" }, "Agents review changes"],
@@ -460,7 +468,10 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 				process.cwd(),
 			) as any;
 			assert.match(
-				external.render(160).join("\n"),
+				external
+					.render(160)
+					.join("\n")
+					.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
 				new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
 			);
 		}

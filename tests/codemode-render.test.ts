@@ -415,12 +415,12 @@ test("调用行：codemode 只报工具名，代码不进标题（其他工具�
 		assert.deepEqual(toolCallSummary("codemode", args), { main: "Codemode", detail: "" });
 	}
 
-	// 同类工具不受影响：mcpscript 仍把代码当载荷，bash/read 仍走字段链
+	// 同类工具不受影响：mcpscript 仍把代码当载荷，bash/read 的入参也是载荷（渲染时用 dim 接在标题后）
 	assert.equal(toolCallSummary("mcpscript", { code: "return 1" }).payload, "return 1");
-	assert.equal(toolCallSummary("bash", { command: "ls -a" }).main, "Bash ls -a");
-	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, undefined);
-	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read a.ts");
-	assert.equal(toolCallSummary("read", { path: "a.ts" }).payload, undefined);
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).main, "Bash");
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, "ls -a");
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read");
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).path?.value, "a.ts");
 });
 
 test("单工具卡：子调用树线与标题勾对齐", () => {

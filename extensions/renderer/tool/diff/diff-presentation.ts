@@ -71,7 +71,7 @@ export function buildDiffSummaryText(stats: DiffSummaryStats, width: number): st
 }
 
 /**
- * 折叠摘要行样式：整行 muted，`+A -D` 用 diff 头行同一套绿/红，hover 只把动作词提到 text。
+ * 折叠摘要行样式：整行 muted，`+A -D` 用 diff 头行同一套绿/红，`click to show more` 与其余折叠卡一致用 dim，hover 提到 text。
  * 0 行预览与多行预览共用这一套颜色：改折叠行数时同一处信息不变色。
  */
 export function styleDiffSummaryLine(
@@ -103,7 +103,7 @@ export function styleDiffSummaryLine(
 	}
 	if (hintIndex >= cursor) {
 		pushMuted(hintIndex);
-		pieces.push(theme.fg(hovered ? "text" : "muted", hint));
+		pieces.push(theme.fg(hovered ? "text" : "dim", hint));
 		cursor = hintIndex + hint.length;
 	}
 	pushMuted(text.length);

@@ -245,12 +245,19 @@ test("pi intermediate omissions retain split number gutters", () => {
 	);
 });
 
-test("edit/write collapsed diff hints switch from muted to white text on hover", () => {
+test("edit/write collapsed diff hints switch from dim to white text on hover", () => {
 	let hovered = false;
 	const hoverTheme = {
 		...theme,
 		fg(color: string, text: string) {
-			const code = color === "muted" ? "\x1b[90m" : color === "text" ? "\x1b[97m" : "\x1b[37m";
+			const code =
+				color === "muted"
+					? "\x1b[90m"
+					: color === "dim"
+						? "\x1b[94m"
+						: color === "text"
+							? "\x1b[97m"
+							: "\x1b[37m";
 			return `${code}${text}\x1b[39m`;
 		},
 	};
@@ -268,7 +275,7 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 		"",
 	);
 	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
-	assert.match(hint(), /\x1b\[90m/, "resting edit hint uses muted color");
+	assert.match(hint(), /\x1b\[94m/, "resting edit hint uses dim color");
 	hovered = true;
 	assert.match(hint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
 	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*·/, "edit separator dot stays muted");
@@ -288,7 +295,7 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 	);
 	const writeHint = () =>
 		output(writeComponent).find((line) => line.includes("click to show more")) ?? "";
-	assert.match(writeHint(), /\x1b\[90m/, "resting write hint uses muted color");
+	assert.match(writeHint(), /\x1b\[94m/, "resting write hint uses dim color");
 	hovered = true;
 	assert.match(writeHint(), /\x1b\[90m[^\n]*· [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
 	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*·/, "write separator dot stays muted");

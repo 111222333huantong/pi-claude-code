@@ -95,26 +95,26 @@ function succeed(component: any, args: any, text = "ok") {
 	return component;
 }
 
-test("标题行：标题用 toolTitle，载荷用 dim，宽度不够时省掉载荷", () => {
+test("标题行：标题用 toolTitle，载荷用 muted，宽度不够时省掉载荷", () => {
 	const fg = (color: string, text: string) => `<${color}>${text}</${color}>`;
 	const summary = { main: "MCP call github_search_code", detail: "", payload: '{"query":"pi"}' };
 	// 样式分离
 	assert.equal(
 		renderToolSummary(summary, 100, fg as any),
-		'<toolTitle>MCP call github_search_code</toolTitle><dim> {"query":"pi"}</dim>',
+		'<toolTitle>MCP call github_search_code</toolTitle><muted> {"query":"pi"}</muted>',
 	);
 	// 放不下载荷：只留标题
 	assert.equal(
 		renderToolSummary({ ...summary, main: "MCP" }, 6, fg as any),
 		"<toolTitle>MCP</toolTitle>",
 	);
-	// 载荷自身超宽：尾部省略，仍用 dim
+	// 载荷自身超宽：尾部省略，仍用 muted
 	const wide = renderToolSummary(
 		{ main: "MCP", detail: "", payload: JSON.stringify({ query: "x".repeat(60) }) },
 		40,
 		fg as any,
 	);
-	assert.match(wide, /^<toolTitle>MCP<\/toolTitle><dim> \{"query":"x+…<\/dim>$/);
+	assert.match(wide, /^<toolTitle>MCP<\/toolTitle><muted> \{"query":"x+…<\/muted>$/);
 });
 
 test("单卡：标题是真实工具名；直连走字段链，网关用 adapter 的动作风格", async () => {

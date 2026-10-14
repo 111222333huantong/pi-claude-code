@@ -215,9 +215,12 @@ function callSummary(call: CodemodeNestedCall): ToolCallSummary {
 	const parsed = parseCallArgs(raw);
 	if (parsed) {
 		const summary = toolCallSummary(name, parsed.args, { title, variant: "default" });
-		// 截断串只恢复出部分字段：字段链认出来了才用，认不出仍旧贴原文，
-		// 免得把不完整的 JSON 当成完整入参摊开。
-		if (parsed.complete || summary.payload === undefined) return summary;
+		// 截断串只恢复出部分字段：字段链认出来了才用（payload 是字段链挑出的值，
+		// path/main 的兜底标题不算）；认不出仍旧贴原文，免得把不完整的 JSON 当成完整入参摊开。
+		const recognized = summary.payload !== undefined || summary.path !== undefined;
+		// 完全还原的入参：标题与载荷分色后的 summary 直接用；恢复了字段的也用结构化
+		// 结果（字段链认出的值比截断原文更可读）。认不出的才退回贴原文。
+		if (parsed.complete || recognized) return summary;
 	}
 	return { main: title, detail: "", payload: raw };
 }

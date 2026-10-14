@@ -75,7 +75,8 @@ test("toolLabelClip=0 按可用宽度截断；正数仍是字符上限", () => {
 	try {
 		config.toolLabelClip = 0;
 		const summary = toolCallSummary("bash", { command }, { variant: "grouping" });
-		assert.equal(summary.main, `Bash ${command}`, "摘要不预截断");
+		assert.equal(summary.main, "Bash", "main 只留标题");
+		assert.equal(summary.payload, command, "载荷不预截断");
 		const line = renderToolSummary(summary, 180, plain);
 		assert.equal(line.length, 180, "宽屏铺满可用宽度");
 		assert.equal(line.endsWith("…"), true);
@@ -84,11 +85,9 @@ test("toolLabelClip=0 按可用宽度截断；正数仍是字符上限", () => {
 		assert.equal(formatDisplayPath(path, undefined, 1000), path);
 
 		config.toolLabelClip = 40;
-		const clipped = renderToolSummary(
-			toolCallSummary("bash", { command }, { variant: "grouping" }),
-			180,
-			plain,
-		);
+		const clippedSummary = toolCallSummary("bash", { command }, { variant: "grouping" });
+		assert.equal(clippedSummary.payload?.length, 40, "载荷按 toolLabelClip 截断");
+		const clipped = renderToolSummary(clippedSummary, 180, plain);
 		assert.equal(clipped.length, "Bash ".length + 40);
 	} finally {
 		config.toolLabelClip = previous;

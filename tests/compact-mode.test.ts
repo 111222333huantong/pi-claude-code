@@ -40,7 +40,7 @@ import {
 } from "../extensions/renderer/tool/message-display.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
-import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import { renderToolSummary, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 
@@ -272,20 +272,20 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 	const original = { ...args };
 	try {
 		config.toolLabelClip = 40;
+		const plain = (_color: string, text: string) => text;
 		for (const variant of ["default", "grouping"] as const) {
 			const summary = toolCallSummary("read", args, { variant, cwd: process.cwd() });
-			assert.match(summary.main, /^Read extensions/);
-			assert.match(summary.main, /…[\\/]target-file\.ts$/);
-			assert.doesNotMatch(
-				summary.main,
-				new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-			);
+			assert.equal(summary.main, "Read", "路径值移出 main，交给渲染层按宽度截断");
+			const line = renderToolSummary(summary, 100, plain);
+			assert.match(line, /^Read extensions/);
+			assert.match(line, /…[\\/]target-file\.ts$/);
+			assert.doesNotMatch(line, new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 		}
 		config.toolLabelClip = 200;
 		const outside = join(process.cwd(), "..", "outside-project", "target-file.ts");
 		assert.equal(
-			toolCallSummary("write", { path: outside }, { cwd: process.cwd() }).main,
-			`Write ${outside}`,
+			toolCallSummary("write", { path: outside }, { cwd: process.cwd() }).path?.value,
+			outside,
 			"cwd 外绝对路径保持绝对形式",
 		);
 		assert.deepEqual(args, original, "display formatting does not mutate tool arguments");

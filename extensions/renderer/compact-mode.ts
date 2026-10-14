@@ -751,7 +751,7 @@ function compactEditWriteLine(
 	const hintPart = clickable
 		? `${theme.fg("dim", " · ")}${theme.fg(isToolCallHovered(component.toolCallId) ? "text" : "dim", clickText)}`
 		: "";
-	const line = `${iconPart}${namePart}${theme.fg("toolTitle", pathPart)}${statsStyled}${hintPart}`;
+	const line = `${iconPart}${namePart}${theme.fg("muted", pathPart)}${statsStyled}${hintPart}`;
 	return ["", truncateToWidth(line, width, "")];
 }
 

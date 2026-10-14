@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ThemeBg } from "@earendil-works/pi-coding-agent";
@@ -501,7 +501,19 @@ function loadConfig(): Config {
 }
 
 export function saveConfig() {
-	writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+	// 原子写：先写 tmp 再 rename，崩溃不留半截配置文件（抄 pi-tool-display）。
+	const text = JSON.stringify(config, null, 2);
+	const tmp = `${CONFIG_PATH}.${process.pid}.tmp`;
+	try {
+		writeFileSync(tmp, text);
+		renameSync(tmp, CONFIG_PATH);
+	} catch {
+		try {
+			writeFileSync(CONFIG_PATH, text);
+		} catch {
+			// best effort：读侧已有损坏回退，此处不抛。
+		}
+	}
 }
 
 /** 运行时配置写入的唯一入口：合并 + 规范化 + 持久化。 */

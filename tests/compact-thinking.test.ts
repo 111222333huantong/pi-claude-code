@@ -643,7 +643,7 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 		const hint = firstPlain.find((line: string) => /Thought/.test(line) && /more lines/.test(line));
 		assert.ok(hint, `expected hidden-line hint after Thought, got: ${JSON.stringify(firstPlain)}`);
 		assert.match(hint, /<dim> · \d+ more lines/);
-		const bodyToken = ccstyleConfig.dimThinkingText ? "dim" : "thinkingText";
+		const bodyToken = "dim";
 		assert.ok(
 			!firstPlain.some(
 				(line: string) => new RegExp(`^<${bodyToken}>x+`).test(line) && /more line/.test(line),

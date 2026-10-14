@@ -64,7 +64,6 @@ export type Config = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
-	dimThinkingText: boolean;
 	showStartupHeader: boolean;
 	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
 	stickyUserMessage: boolean;
@@ -161,7 +160,6 @@ export const DEFAULT_CONFIG: Config = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
-	dimThinkingText: false,
 	showStartupHeader: true,
 	stickyUserMessage: true,
 	enableSessionReference: true,
@@ -294,7 +292,6 @@ export function normalizeConfig(input: unknown): Config {
 			source.animationIntervalMs,
 			DEFAULT_CONFIG.animationIntervalMs,
 		),
-		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		stickyUserMessage: source.stickyUserMessage !== false,
 		enableSessionReference: source.enableSessionReference !== false,
@@ -364,7 +361,6 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
-		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,

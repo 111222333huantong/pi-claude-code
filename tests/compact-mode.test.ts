@@ -204,9 +204,6 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ mode: "invalid" }).mode, "on");
 	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({}).dimThinkingText, false);
-	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
-	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
 	assert.equal(normalizeConfig({}).toolLabelClip, 0);
 	assert.equal(normalizeConfig({ toolLabelClip: 40 }).toolLabelClip, 40);
 	assert.equal(normalizeConfig({ toolLabelClip: "0" }).toolLabelClip, 0);
@@ -297,48 +294,28 @@ test("tool path summaries relativize cwd paths and preserve filenames when clipp
 	}
 });
 
-test("dim thinking text uses the dim token without mutating the theme", () => {
+test("thinking 正文固定走 dim，不改主题", () => {
 	const theme = { fg: (color: string, text: string) => `<${color}>${text}` };
-	const previous = config.dimThinkingText;
-	try {
-		config.dimThinkingText = false;
-		assert.equal(styleCompactThinkingText("hi", theme as any), "<thinkingText>hi");
-		config.dimThinkingText = true;
-		assert.equal(styleCompactThinkingText("hi", theme as any), "<dim>hi");
-	} finally {
-		config.dimThinkingText = previous;
-	}
+	assert.equal(styleCompactThinkingText("hi", theme as any), "<dim>hi");
 });
 
-test("Dim thinking text 开启时摘要行整行走 dim", () => {
+test("摘要行整行走 dim", () => {
 	const previousTheme = getMessageDisplayTheme();
-	const previousDim = config.dimThinkingText;
 	const previousMode = config.mode;
 	setMessageDisplayTheme({
 		fg: (color: string, text: string) => `<${color}>${text}`,
 	} as any);
-	// 每次调用独立装卸补丁：共用安装时，上一个组件的回合会被 refresh 抢回去。
-	const summaryOf = (dim: boolean) => {
-		config.mode = "compact";
-		config.dimThinkingText = dim;
-		const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
-		try {
-			const msg = toolCallMessage(1);
-			const assistant = new AssistantMessageComponent(msg, true) as any;
-			assistant.updateContent(msg);
-			return assistant.render(200).join("\n");
-		} finally {
-			hooks.shutdown();
-		}
-	};
+	config.mode = "compact";
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
 	try {
-		const muted = summaryOf(false);
-		assert.ok(muted.includes("<muted>, bash×1"), `关闭时工具计数走 muted: ${muted}`);
-		const dim = summaryOf(true);
-		assert.ok(dim.includes("<dim>, bash×1"), `开启时工具计数走 dim: ${dim}`);
-		assert.ok(!dim.includes("<muted>"), `开启时整行不该再有 muted: ${dim}`);
+		const msg = toolCallMessage(1);
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const rendered = assistant.render(200).join("\n");
+		assert.ok(rendered.includes("<dim>, bash×1"), `工具计数走 dim: ${rendered}`);
+		assert.ok(!rendered.includes("<muted>"), `整行不该再有 muted: ${rendered}`);
 	} finally {
-		config.dimThinkingText = previousDim;
+		hooks.shutdown();
 		config.mode = previousMode;
 		setMessageDisplayTheme(previousTheme);
 	}

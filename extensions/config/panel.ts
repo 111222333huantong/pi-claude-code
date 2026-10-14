@@ -86,7 +86,7 @@ function excludeRenderersDescription(names: readonly string[]): string {
 
 function customFooterDescription(enabled: boolean): string {
 	if (!enabled) return "Pi native footer restored. Chip layout below still applies when turned on.";
-	return "Custom status bar with model, context, cache, cost, git, and plugin chips.";
+	return "Custom status bar. Model, context, cache, rate, cost, cwd, git, and plugin chips share one layout.";
 }
 
 function footerTokenRateDescription(enabled: boolean): string {
@@ -114,7 +114,7 @@ function footerGitStatsDescription(mode: FooterGitStatsMode): string {
 }
 
 function pluginChipsDescription(): string {
-	return `Arrange plugin chips: ${formatFooterChipSummary(config)}. Enter to edit.`;
+	return `Arrange footer chips: ${formatFooterChipSummary(config)}. Enter to edit.`;
 }
 
 function footerLayoutFromConfig(): FooterChipLayout {
@@ -597,15 +597,6 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingAnimationSetting, closeSubmenu),
 		};
-		const thinkingDimSetting = {
-			id: "dimThinkingText",
-			label: "Dim thinking text",
-			description: config.dimThinkingText
-				? "Thinking text uses the theme's dim color."
-				: "Keep the default thinking text color.",
-			currentValue: config.dimThinkingText ? "on" : "off",
-			values: ["on", "off"],
-		};
 		const startupHeaderSetting = {
 			id: "showStartupHeader",
 			label: "Startup header",
@@ -773,7 +764,7 @@ export async function showCcstylePanel(
 		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
-			label: "Plugin chips",
+			label: "Footer chips",
 			description: pluginChipsDescription(),
 			currentValue: formatFooterChipSummary(config),
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
@@ -997,12 +988,6 @@ export async function showCcstylePanel(
 					});
 					thinkingAnimationSetting.currentValue = String(config.animationIntervalMs);
 					break;
-				case "dimThinkingText":
-					updateConfig({ dimThinkingText: value === "on" });
-					thinkingDimSetting.description = config.dimThinkingText
-						? "Thinking text uses the theme's dim color."
-						: "Keep the default thinking text color.";
-					break;
 				case "stickyUserMessage": {
 					updateConfig({ stickyUserMessage: value === "on" });
 					stickyUserMessageSetting.description = config.stickyUserMessage
@@ -1074,12 +1059,7 @@ export async function showCcstylePanel(
 			{
 				id: "thinking",
 				label: "Thinking",
-				items: [
-					thinkingTitleSetting,
-					thinkingPreviewSetting,
-					thinkingAnimationSetting,
-					thinkingDimSetting,
-				],
+				items: [thinkingTitleSetting, thinkingPreviewSetting, thinkingAnimationSetting],
 			},
 			{
 				id: "footer",

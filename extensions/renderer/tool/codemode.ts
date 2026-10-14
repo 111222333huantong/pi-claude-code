@@ -176,7 +176,7 @@ function statusIcon(status: unknown, theme: any): string {
 			return theme.fg("muted", "⊘");
 		default:
 			// 运行中：帧在 render() 内取，动画定时器只负责 requestRender
-			return theme.fg("accent", toolLoadingIcon());
+			return theme.fg("dim", toolLoadingIcon());
 	}
 }
 

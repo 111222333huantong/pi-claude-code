@@ -124,11 +124,11 @@ export function resolveToolVisualState(context: any): ToolVisualState | undefine
 	return settledState;
 }
 
-export function toolIconColor(context: any): "accent" | "error" | "success" | "muted" {
+export function toolIconColor(context: any): "dim" | "error" | "success" | "muted" {
 	const visualState = getToolVisualState(context);
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
-	if (context?.isPartial || context?.executionStarted || visualState === "pending") return "accent";
+	if (context?.isPartial || context?.executionStarted || visualState === "pending") return "dim";
 	return "muted";
 }
 

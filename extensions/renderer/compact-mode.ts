@@ -114,8 +114,7 @@ export function styleCompactThinkingText(
 	bold = false,
 ): string {
 	if (!theme) return text;
-	const color = config.dimThinkingText ? "dim" : "thinkingText";
-	const colored = typeof theme.fg === "function" ? theme.fg(color, text) : text;
+	const colored = typeof theme.fg === "function" ? theme.fg("dim", text) : text;
 	const weighted = bold && typeof theme.bold === "function" ? theme.bold(colored) : colored;
 	return typeof theme.italic === "function" ? theme.italic(weighted) : weighted;
 }
@@ -709,7 +708,7 @@ function compactEditWriteLine(
 	const isError = component.result?.isError === true;
 	const isPending = !component.result || component.isPartial === true;
 	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : "✓";
-	const iconColor = isError ? "error" : isPending ? "accent" : "success";
+	const iconColor = isError ? "error" : isPending ? "dim" : "success";
 	let statsText = "";
 	let statsStyled = "";
 	// 统计只显示一处：正文自带 +A -D 时标题不再重复（showStats=false）。
@@ -988,8 +987,7 @@ function compactAssistantLineComponent(
 				return paint.lines;
 			}
 			const plainText = truncateToWidth(resolved, summaryWidth, "…");
-			// Dim thinking text 开启时整行统一 dim，否则工具计数保持 muted。
-			const plain = (value: string) => theme.fg(config.dimThinkingText ? "dim" : "muted", value);
+			const plain = (value: string) => theme.fg("dim", value);
 			let text = plain(plainText);
 			if (runningActive || plainText.startsWith("Ran for ")) {
 				const separator = plainText.indexOf(", ");

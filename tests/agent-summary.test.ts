@@ -86,6 +86,15 @@ test("summaryMarkdown renders the agent summary entry", () => {
 		summaryMarkdown({ ...data, durationMs: 400, outputTokens: 1_596 }),
 		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file*",
 	);
+	// 有 ttftMs → 追加 TTFT 段；无/零 → 省略。
+	assert.equal(
+		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596, ttftMs: 812 }),
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 52.5s · 30.4 tok/s · TTFT 812ms*",
+	);
+	assert.equal(
+		summaryMarkdown({ ...data, ttftMs: 0 }),
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+	);
 	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
 });
 

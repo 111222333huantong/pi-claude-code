@@ -10,6 +10,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { formatDuration } from "../../utils/format.ts";
+import { currentTtftMs, formatTtft } from "../shell/token-rate.ts";
 
 /** 工具分类。 */
 export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
@@ -25,6 +26,8 @@ export type AgentSummaryData = {
 	durationMs: number;
 	/** 本回合 assistant 输出 tokens 总和；旧持久化 entry 无此字段（省略 tok/s 段）。 */
 	outputTokens?: number;
+	/** 首 token 延迟毫秒（读 token-rate 单例）；无首 token 时省略 TTFT 段。 */
+	ttftMs?: number;
 };
 
 export function classifyTool(toolName: string): AgentToolCategory {
@@ -176,12 +179,14 @@ export function summaryMarkdown(
 		.map((part, index) => capitalizeFirst(part, index === 0))
 		.map((part) => paintNumber(part.endsWith("failed") ? colors.failed : colors.success, part))
 		.join(", ");
-	// 尾段：有速率 → `· 52.5s · 30.4 tok/s`（精确时长 + 速率）；无速率 → 旧格式 `· 49s`（旧 entry 兼容）。
+	// 尾段：有速率 → `· 52.5s · 30.4 tok/s · TTFT 812ms`；无速率 → 旧格式 `· 49s`（旧 entry 兼容）。
 	const rate = tokenRate(data);
+	const ttft =
+		typeof data.ttftMs === "number" && data.ttftMs > 0 ? ` · TTFT ${formatTtft(data.ttftMs)}` : "";
 	const tail =
 		rate !== null
-			? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s`
-			: formatDuration(data.durationMs);
+			? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s${ttft}`
+			: `${formatDuration(data.durationMs)}${ttft}`;
 	const line = tail ? `${text} · ${tail}` : text;
 	return `> *${line}*`;
 }
@@ -210,6 +215,12 @@ export function bindAgentSummary(
 		// 防御转换：测试 harness 会以无参调用；messages 只在真实 AgentEndEvent 上存在。
 		const messages = (event as { messages?: readonly unknown[] } | undefined)?.messages;
 		summary.recordUsage(sumUsageOutput(messages));
-		if (summary.toolCount >= 2) onSummary(summary.snapshot());
+		if (summary.toolCount < 2) return;
+		const data = summary.snapshot();
+		// TTFT 读 token-rate 单例（跨 turn 保持到下一条用户指令，agent_end 时仍有效）；
+		// 无首 token 时不设字段，保持旧 entry 形状。
+		const ttft = currentTtftMs();
+		if (ttft > 0) data.ttftMs = ttft;
+		onSummary(data);
 	});
 }

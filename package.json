@@ -31,7 +31,9 @@
 		],
 		"themes": [
 			"./themes/cc-dark.json",
-			"./themes/cc-light.json"
+			"./themes/cc-light.json",
+			"./themes/catppuccin-mocha.json",
+			"./themes/catppuccin-latte.json"
 		],
 		"image": "https://raw.githubusercontent.com/111222333huantong/pi-claude-code/main/assets/readme/preview.webp",
 		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"

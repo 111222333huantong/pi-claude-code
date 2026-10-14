@@ -612,7 +612,13 @@ export function createCcstyleTool(
 					? failureSummaryText(text)
 					: quietDone
 						? "command completed (no output)"
-						: collapsedResultSummary({ result, toolName, text, isError });
+						: collapsedResultSummary({
+								result,
+								toolName,
+								text,
+								isError,
+								path: typeof args?.path === "string" ? args.path : undefined,
+							});
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
 			const hintText = showMoreHintText();
 			const hintPrefix = expandable ? theme.fg("dim", " · ") : "";

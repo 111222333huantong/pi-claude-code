@@ -85,16 +85,21 @@ export function collapsedResultSummary(options: {
 	toolName: string;
 	text: string;
 	isError: boolean;
+	/** write 结果行缀路径（`Wrote N lines to <path>`），无则只报计数。 */
+	path?: string;
 }): string {
-	const { result, toolName, text, isError } = options;
+	const { result, toolName, text, isError, path } = options;
 	if (isError) {
 		// 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
 		return text ? oneLine(text, 72) : "Failed";
 	}
 	const outputLines = outputLineCount(result) || countLines(text);
 	if (!outputLines) return "Done";
-	const action = toolName === "read" ? "loaded" : "returned";
-	return `${outputLines} ${outputLines === 1 ? "line" : "lines"} ${action}`;
+	const lines = `${outputLines} ${outputLines === 1 ? "line" : "lines"}`;
+	// CC 句子式结果：read/write 用动词句，其余保持（整行 muted 着色不变）。
+	if (toolName === "read") return `Read ${lines}`;
+	if (toolName === "write") return path ? `Wrote ${lines} to ${path}` : `Wrote ${lines}`;
+	return `${lines} returned`;
 }
 
 /** 失败种类：用户动作（取消/拒绝/中断，dim 色）与真错误（红）分流。 */

@@ -14,6 +14,7 @@ import {
 	mcpCallSummary,
 	toolCallSummary,
 } from "../extensions/renderer/tool/names.ts";
+import { collapsedResultSummary } from "../extensions/renderer/tool/result.ts";
 import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 import { stripAnsi } from "../extensions/utils/ansi-text.ts";
 
@@ -237,4 +238,43 @@ test("path hyperlinks wrap display paths in OSC8 without changing width", () => 
 	} finally {
 		config.enablePathHyperlinks = previous;
 	}
+});
+
+test("collapsedResultSummary uses sentence style for read/write", () => {
+	const read = collapsedResultSummary({
+		result: { content: [{ type: "text", text: "a\nb\nc" }] },
+		toolName: "read",
+		text: "a\nb\nc",
+		isError: false,
+	});
+	assert.equal(read, "Read 3 lines");
+	const readOne = collapsedResultSummary({
+		result: { content: [{ type: "text", text: "a" }] },
+		toolName: "read",
+		text: "a",
+		isError: false,
+	});
+	assert.equal(readOne, "Read 1 line");
+	const wrote = collapsedResultSummary({
+		result: { content: [{ type: "text", text: "ok" }] },
+		toolName: "write",
+		text: "ok",
+		isError: false,
+		path: "src/n.ts",
+	});
+	assert.equal(wrote, "Wrote 1 line to src/n.ts");
+	const wroteNoPath = collapsedResultSummary({
+		result: { content: [{ type: "text", text: "a\nb" }] },
+		toolName: "write",
+		text: "a\nb",
+		isError: false,
+	});
+	assert.equal(wroteNoPath, "Wrote 2 lines");
+	const bash = collapsedResultSummary({
+		result: { content: [{ type: "text", text: "ok" }] },
+		toolName: "bash",
+		text: "ok",
+		isError: false,
+	});
+	assert.equal(bash, "1 line returned");
 });

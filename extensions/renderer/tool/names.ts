@@ -1,6 +1,7 @@
-import { posix, win32 } from "node:path";
+import { isAbsolute, posix, resolve, win32 } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
+import { getKeybindings, hyperlink, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { resolveAgentTitle } from "../../feature/reference/agent-titles.ts";
 import { oneLine } from "../../utils/format.ts";
@@ -220,7 +221,7 @@ export type ToolCallSummary = {
 	main: string;
 	detail: string;
 	/** 路径摘要保留结构，供最终渲染按实际宽度优先保留文件名。 */
-	path?: { prefix: string; value: string };
+	path?: { prefix: string; value: string; absolute?: string };
 	/** 标题之外的原始载荷（完整入参 JSON、脚本代码…），已压成单行，渲染时用 dim 接在标题后。 */
 	payload?: string;
 };
@@ -375,7 +376,29 @@ export function fitToolCallSummary(summary: ToolCallSummary, width: number): str
 	const prefix = summary.path.prefix;
 	const pathWidth = Math.max(0, width - visibleWidth(prefix) - 1);
 	if (pathWidth <= 0) return headToWidth(prefix, width, "…");
-	return `${prefix} ${truncatePathToWidth(summary.path.value, Math.min(pathWidth, clipLimit()))}`;
+	const shown = truncatePathToWidth(summary.path.value, Math.min(pathWidth, clipLimit()));
+	return `${prefix} ${linkPath(shown, summary.path.absolute)}`;
+}
+
+/** OSC8 文件超链接：先截断再包（序列零宽，不断行）；关开关或无绝对路径时原文。 */
+function linkPath(display: string, absolute: string | undefined): string {
+	if (!config.enablePathHyperlinks || !absolute) return display;
+	try {
+		return hyperlink(display, pathToFileURL(absolute).toString());
+	} catch {
+		return display;
+	}
+}
+
+/** 展示路径对应的绝对路径（相对路径按 cwd 解析），解析失败回 undefined。 */
+function absoluteOf(value: unknown, cwd: string | undefined): string | undefined {
+	if (typeof value !== "string" || !value) return undefined;
+	try {
+		if (isAbsolute(value)) return value;
+		return resolve(cwd || process.cwd(), value);
+	} catch {
+		return undefined;
+	}
 }
 
 function pathSummary(
@@ -388,7 +411,7 @@ function pathSummary(
 	return {
 		main: `${prefix} ${truncatePathToWidth(path, clipLimit())}`,
 		detail,
-		path: { prefix, value: path },
+		path: { prefix, value: path, absolute: absoluteOf(value, cwd) },
 	};
 }
 

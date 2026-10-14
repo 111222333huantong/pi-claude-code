@@ -737,6 +737,13 @@ export async function showCcstylePanel(
 			"Image paster disabled.",
 			config.enableImagePaster,
 		);
+		const pathHyperlinksToggle = featureToggleSetting(
+			"enablePathHyperlinks",
+			"Path hyperlinks",
+			"File paths in tool titles become clickable OSC8 links. Next restart applies.",
+			"Path hyperlinks disabled.",
+			config.enablePathHyperlinks,
+		);
 		const clipboardPasteToggle = featureToggleSetting(
 			"enableClipboardPaste",
 			"Clipboard paste",
@@ -906,6 +913,7 @@ export async function showCcstylePanel(
 			enableWorkingMessage: workingMessageToggle,
 			enableAliases: aliasesToggle,
 			enableImagePaster: imagePasterToggle,
+			enablePathHyperlinks: pathHyperlinksToggle,
 			enableClipboardPaste: clipboardPasteToggle,
 			enableEscSteer: escSteerToggle,
 			enableDoubleEscClear: doubleEscClearToggle,
@@ -1221,6 +1229,7 @@ export async function showCcstylePanel(
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
 					imagePasterToggle.setting,
+					pathHyperlinksToggle.setting,
 					clipboardPasteToggle.setting,
 					escSteerToggle.setting,
 					doubleEscClearToggle.setting,

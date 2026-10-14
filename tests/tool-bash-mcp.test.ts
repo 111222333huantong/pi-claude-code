@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import {
 	bashHeadline,
+	fitToolCallSummary,
 	humanizeMcpToolName,
 	isLikelyQuietCommand,
 	isMcpToolName,
@@ -208,5 +210,31 @@ test("running title keeps live count, settled title drops it", () => {
 		config.mode = previousMode;
 		clearAllAnimations();
 		hooks.shutdown();
+	}
+});
+
+test("path hyperlinks wrap display paths in OSC8 without changing width", () => {
+	const previous = config.enablePathHyperlinks;
+	try {
+		const summary = toolCallSummary(
+			"read",
+			{ path: "src/a.ts" },
+			{ variant: "default", cwd: "/repo" },
+		);
+		config.enablePathHyperlinks = false;
+		const plain = fitToolCallSummary(summary, 100);
+		assert.ok(!plain.includes("\x1b]8;;"), "默认关闭无超链接");
+		config.enablePathHyperlinks = true;
+		const linked = fitToolCallSummary(summary, 100);
+		assert.ok(
+			linked.includes("\x1b]8;;file:///repo/src/a.ts"),
+			`相对路径按 cwd 解析: ${JSON.stringify(linked)}`,
+		);
+		assert.equal(visibleWidth(linked), visibleWidth(plain), "序列零宽");
+		// 绝对路径直用
+		const abs = toolCallSummary("read", { path: "/x/b.ts" }, { variant: "default" });
+		assert.ok(fitToolCallSummary(abs, 100).includes("\x1b]8;;file:///x/b.ts"));
+	} finally {
+		config.enablePathHyperlinks = previous;
 	}
 });

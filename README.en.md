@@ -46,6 +46,7 @@ Run `/reload` after installation.
 | Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
 | Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |
 | Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
+| Path hyperlinks             | File paths in tool titles become clickable OSC8 links (zero width change)                 | `/ccstyle` Features tab, off by default         |
 | Statusline (this fork)      | Two-line footer: model/ctx/cost/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
 | Status bar (upstream)       | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
 > Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
@@ -106,6 +107,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // features (this fork)
   "enableImagePaster": true,               // image paster: clipboard/dropped images as attachments
   "enableClipboardPaste": true,            // Ctrl+V clipboard paste (Windows only)
+  "enablePathHyperlinks": false,           // OSC8 hyperlinks for file paths in titles (off by default)
   "enableEscSteer": true,                  // empty-draft Esc aborts and auto-continues
   "enableDoubleEscClear": true,            // double Esc clears a non-empty draft
 

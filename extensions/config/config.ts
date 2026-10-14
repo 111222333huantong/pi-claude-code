@@ -86,6 +86,7 @@ export type Config = {
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
 	enableImagePaster: boolean;
+	enablePathHyperlinks: boolean;
 	enableClipboardPaste: boolean;
 	enableEscSteer: boolean;
 	enableDoubleEscClear: boolean;
@@ -200,6 +201,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableImagePaster: true,
+	enablePathHyperlinks: false,
 	enableClipboardPaste: true,
 	enableEscSteer: true,
 	enableDoubleEscClear: true,
@@ -359,6 +361,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableImagePaster: source.enableImagePaster !== false,
+		enablePathHyperlinks: source.enablePathHyperlinks === true,
 		enableClipboardPaste: source.enableClipboardPaste !== false,
 		enableEscSteer: source.enableEscSteer !== false,
 		enableDoubleEscClear: source.enableDoubleEscClear !== false,
@@ -440,6 +443,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`imagePaster=${source.enableImagePaster ? "on" : "off"}`,
+		`pathLinks=${source.enablePathHyperlinks ? "on" : "off"}`,
 		`clipboardPaste=${source.enableClipboardPaste ? "on" : "off"}`,
 		`escSteer=${source.enableEscSteer ? "on" : "off"}`,
 		`doubleEscClear=${source.enableDoubleEscClear ? "on" : "off"}`,

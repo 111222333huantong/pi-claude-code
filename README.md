@@ -46,6 +46,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 | 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
 | 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
+| 路径超链接              | 工具标题里的文件路径变为可点击 OSC8 链接（零宽度变化）                                | `/ccstyle` Features 页，默认关                  |
 | 状态栏（本 fork）         | 两行 footer：model/ctx/cost/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
 | 状态栏（上游）            | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`（关掉 `/statusline` 后生效） |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/settings` → Theme                             |
@@ -108,6 +109,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   // features（本 fork 增补）
   "enableImagePaster": true,               // 图片粘贴：剪贴板/拖拽图片转附件
   "enableClipboardPaste": true,            // Ctrl+V 剪贴板粘贴（仅 Windows）
+  "enablePathHyperlinks": false,           // 工具标题文件路径 OSC8 超链接（默认关）
   "enableEscSteer": true,                  // 空草稿 Esc 中断后续跑
   "enableDoubleEscClear": true,            // 双击 Esc 清空草稿
   "enableCustomFooter": true,               // 上游 footer（本 fork 状态栏关闭时回退用）

@@ -1,5 +1,5 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { showTextPreview } from "../../feature/context.ts";
+import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import {
 	patchRegistry,
@@ -618,7 +618,11 @@ function patchFullscreenViewportInput(tui: any): void {
 			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
 			scheduleScrollButtonSync(tui, data);
 			const packets = parseSgrMousePackets(data);
-			if (packets) {
+			// 文本预览（editorContainer 组件，不进 overlayStack）活动时，鼠标全部
+			// 放行给它的 focused handleInput：预览矩形盖住的残留工具 region 会
+			// 被 toggleToolAtMouseClick 误命中并 consume，预览收不到点击。
+			// 跳过扩展的 packet 处理，落到 Reflect.apply 交给官方链。
+			if (packets && !hasActiveTextPreview()) {
 				// overlay 可见时：落在 overlay 矩形内的包全部放行官方（文本预览的
 				// [esc] 点击/滚轮、官方搜索框等），扩展不展开/收起/hover。
 				const overlayPackets = tui.hasOverlay?.()
@@ -986,6 +990,9 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 		scheduleScrollButtonSync(getToolMouseTui(), data);
 		return undefined;
 	}
+	// 文本预览活动时，点击交给预览自己的 handleInput（esc/copy/滚动条），
+	// 不被残留的工具 region 吞掉；预览关闭后恢复。
+	if (hasActiveTextPreview()) return undefined;
 
 	let consumed = false;
 	for (const packet of packets) {

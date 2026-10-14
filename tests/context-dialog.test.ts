@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
+import { rgbColor } from "@earendil-works/pi-tui";
 import {
 	capParts,
 	collectContextBreakdown,
@@ -86,12 +87,12 @@ test("context breakdown separates tools, results, and conversation without infla
 	assert.deepEqual(
 		parts.map(({ label, color }) => [label, color]),
 		[
-			["System prompt", "accent"],
-			["Memory", "error"],
-			["Skills", "warning"],
-			["Tools definition", "success"],
-			["Tool results", "customMessageLabel"],
-			["Context", "warning"],
+			["System prompt", rgbColor(0x79, 0xc0, 0xff)],
+			["Memory", rgbColor(0xff, 0x7b, 0x72)],
+			["Skills", rgbColor(0xcb, 0x92, 0x14)],
+			["Tools definition", rgbColor(0x37, 0xb3, 0x4a)],
+			["Tool results", rgbColor(0xf7, 0x78, 0xba)],
+			["Context", rgbColor(0xf0, 0x88, 0x3e)],
 		],
 	);
 	assert.equal(parts.find((part) => part.label === "System prompt")?.tokens, 50);
@@ -130,10 +131,10 @@ test("context breakdown separates tools, results, and conversation without infla
 	);
 	const finalParts = [
 		...fitted,
-		{ label: "Other", tokens: 10, color: "muted" },
-		{ label: "Free space", tokens: 100, color: "dim" },
+		{ label: "Other", tokens: 10, color: rgbColor(0x92, 0x9e, 0xab) },
+		{ label: "Free space", tokens: 100, color: rgbColor(0x76, 0x84, 0x94) },
 	];
-	assert.equal(new Set(finalParts.map((part) => part.color)).size, 7);
+	assert.equal(new Set(finalParts.map((part) => part.color)).size, 8);
 });
 
 test("context breakdown attributes embedded memory and skills once", () => {
@@ -196,7 +197,7 @@ test("capParts never produces negative tokens when estimates exceed usage", () =
 	const parts = Array.from({ length: 8 }, (_, index) => ({
 		label: String(index),
 		tokens: 1,
-		color: "dim" as const,
+		color: rgbColor(0x76, 0x84, 0x94),
 	}));
 	const fitted = capParts(parts, 5);
 	assert.equal(
@@ -271,11 +272,11 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 	const preview = showTextPreview({ ui } as any, "Output", "hello");
 	assert.equal(hasActiveTextPreview(), true);
 	assert.equal(escColor, "muted");
-	// 80×24、64 列居中、margin 2 → [esc] 命中 row=4, col=67..71。
-	ui.component.handleInput(`\x1b[<35;67;4M`);
+	// handleMouse 用弹框局部 0-based 坐标：title 第 1 行，[esc] 在行尾 col=58..62。
+	ui.component.handleMouse({ type: "move", x: 60, y: 1, button: "none" });
 	ui.component.render(64);
 	assert.equal(escColor, "text", "[esc] hover switches to text color");
-	ui.component.handleInput(`\x1b[<0;67;4M`);
+	ui.component.handleMouse({ type: "press", x: 60, y: 1, button: "left" });
 	await preview;
 	assert.equal(hasActiveTextPreview(), false);
 });
@@ -302,11 +303,11 @@ test("showTextPreview copies content from the [copy] hitbox and flashes confirma
 	try {
 		const preview = showTextPreview({ ui } as any, "Output", "hello preview");
 		assert.equal(copyColor, "muted");
-		// [copy] 命中 row=4, col=60..65。
-		ui.component.handleInput(`\x1b[<35;60;4M`);
+		// [copy] 命中 title 行 col=51..56（esc 左侧）。
+		ui.component.handleMouse({ type: "move", x: 53, y: 1, button: "none" });
 		ui.component.render(64);
 		assert.equal(copyColor, "text", "[copy] hover switches to text color");
-		ui.component.handleInput(`\x1b[<0;60;4M`);
+		ui.component.handleMouse({ type: "press", x: 53, y: 1, button: "left" });
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		assert.deepEqual(copied, ["hello preview"]);
 		assert.deepEqual(flashes, ["Copied!"]);
@@ -324,10 +325,10 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 	const preview = showTextPreview({ ui } as any, "Output", content);
 	const initial = ui.component.render(64).join("\n");
 	assert.match(initial, /1-13 \/ 100 lines/);
-	// scrollbar col=71，body track row=6..18；从顶部 thumb 拖到底部。
-	ui.component.handleInput(`\x1b[<0;71;6M`);
-	ui.component.handleInput(`\x1b[<32;71;18M`);
-	ui.component.handleInput(`\x1b[<0;71;18m`);
+	// 滚动条局部坐标：col=62（右 border 内侧），body track row=3..；从顶部 thumb 拖到底部。
+	ui.component.handleMouse({ type: "press", x: 62, y: 5, button: "left" });
+	ui.component.handleMouse({ type: "drag", x: 62, y: 15, button: "left" });
+	ui.component.handleMouse({ type: "release", x: 62, y: 15, button: "left" });
 	const dragged = ui.component.render(64).join("\n");
 	assert.match(dragged, /88-100 \/ 100 lines/);
 	ui.component.handleInput("\x1b");

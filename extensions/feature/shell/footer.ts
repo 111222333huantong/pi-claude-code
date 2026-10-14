@@ -1,9 +1,10 @@
 /**
  * 自定义底栏：chips + zentui 图标/句子
  *
- * 第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · 用户排到 line1 的插件芯片
- * 第二行：cwd in session on  branch (+16 −1) · 用户排到 line2 的插件芯片
- * 第三行：仅当 line3 有可见插件芯片时出现
+ * 默认第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · pi-usage · 其余 line1 芯片
+ * 默认第二行：cwd in session ·  branch (+16 −1) · 其余 line2 芯片
+ * 第三行：仅当 line3 有可见芯片时出现
+ * model / context / cache / rate / cost / cwd / git 与插件芯片同一套排布，可换行、调序、隐藏
  *
  *  - line1 短芯片，· 分隔；缓存用 zentui 󰆼，费用 success
  *  - line2 用 zentui 句式 in / on + 
@@ -23,7 +24,15 @@ import { stripAnsi } from "../../utils/ansi-text.ts";
 import { formatFooterCost } from "./footer-currency.ts";
 import { formatTokenCount } from "../../utils/format.ts";
 import {
+	FOOTER_CACHE_KEY,
+	FOOTER_CONTEXT_KEY,
+	FOOTER_COST_KEY,
+	FOOTER_CWD_KEY,
+	FOOTER_GIT_KEY,
+	FOOTER_MODEL_KEY,
+	FOOTER_RATE_KEY,
 	PI_USAGE_KEY,
+	isBuiltinFooterKey,
 	isSkippedFooterStatusKey,
 	resolveFooterChipLayout,
 	visibleFooterPluginTexts,
@@ -144,11 +153,11 @@ function ownMcpChip(): string {
 	return cachedMcpChip && !cachedExtensionStatuses.has(MCP_STATUS_KEY) ? cachedMcpChip : "";
 }
 
-/** 面板用：当前 setStatus 文案 + 本包 pi-usage / MCP（无文案时为空字符串）。 */
+/** 面板用：当前 setStatus 文案 + 本包 pi-usage / MCP（无文案时为空字符串）。内置项由配置保证在列表里。 */
 export function getFooterStatusSnapshot(): Map<string, string> {
 	const out = new Map<string, string>();
 	for (const [key, text] of cachedExtensionStatuses) {
-		if (isSkippedFooterStatusKey(key)) continue;
+		if (isSkippedFooterStatusKey(key) || isBuiltinFooterKey(key)) continue;
 		out.set(key, text);
 	}
 	out.set(PI_USAGE_KEY, cachedLocalUsageText);
@@ -418,21 +427,6 @@ const createCustomFooterFactory =
 			if (mcpChip) pluginTexts.set(MCP_STATUS_KEY, mcpChip);
 			const layout = resolveFooterChipLayout(layoutFromConfig(), [...pluginTexts.keys()]);
 			const dimPlugin = (text: string) => colorUsageChip(theme, text);
-			const line1Plugins = visibleFooterPluginTexts(
-				layout.footerLine1Keys,
-				layout.footerHiddenKeys,
-				pluginTexts,
-			).map(dimPlugin);
-			const line2Plugins = visibleFooterPluginTexts(
-				layout.footerLine2Keys,
-				layout.footerHiddenKeys,
-				pluginTexts,
-			).map(dimPlugin);
-			const line3Plugins = visibleFooterPluginTexts(
-				layout.footerLine3Keys,
-				layout.footerHiddenKeys,
-				pluginTexts,
-			).map(dimPlugin);
 
 			const pctLabel = percent === null || percent === undefined ? "?" : `${Math.floor(percent)}%`;
 			const cachePct = getCachePct();
@@ -447,22 +441,13 @@ const createCustomFooterFactory =
 						config.footerTokenRateTtft,
 					)
 				: "";
-			const rateChip = rateLabel ? theme.fg("dim", rateLabel) : "";
-			const costChip =
+			const costLabel =
 				cost || usingSubscription
-					? theme.fg(
-							"dim",
-							formatFooterCost(cost, config.footerCurrency, config.footerCurrencyRate),
-						) + (usingSubscription ? theme.fg("warning", " sub") : "")
+					? formatFooterCost(cost, config.footerCurrency, config.footerCurrencyRate)
 					: "";
-			const line1 = joinChips([
-				modelChip(theme, modelLabel, model?.reasoning ? thinkingLevelStr : "", thinkingColor),
-				barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${fmt(contextWindow)}`),
-				cacheLabel ? theme.fg("dim", cacheLabel) : "",
-				rateChip,
-				costChip,
-				...line1Plugins,
-			]);
+			const costChip = costLabel
+				? theme.fg("dim", costLabel) + (usingSubscription ? theme.fg("warning", " sub") : "")
+				: "";
 
 			const gitColor = theme.getThinkingBorderColor("medium");
 			let place = theme.fg("accent", cwdLabel);
@@ -471,6 +456,7 @@ const createCustomFooterFactory =
 				place += theme.fg("muted", " in ") + theme.fg("success", sessionName);
 			}
 			const branch = footerData.getGitBranch();
+			let gitChip = "";
 			if (branch) {
 				const s = gitStats;
 				let stats = "";
@@ -484,10 +470,38 @@ const createCustomFooterFactory =
 						theme.fg("error", `−${s.del}`) +
 						theme.fg("dim", ")");
 				const gitLabel = glyphs.git ? `${glyphs.git} ${branch}` : branch;
-				place += theme.fg("muted", " on ") + gitColor(gitLabel) + stats;
+				gitChip = gitColor(gitLabel) + stats;
 			}
-			const line2 = joinChips([place, ...line2Plugins]);
-			const line3 = joinChips(line3Plugins);
+
+			const builtinChips = new Map<string, string>([
+				[
+					FOOTER_MODEL_KEY,
+					modelChip(theme, modelLabel, model?.reasoning ? thinkingLevelStr : "", thinkingColor),
+				],
+				[
+					FOOTER_CONTEXT_KEY,
+					barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${fmt(contextWindow)}`),
+				],
+				[FOOTER_CACHE_KEY, cacheLabel ? theme.fg("dim", cacheLabel) : ""],
+				[FOOTER_RATE_KEY, rateLabel ? theme.fg("dim", rateLabel) : ""],
+				[FOOTER_COST_KEY, costChip],
+				[FOOTER_CWD_KEY, place],
+				[FOOTER_GIT_KEY, gitChip],
+			]);
+
+			const lineOf = (keys: readonly string[]) =>
+				joinChips(
+					keys
+						.filter((key) => !layout.footerHiddenKeys.includes(key))
+						.map((key) => {
+							if (isBuiltinFooterKey(key)) return builtinChips.get(key) ?? "";
+							const text = visibleFooterPluginTexts([key], [], pluginTexts)[0];
+							return text ? dimPlugin(text) : "";
+						}),
+				);
+			const line1 = lineOf(layout.footerLine1Keys);
+			const line2 = lineOf(layout.footerLine2Keys);
+			const line3 = lineOf(layout.footerLine3Keys);
 
 			return [
 				truncateToWidth(line1, width),

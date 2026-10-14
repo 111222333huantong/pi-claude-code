@@ -77,7 +77,6 @@ pi install git:github.com/minuque/pi-cc-extensions
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
   "previewLines": 3,                       // 预览行数，0 隐藏
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
-  "dimThinkingText": false,                // thinking 正文用 dim 色
 
   // footer
   "enableCustomFooter": true,              // 自定义状态栏
@@ -88,10 +87,10 @@ pi install git:github.com/minuque/pi-cc-extensions
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
-  "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
-  "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
-  "footerLine2Keys": [],                   // line2 插件芯片顺序（接在 cwd/git 后）
-  "footerLine3Keys": []                    // line3 备用槽，有可见芯片才占行
+  "footerHiddenKeys": [],                  // 隐藏的芯片 key
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
+  "footerLine2Keys": ["cwd", "git"],        // cwd：目录和会话名；git：分支和改动。可换到任意行
+  "footerLine3Keys": []                    // 有可见芯片才占行
 }
 ```
 

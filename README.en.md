@@ -77,7 +77,6 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview lines; 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
-  "dimThinkingText": false,                // dim thinking body text
 
   // footer
   "enableCustomFooter": true,              // custom status bar
@@ -88,10 +87,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
-  "footerHiddenKeys": [],                  // hidden plugin chip keys
-  "footerLine1Keys": ["pi-usage"],         // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
-  "footerLine2Keys": [],                   // line2 plugin chip order (after cwd/git)
-  "footerLine3Keys": [],                   // line3 overflow slot; painted only when a chip is visible
+  "footerHiddenKeys": [],                  // hidden chip keys
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // chip order per line; builtins and plugins share one layout
+  "footerLine2Keys": ["cwd", "git"],        // cwd: directory and session; git: branch and changes. Either can move to any line
+  "footerLine3Keys": [],                   // painted only when a chip is visible
 }
 ```
 

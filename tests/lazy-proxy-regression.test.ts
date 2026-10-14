@@ -1133,7 +1133,7 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", async 
 	installToolMouseInteraction({});
 });
 
-test("lazy-proxy tui: official tool cards collapse from the official click", () => {
+test("lazy-proxy tui: official tool cards collapse on release", () => {
 	// 伪造 pi 0.87 的结果区 MouseRegion：左键 click 整卡 setExpanded。
 	const prototype = (ToolExecutionComponent as any).prototype;
 	const originalHandleMouse = prototype.handleMouse;
@@ -1164,18 +1164,18 @@ test("lazy-proxy tui: official tool cards collapse from the official click", () 
 	installToolMouseInteraction(ui.ctx);
 	try {
 		renderer.currentLayout = fullscreenLayout(tool, null);
-		// 按下/松手交给官方（选区、click 合成），扩展不直接收起官方卡。
+		// 按下放行官方（选区/按下登记），同格松手由扩展结算收起并吞掉 release：
+		// 官方不会再合成 click（坐标要求严格一致，还会把收起的卡 toggle 回去）。
 		tui.handleViewportInput("\x1b[<0;2;1M");
-		tui.handleViewportInput("\x1b[<0;2;1m");
-		assert.equal(
-			tool.expanded,
-			true,
-			"press and release leave official cards to the official click",
+		assert.equal(tool.expanded, true, "press alone does not collapse");
+		const release = tui.handleViewportInput("\x1b[<0;2;1m");
+		assert.deepEqual(release, { consume: true }, "collapse release is consumed");
+		assert.equal(tool.expanded, false, "release collapses the official card");
+		assert.ok(
+			renderer.officialInputs.includes("\x1b[O"),
+			"collapse clears the official press/selection state",
 		);
-		// 官方 MouseRegion 合成的 click 经 guard 接管为收起，不再调用官方 toggle。
-		prototype.handleMouse.call(tool, { type: "click", button: "left", y: 0, width: 80 });
-		assert.equal(tool.expanded, false, "guard collapses the official card on click");
-		assert.deepEqual(delegated, [], "official toggle is suppressed");
+		assert.deepEqual(delegated, [], "official toggle is never reached");
 	} finally {
 		installToolMouseInteraction({});
 		prototype.handleMouse = originalHandleMouse;
@@ -1428,11 +1428,15 @@ test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components
 	installToolMouseInteraction({});
 });
 
-test("lazy-proxy tui: fullscreen text preview receives mouse before official selection", async () => {
+test("lazy-proxy tui: overlay bounds route mouse to overlay, outside stays with the extension", async () => {
 	const tool = createTool("tool-overlay");
 	const terminal = { columns: 80, rows: 24, write() {} };
 	const renderer = new FullscreenRenderer(tool, null, terminal);
 	renderer.hasOverlay = () => true;
+	// overlay 矩形：col 60-79, row 0-9（0-based）。点击 (66,3) 落内，(1,1) 落外。
+	(renderer as any).renderedOverlayLayouts = [
+		{ col: 60, row: 0, width: 20, height: 10, entry: { component: null } },
+	];
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
 	installToolMouseInteraction(ui.ctx);
@@ -1450,13 +1454,20 @@ test("lazy-proxy tui: fullscreen text preview receives mouse before official sel
 		"Output",
 		"hello",
 	);
-	const result = tui.handleViewportInput(`\x1b[<0;67;4M`);
-	assert.equal(result, undefined, "preview mouse continues to the focused custom component");
-	assert.equal(
-		renderer.officialInputs.length,
-		0,
-		"official selection does not consume preview mouse",
-	);
+	// overlay 内的点击放行官方/焦点组件，扩展不拦截。
+	tui.handleViewportInput(`\x1b[<0;67;4M`);
+	assert.equal(tool.expanded, false, "inside click is not consumed as an expand");
+	assert.equal(renderer.officialInputs.length, 1, "inside click passes to official chain");
+
+	// overlay 外、展开卡上的点击仍走扩展：collapsed 卡先在 hint 展开，再单击收起。
+	renderer.officialInputs.length = 0;
+	tool.setExpanded(true);
+	renderer.currentLayout = fullscreenLayout(tool, null);
+	tui.handleViewportInput(`\x1b[<0;2;1M`);
+	const outside = tui.handleViewportInput(`\x1b[<0;2;1m`);
+	assert.deepEqual(outside, { consume: true }, "outside overlay the extension still resolves");
+	assert.equal(tool.expanded, false, "expanded card outside the overlay still collapses");
+
 	component.handleInput("\x1b");
 	await preview;
 	installToolMouseInteraction({});

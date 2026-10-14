@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.1.0 · mode=`on`。
+> 当前版本：ccstyle 1.1.1 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -56,7 +56,7 @@ Pi 原生 shell 渲染器会在结果底部另起一行报耗时，ccstyle 的�
 
 ```text
  ✓ Read extensions/index.ts (offset=10, limit=50)
-   ↳ 40 lines loaded · click to show more
+   ↳ Read 40 lines · click to show more
 ```
 
 ## 3. 单工具展开（Input/Output 树）

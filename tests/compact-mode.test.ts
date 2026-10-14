@@ -1054,10 +1054,7 @@ test("compact live: 工具组件晚于消息到达时补画槽位，参数更新
 		assistant.updateContent(message);
 		const before = renderText(assistant);
 		assert.match(before.join("\n"), /bash×1/, `计数应先涨: ${before}`);
-		assert.ok(
-			!before.some((line) => line.startsWith("↳")),
-			`组件未到不该有槽位卡: ${before}`,
-		);
+		assert.ok(!before.some((line) => line.startsWith("↳")), `组件未到不该有槽位卡: ${before}`);
 
 		const bash = tool("bash", "b1", { command: "echo-early" });
 		bash.updateDisplay?.();
@@ -1203,11 +1200,7 @@ test("compact 尾行：展开的活回合不随新工具推到容器末尾，摘
 			tailIdx < secondIdx,
 			`展开的摘要行不该越过后续消息 (tail=${tailIdx}, second=${secondIdx})`,
 		);
-		assert.notEqual(
-			chat.children.at(-1),
-			tail,
-			"容器最末不是被篡位的第一回合摘要行",
-		);
+		assert.notEqual(chat.children.at(-1), tail, "容器最末不是被篡位的第一回合摘要行");
 		assert.ok(isCompactAssistantComponent(chat.children.at(-1)), "最末是第二回合的尾行");
 	} finally {
 		setToolMouseTui(null);
@@ -1415,7 +1408,10 @@ test("compact：带正文的工具消息各起回合，无正文续接才并入�
 		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
 		// 每条消息都带可见正文 → 各自是自己的 anchor，两个 bash 各成一行（截图语义）。
 		assert.deepEqual(summaries.length, 2, `两条带正文的消息应各起一行: ${summaries}`);
-		assert.ok(summaries.every((line) => /bash×1/.test(line)), `每行各记一次 bash: ${summaries}`);
+		assert.ok(
+			summaries.every((line) => /bash×1/.test(line)),
+			`每行各记一次 bash: ${summaries}`,
+		);
 	} finally {
 		setToolMouseTui(null);
 		restore();

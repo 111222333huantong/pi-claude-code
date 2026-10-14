@@ -1452,7 +1452,7 @@ test("lazy-proxy tui: overlay bounds route mouse to overlay, outside stays with 
 		"hello",
 	);
 	// overlay 内的点击放行官方/焦点组件，扩展不拦截。
-	const inside = tui.handleViewportInput(`\x1b[<0;67;4M`);
+	tui.handleViewportInput(`\x1b[<0;67;4M`);
 	assert.equal(tool.expanded, false, "inside click is not consumed as an expand");
 	assert.equal(renderer.officialInputs.length, 1, "inside click passes to official chain");
 

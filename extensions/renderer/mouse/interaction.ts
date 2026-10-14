@@ -628,8 +628,7 @@ function patchFullscreenViewportInput(tui: any): void {
 				const overlayPackets = tui.hasOverlay?.()
 					? packets.filter((packet) => packetInsideOverlay(tui, packet))
 					: undefined;
-				const insideOverlay = (packet: SgrMousePacket) =>
-					overlayPackets?.includes(packet) === true;
+				const insideOverlay = (packet: SgrMousePacket) => overlayPackets?.includes(packet) === true;
 				for (const packet of packets) {
 					if (insideOverlay(packet)) continue;
 					if (isSgrLeftRelease(packet)) {

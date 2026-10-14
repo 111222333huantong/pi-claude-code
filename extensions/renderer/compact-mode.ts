@@ -1282,7 +1282,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			}
 			round.endedAt = Math.max(
 				round.startedAt,
-				isUsableTimestamp(endTimestamp) ? endTimestamp : (fallback || Date.now()),
+				isUsableTimestamp(endTimestamp) ? endTimestamp : fallback || Date.now(),
 			);
 		}
 		if (activeRound === round) {

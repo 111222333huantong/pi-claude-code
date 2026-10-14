@@ -593,7 +593,11 @@ export function collectContextBreakdown(
 			{ label: "System prompt", tokens: systemTokens, color: rgbColor(0x79, 0xc0, 0xff) },
 			{ label: "Memory", tokens: memoryTokens, color: rgbColor(0xff, 0x7b, 0x72) },
 			{ label: "Skills", tokens: skillsTokens, color: rgbColor(0xcb, 0x92, 0x14) },
-			{ label: "Tools definition", tokens: toolDefinitionTokens, color: rgbColor(0x37, 0xb3, 0x4a) },
+			{
+				label: "Tools definition",
+				tokens: toolDefinitionTokens,
+				color: rgbColor(0x37, 0xb3, 0x4a),
+			},
 			{ label: "Tool results", tokens: toolResultTokens, color: rgbColor(0xf7, 0x78, 0xba) },
 			{ label: "Context", tokens: contextTokens, color: rgbColor(0xf0, 0x88, 0x3e) },
 		] satisfies ContextPart[],
@@ -725,9 +729,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									);
 									const hovered = previewHitboxes.find(
 										(candidate) =>
-											row === candidate.row &&
-											col >= candidate.startCol &&
-											col <= candidate.endCol,
+											row === candidate.row && col >= candidate.startCol && col <= candidate.endCol,
 									);
 									if (overEsc !== escHovered || hovered?.key !== hoveredKey) {
 										escHovered = overEsc;
@@ -748,9 +750,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								}
 								const hitbox = previewHitboxes.find(
 									(candidate) =>
-										row === candidate.row &&
-										col >= candidate.startCol &&
-										col <= candidate.endCol,
+										row === candidate.row && col >= candidate.startCol && col <= candidate.endCol,
 								);
 								if (hitbox) {
 									selectedPreviewIndex = Math.max(

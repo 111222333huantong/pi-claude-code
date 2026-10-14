@@ -397,7 +397,10 @@ function layoutExpandedToolCard(
 	let liveLead = 0;
 	const pushRow = (raw: string) => {
 		if (!live) {
-			lines.push(paddedBackgroundRow(theme, slot, raw, width));
+			// 面板 pad 1 是唯一左边距：剥掉子行 collapsed 态自带的 1 格 lead，
+			// 否则标题行偏到 2、↳ 行偏到 4，左右不再对称。
+			const line = raw.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*) /, "$1");
+			lines.push(paddedBackgroundRow(theme, slot, line, width));
 			return;
 		}
 		// 槽位里不重复展开入口（见 SLOT_HINT_PATTERNS）。

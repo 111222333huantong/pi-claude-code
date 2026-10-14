@@ -373,7 +373,9 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 	}
 }
 
-/** 展开面板背景统一为 user message 背景色；折叠行保持原生状态色。
+/** 展开面板背景统一为配置槽位；折叠行保持原生状态色。
+ *  compact 下 ask_user_question 等普通工具的展开也走原生 contentBox，
+ *  同样要盖住原生按状态的 toolSuccessBg/toolErrorBg。
  *  必须在 compact-mode 之后安装，shutdown 时先于 compact-mode 释放。 */
 export function installToolExpandedBackground(): () => void {
 	const previous = patchRegistry.get<ToolExpandedBackgroundPatch>(TOOL_EXPANDED_BACKGROUND_PATCH);
@@ -385,7 +387,7 @@ export function installToolExpandedBackground(): () => void {
 		prototype,
 		installed: function (this: any) {
 			original.call(this);
-			if (!patch.active || config.mode !== "on" || !this.expanded) return;
+			if (!patch.active || config.mode === "off" || !this.expanded) return;
 			const theme = getMessageDisplayTheme();
 			if (!theme?.bg) return;
 			const box = this.contentBox;

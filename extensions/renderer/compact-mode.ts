@@ -333,7 +333,7 @@ function darkenBgAnsi(theme: any, slot: string): string {
 	return `\x1b[48;2;${r};${g};${b}m`;
 }
 
-/** 工具卡深色行：左右内缩（左 2 右 3 格，含工具卡自身 padding），背景只到内容区，
+/** 工具卡深色行：左右各缩 1 格（含工具卡自身 padding），背景只到内容区，
  *  修复行尾 reset 截断。 */
 function toolCardBgRow(
 	theme: any,
@@ -342,8 +342,8 @@ function toolCardBgRow(
 	line: string,
 	width: number,
 ): string {
-	const leftInset = 2;
-	const rightInset = 3;
+	const leftInset = 1;
+	const rightInset = 1;
 	const contentWidth = Math.max(0, width - leftInset - rightInset);
 	// 深色块内左右各 1 格内部 padding；去掉行首原有空格后重新对齐
 	const text = stripBackgroundAnsi(line).replace(/^ +/, "");

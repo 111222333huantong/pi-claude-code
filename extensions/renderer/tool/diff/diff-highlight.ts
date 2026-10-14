@@ -1,4 +1,5 @@
 import { getLanguageFromPath, highlightCode } from "@earendil-works/pi-coding-agent";
+import { config } from "../../../config/config.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
 import { sanitizeAnsiForThemedOutput } from "./ansi-utils.ts";
 import type { DiffSpan } from "./diff-inline.ts";
@@ -137,7 +138,9 @@ export function highlightDiffLine(
 	highlightLine: CodeLineHighlighter,
 	containerBgAnsi: string | undefined,
 ): { highlighted: string; rowBg: string | undefined } {
-	const syntaxHighlighted = highlightLine(codeText, entry);
+	// claude 板：删行不做语法高亮（CC 实测行为），token 级强调底色照常。
+	const skipSyntax = config.diffPalette === "claude" && entry.lineKind === "remove";
+	const syntaxHighlighted = skipSyntax ? codeText : highlightLine(codeText, entry);
 	const rowBg = getLineBackground(entry.lineKind, palette, false);
 	const emphasisBg = getLineBackground(entry.lineKind, palette, true);
 	const inlineSpans = inlineHighlights.get(entry) ?? [];

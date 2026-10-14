@@ -1,3 +1,4 @@
+import { config } from "../../../config/config.ts";
 import { ansi256ToRgb } from "../../../utils/ansi-color.ts";
 import {
 	ANSI_SGR_PATTERN,
@@ -38,6 +39,19 @@ const REMOVE_INLINE_EMPHASIS_MIX_RATIO = 0.26;
 const ADDITION_TINT_TARGET: RgbColor = { r: 84, g: 190, b: 118 };
 const DELETION_TINT_TARGET: RgbColor = { r: 232, g: 95, b: 122 };
 export const ANSI_BG_RESET = "\x1b[49m";
+
+/**
+ * Claude 固定 diff 板（实测值）：删行 bg #3D0100、删 token bg #5C0200、
+ * 加行 bg #022800、加 token bg #044700。gutter/sign 前景由调用方取主题
+ * toolDiffAdded/Removed（#50C850/#DC5A5A 量级），此处只定背景。
+ */
+const bgAnsi = (r: number, g: number, b: number): string => `\x1b[48;2;${r};${g};${b}m`;
+export const CLAUDE_DIFF_PALETTE: DiffPalette = {
+	addRowBgAnsi: bgAnsi(2, 40, 0),
+	removeRowBgAnsi: bgAnsi(61, 1, 0),
+	addEmphasisBgAnsi: bgAnsi(4, 71, 0),
+	removeEmphasisBgAnsi: bgAnsi(92, 2, 0),
+};
 
 export function emphasis(theme: DiffTheme, text: string): string {
 	return typeof theme.bold === "function" ? theme.bold(text) : text;
@@ -264,6 +278,8 @@ export function readThemeAnsi(
 }
 
 export function resolveDiffPalette(theme: DiffTheme): DiffPalette {
+	// claude 固定板：与主题无关的 CC 精确红绿（实测值，见 pi-claudify 语法文档）。
+	if (config.diffPalette === "claude") return CLAUDE_DIFF_PALETTE;
 	const baseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolSuccessBg")) ??
 		parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolPendingBg")) ??
 		parseAnsiColorCode(readThemeAnsi(theme, "bg", "userMessageBg")) ?? { r: 32, g: 35, b: 42 };

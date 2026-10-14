@@ -41,9 +41,11 @@ import {
 	DEFAULT_CONFIG,
 	DIFF_COLLAPSED_LINES_VALUES,
 	DIFF_INDICATOR_MODES,
+	DIFF_PALETTE_MODES,
 	DIFF_SPLIT_MIN_WIDTH_VALUES,
 	DIFF_VIEW_MODES,
 	type DiffIndicatorMode,
+	type DiffPaletteMode,
 	type DiffViewMode,
 	EXCLUDE_RENDERER_CANDIDATES,
 	EXPANDED_CARD_BACKGROUND_SLOTS,
@@ -239,6 +241,12 @@ function diffIndicatorDescription(mode: DiffIndicatorMode): string {
 	if (mode === "classic") return "Classic +/- gutters on changed lines.";
 	if (mode === "none") return "No change indicators; rely on color alone.";
 	return "Vertical bar indicators on changed lines (default).";
+}
+
+function diffPaletteDescription(mode: DiffPaletteMode): string {
+	if (mode === "claude")
+		return "Fixed Claude red/green palette; removed lines skip syntax highlight.";
+	return "Diff colors follow the active theme (default).";
 }
 
 function expandedCardBackgroundDescription(slot: ThemeBg): string {
@@ -503,6 +511,13 @@ export async function showCcstylePanel(
 			description: diffIndicatorDescription(config.diffIndicatorMode),
 			currentValue: config.diffIndicatorMode,
 			values: [...DIFF_INDICATOR_MODES],
+		};
+		const diffPaletteSetting = {
+			id: "diffPalette",
+			label: "Diff palette",
+			description: diffPaletteDescription(config.diffPalette),
+			currentValue: config.diffPalette,
+			values: [...DIFF_PALETTE_MODES],
 		};
 		const diffSplitSetting = {
 			id: "diffSplitMinWidth",
@@ -1035,6 +1050,10 @@ export async function showCcstylePanel(
 					updateConfig({ diffIndicatorMode: value as DiffIndicatorMode });
 					diffIndicatorSetting.description = diffIndicatorDescription(config.diffIndicatorMode);
 					break;
+				case "diffPalette":
+					updateConfig({ diffPalette: value as DiffPaletteMode });
+					diffPaletteSetting.description = diffPaletteDescription(config.diffPalette);
+					break;
 				case "diffSplitMinWidth":
 					updateConfig({
 						diffSplitMinWidth: pickPositiveInt(value, DEFAULT_CONFIG.diffSplitMinWidth, 40, 300),
@@ -1261,6 +1280,7 @@ export async function showCcstylePanel(
 				items: [
 					diffViewSetting,
 					diffIndicatorSetting,
+					diffPaletteSetting,
 					diffSplitSetting,
 					diffCollapsedSetting,
 					writeDiffCollapsedSetting,

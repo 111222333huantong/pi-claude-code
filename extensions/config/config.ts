@@ -12,6 +12,7 @@ import {
 export type CompactStyleMode = "on" | "compact" | "off";
 
 export type DiffViewMode = "auto" | "split" | "unified";
+export type DiffPaletteMode = "theme" | "claude";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 export type FooterGitStatsMode = "working" | "branch";
 export type FooterTokenRateMode = "average" | "live";
@@ -19,6 +20,7 @@ export type FooterTokenRateMode = "average" | "live";
 export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
+	diffPalette: DiffPaletteMode;
 	diffSplitMinWidth: number;
 	/** Edit-only collapsed body lines. 0 = change counts and an expand hint. */
 	editDiffCollapsedLines: number;
@@ -31,6 +33,7 @@ export interface ToolDisplayConfig {
 export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	diffViewMode: "auto",
 	diffIndicatorMode: "bars",
+	diffPalette: "theme",
 	diffSplitMinWidth: 120,
 	/** Collapsed edit/diff body: ~half a typical terminal after chrome. */
 	editDiffCollapsedLines: 24,
@@ -52,6 +55,7 @@ export type Config = {
 	excludeRenderers: string[];
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
+	diffPalette: DiffPaletteMode;
 	diffSplitMinWidth: number;
 	editDiffCollapsedLines: number;
 	writeDiffCollapsedLines: number;
@@ -115,6 +119,7 @@ const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
+export const DIFF_PALETTE_MODES: DiffPaletteMode[] = ["theme", "claude"];
 export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"];
 export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
@@ -171,6 +176,7 @@ export const DEFAULT_CONFIG: Config = {
 	excludeRenderers: [],
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
+	diffPalette: "theme",
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
 	editDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines,
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
@@ -273,6 +279,7 @@ export function normalizeConfig(input: unknown): Config {
 			DIFF_INDICATOR_MODES,
 			DEFAULT_CONFIG.diffIndicatorMode,
 		),
+		diffPalette: pickEnum(source.diffPalette, DIFF_PALETTE_MODES, DEFAULT_CONFIG.diffPalette),
 		diffSplitMinWidth: pickPositiveInt(
 			source.diffSplitMinWidth,
 			DEFAULT_CONFIG.diffSplitMinWidth,
@@ -398,6 +405,7 @@ export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig
 	return {
 		diffViewMode: source.diffViewMode,
 		diffIndicatorMode: source.diffIndicatorMode,
+		diffPalette: source.diffPalette,
 		diffSplitMinWidth: source.diffSplitMinWidth,
 		editDiffCollapsedLines: source.editDiffCollapsedLines,
 		writeDiffCollapsedLines: source.writeDiffCollapsedLines,
@@ -416,6 +424,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
+		`diffPalette=${source.diffPalette}`,
 		`diffSplitMin=${source.diffSplitMinWidth}`,
 		`editCollapsed=${source.editDiffCollapsedLines}`,
 		`writeCollapsed=${source.writeDiffCollapsedLines}`,

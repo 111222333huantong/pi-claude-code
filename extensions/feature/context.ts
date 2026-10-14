@@ -8,11 +8,16 @@ import {
 	getMarkdownTheme,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
-import { type Color, rgbColor } from "@earendil-works/pi-tui";
+import {
+	type Color,
+	Key,
+	Markdown,
+	matchesKey,
+	rgbColor,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { formatTokens, padLine } from "../utils/format.ts";
 import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
-import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
 
 export type ContextPart = {
 	label: string;

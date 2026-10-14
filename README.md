@@ -85,6 +85,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
   "diffIndicatorMode": "bars",             // 变更指示：bars / classic / none
+  "diffPalette": "theme",                 // 配色：theme 跟随主题；claude 固定 CC 红绿 + 删行不高亮
   "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
   "editDiffCollapsedLines": 24,            // edit 折叠行数；0 仅显示变更统计摘要
   "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要

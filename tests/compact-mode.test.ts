@@ -215,6 +215,9 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
 	assert.equal(normalizeConfig({}).toolLabelClip, 0);
+	assert.equal(normalizeConfig({}).diffPalette, "theme");
+	assert.equal(normalizeConfig({ diffPalette: "claude" }).diffPalette, "claude");
+	assert.equal(normalizeConfig({ diffPalette: "nope" }).diffPalette, "theme");
 	assert.equal(normalizeConfig({ toolLabelClip: 40 }).toolLabelClip, 40);
 	assert.equal(normalizeConfig({ toolLabelClip: "0" }).toolLabelClip, 0);
 	assert.equal(normalizeConfig({ toolLabelClip: 3 }).toolLabelClip, 8);

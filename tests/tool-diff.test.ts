@@ -13,6 +13,11 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, normalizeConfig } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { shouldRenderRichDiff } from "../extensions/renderer/index.ts";
+import { highlightDiffLine } from "../extensions/renderer/tool/diff/diff-highlight.ts";
+import {
+	CLAUDE_DIFF_PALETTE,
+	resolveDiffPalette,
+} from "../extensions/renderer/tool/diff/diff-palette.ts";
 import {
 	renderEditDiffResult,
 	renderWriteDiffResult,
@@ -856,4 +861,45 @@ test("external write owner disables rich diff instead of degrading every card", 
 		),
 		undefined,
 	);
+});
+
+test("claude palette returns exact CC backgrounds and skips removed-line highlight", () => {
+	const previous = config.diffPalette;
+	const theme: any = { fg: (_c: string, t: string) => t };
+	const removeEntry: any = { lineKind: "remove", content: "const x = 1;" };
+	const addEntry: any = { lineKind: "add", content: "const x = 1;" };
+	const fakeHighlighter = (code: string) => `SHIKI${code}`;
+	try {
+		config.diffPalette = "claude";
+		assert.equal(CLAUDE_DIFF_PALETTE.removeRowBgAnsi, "\x1b[48;2;61;1;0m");
+		assert.equal(CLAUDE_DIFF_PALETTE.removeEmphasisBgAnsi, "\x1b[48;2;92;2;0m");
+		assert.equal(CLAUDE_DIFF_PALETTE.addRowBgAnsi, "\x1b[48;2;2;40;0m");
+		assert.equal(CLAUDE_DIFF_PALETTE.addEmphasisBgAnsi, "\x1b[48;2;4;71;0m");
+		assert.deepEqual(resolveDiffPalette(theme), CLAUDE_DIFF_PALETTE);
+		// 删行跳过 shiki，只留原文 + 行底色。
+		const out = highlightDiffLine(
+			"const x = 1;",
+			removeEntry,
+			new WeakMap(),
+			CLAUDE_DIFF_PALETTE,
+			fakeHighlighter,
+			undefined,
+		);
+		assert.ok(!out.highlighted.includes("SHIKI"), "删行无语法高亮");
+		assert.ok(out.highlighted.includes("const x = 1;"));
+		const added = highlightDiffLine(
+			"const x = 1;",
+			addEntry,
+			new WeakMap(),
+			CLAUDE_DIFF_PALETTE,
+			fakeHighlighter,
+			undefined,
+		);
+		assert.ok(added.highlighted.includes("SHIKI"), "加行仍高亮");
+		// theme 档不受影响。
+		config.diffPalette = "theme";
+		assert.notDeepEqual(resolveDiffPalette(theme), CLAUDE_DIFF_PALETTE);
+	} finally {
+		config.diffPalette = previous;
+	}
 });

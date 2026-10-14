@@ -83,6 +83,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
   "diffIndicatorMode": "bars",             // change indicators: bars / classic / none
+  "diffPalette": "theme",                 // palette: theme-adaptive; claude = fixed CC red/green, no highlight on removals
   "diffSplitMinWidth": 120,                // min terminal width for side-by-side columns
   "editDiffCollapsedLines": 24,            // edit collapse lines; 0 = change-count summary only
   "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = creation summary only

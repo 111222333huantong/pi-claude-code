@@ -27,6 +27,7 @@ import {
 } from "./names.ts";
 import {
 	collapsedResultSummary,
+	expandedBodyComponent,
 	formatToolDuration,
 	insetComponent,
 	renderCollapsedToolResultToWidth,
@@ -405,8 +406,9 @@ export function createCcstyleTool(
 					writeExecutionMetadata,
 					getToolDisplayConfig,
 				);
-				// 展开态由 Box(1,1) 提供内边距；折叠态 inset 一级缩进
-				if (richResult) return expanded ? richResult : insetComponent(richResult);
+				// 展开态由 Box(1,1) 提供内边距，首行再缩 2 格与标题文字列对齐；折叠态 inset 一级缩进
+				if (richResult)
+					return expanded ? expandedBodyComponent(richResult) : insetComponent(richResult);
 			}
 
 			const text = textFromResult(result, expanded);

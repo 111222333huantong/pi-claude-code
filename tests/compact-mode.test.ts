@@ -2593,6 +2593,9 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		const titlePlain = expandedPlain.find((line) => line.includes("edit a.ts")) ?? "";
 		assert.match(titlePlain, /^ ✓ edit a\.ts/, "expanded title uses Box pad only");
 		assert.doesNotMatch(titlePlain, /\(\+\d+ -\d+\)/);
+		// ↳ 头行与标题文字列对齐（Box pad 1 + 缩进 2），body 行保持贴左。
+		const diffHeader = expandedPlain.find((line) => line.includes("↳ diff")) ?? "";
+		assert.match(diffHeader, /^   ↳ diff/, `↳ 与标题文字列同列: ${diffHeader}`);
 		const expanded = expandedPlain.join("\n");
 		assert.match(expanded, /old/);
 		assert.match(expanded, /new/);

@@ -33,6 +33,28 @@ export function insetComponent(component: any): any {
 	return wrapped;
 }
 
+/**
+ * 展开卡内嵌组件：`↳` 行右移 2 格（Box pad 1 + 2 = 标题文字列），其余行贴左。
+ * 与折叠态 insetComponent 的 `   ↳` 同一视觉列。
+ */
+export function expandedBodyComponent(component: any): any {
+	const wrapped: Record<string, unknown> = {
+		render: (width: number) =>
+			component.render(width).map((line: string) =>
+				truncateToWidth(
+					line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳"),
+					Math.max(0, width),
+					"",
+				),
+			),
+		invalidate: () => component.invalidate?.(),
+	};
+	if (typeof component.isCollapsedHintLine === "function") {
+		wrapped.isCollapsedHintLine = (line: string) => component.isCollapsedHintLine(line);
+	}
+	return wrapped;
+}
+
 function rawTextFromResult(result: any): string {
 	return Array.isArray(result?.content)
 		? result.content

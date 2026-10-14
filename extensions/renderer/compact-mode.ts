@@ -53,7 +53,7 @@ import { displayConfigCacheKey } from "./tool/diff/diff-component.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
-import { insetComponent } from "./tool/result.ts";
+import { expandedBodyComponent, insetComponent } from "./tool/result.ts";
 import { isLiveToolCall, scheduleAnimation } from "./tool/tool-state.ts";
 import { renderExpandedToolResult } from "./tool/tool-io.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
@@ -894,7 +894,7 @@ function paintCompactEditWrite(
 
 	let detail: any;
 	if (hasRich) {
-		detail = expanded ? candidate : insetComponent(candidate as any);
+		detail = expanded ? expandedBodyComponent(candidate) : insetComponent(candidate as any);
 	} else {
 		const outputText = sanitizeToolResultText(
 			Array.isArray(result?.content)

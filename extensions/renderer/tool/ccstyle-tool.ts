@@ -329,6 +329,7 @@ export function createCcstyleTool(
 					running: Boolean(options?.isPartial),
 					isError,
 					isHovered: () => isToolCallHovered(toolCallId),
+					code: context?.args?.code,
 				});
 			}
 			// ask_user_question：折叠态摊成问答树，展开态按问题逐条列出选择。

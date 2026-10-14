@@ -10,6 +10,8 @@ import {
 	codemodeCollapsedLines,
 	codemodeExpandedBody,
 	codemodeOutputLineCount,
+	codemodeCodeSummary,
+	highlightCodeSummary,
 	codemodeOutputText,
 	codemodeSummaryParts,
 	createCodemodeResultComponent,
@@ -153,7 +155,25 @@ test("折叠态：子调用过多时只列最近 8 条", () => {
 	assert.equal(lines[9], " └ 11 calls · 2 lines output · click to show more");
 });
 
-test("折叠态：没有子调用时不画衔接符", () => {
+test("折叠态：没有子调用时补一行代码摘要，汇总用 └ 收尾", () => {
+	const lines = codemodeCollapsedLines({
+		result: result({}, []),
+		theme,
+		running: false,
+		isError: true,
+		width: 160,
+		code: "const rows = scan()\nconst hits = grep(rows)\nreturn write(hits)",
+	});
+	// code: 标签走 theme 桩，语句由 highlightCode 按全局 theme 着色，比对时剥掉 ANSI。
+	// grep(rows) 与 write(hits) 都是调用，取更长的那行。
+	assert.equal(
+		lines[0]!.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
+		" ├ code: const hits = grep(rows)",
+	);
+	assert.equal(lines[1], " └ 2 lines output · click to show more");
+});
+
+test("折叠态：没有子调用也没有脚本时不画衔接符", () => {
 	const lines = codemodeCollapsedLines({
 		result: result({}, []),
 		theme,
@@ -162,6 +182,29 @@ test("折叠态：没有子调用时不画衔接符", () => {
 		width: 100,
 	});
 	assert.deepEqual(lines, [" 2 lines output · click to show more"]);
+});
+
+test("代码摘要：取信息量最大的一行语句，跳过注释与选项行", () => {
+	assert.equal(
+		codemodeCodeSummary(
+			'// @options: {}\n/* block\n * comment */\nconst rows = scan()\nreturn rows.filter((row) => row.includes("a"))',
+		),
+		'return rows.filter((row) => row.includes("a"))',
+	);
+	// 同样是调用时，带字符串的那行分更高
+	assert.equal(
+		codemodeCodeSummary('const n = count()\nconst label = name("x")'),
+		'const label = name("x")',
+	);
+	assert.equal(codemodeCodeSummary("// only a comment\n"), undefined);
+	assert.equal(codemodeCodeSummary(42), undefined);
+});
+
+test("代码摘要着色：关键字与字符串上色，剥掉 ANSI 后与原文一致", () => {
+	const summary = 'return rows.filter((row) => row.includes("a"))';
+	const colored = highlightCodeSummary(summary);
+	assert.match(colored, /\x1b\[/, "应带 ANSI 着色");
+	assert.equal(colored.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), summary);
 });
 
 /** 与 pi 的 previewArgs 同口径：超 200 字符的紧凑 JSON 从尾部切掉，补 "..."。 */

@@ -8,8 +8,10 @@
  * - 输出以 "Script completed\nWall time …\nOutput:\n" 开头（pi 原生也切掉），行数统计与展开正文都得去掉它，
  *   否则折叠摘要会多算 3 行。
  */
+import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import { oneLine } from "../../utils/format.ts";
 import { toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
@@ -92,6 +94,60 @@ function fitSummaryParts(parts: readonly string[], width: number): string {
 	while (kept.length > 1 && visibleWidth(kept.join(" · ")) > width) kept.pop();
 	const text = kept.join(" · ");
 	return visibleWidth(text) <= width ? text : headTruncateToWidth(text, width);
+}
+
+/**
+ * 摘要行的打分：调用最能说明脚本在干什么，字符串次之，行长只在前两者相同时决胜。
+ * 调用权重必须大于「字符串分 + 行长上限」，否则长赋值会压过短调用。
+ */
+const CODE_SUMMARY_CALL_SCORE = 4;
+const CODE_SUMMARY_STRING_SCORE = 2;
+
+/**
+ * 无子调用时的脚本摘要：取信息量最大的一行语句，压成单行。
+ *
+ * 要的是一段真实的 JavaScript 片段，折叠行才能用 highlightCode 着色；
+ * 标识符链（`a → b → c`）着色器认不出，染不上。跳过注释、空行和 `// @options`。
+ * 只是折叠行的提示，不求还原语义；看代码还是展开 Input。
+ */
+export function codemodeCodeSummary(code: unknown): string | undefined {
+	if (typeof code !== "string" || !code.trim()) return undefined;
+	let best: { text: string; score: number } | undefined;
+	let skippingBlock = false;
+	for (const raw of code.split("\n")) {
+		const line = raw.trim();
+		if (skippingBlock) {
+			if (line.includes("*/")) skippingBlock = false;
+			continue;
+		}
+		if (line.startsWith("/*")) {
+			if (!line.includes("*/")) skippingBlock = true;
+			continue;
+		}
+		if (!line || line.startsWith("//") || line.startsWith("*")) continue;
+		const text = oneLine(line);
+		if (!text) continue;
+		const score =
+			(text.includes("(") ? CODE_SUMMARY_CALL_SCORE : 0) +
+			(/["'`]/.test(text) ? CODE_SUMMARY_STRING_SCORE : 0) +
+			Math.min(text.length, 100) / 100;
+		if (!best || score > best.score) best = { text, score };
+	}
+	return best?.text;
+}
+
+/**
+ * 摘要行着色。highlightCode 按完整脚本着色，单行片段直接喂会把跨行字符串拆开，
+ * 所以包一层 `() => { … }` 再取中间那一行。失败或没着色时退回原文。
+ */
+export function highlightCodeSummary(summary: string): string {
+	try {
+		const lines = highlightCode(`() => { ${summary} }`, "javascript");
+		const colored = lines[0]?.replace(/^\(\) => \{ /, "").replace(/ \}$/, "");
+		return colored && stripAnsi(colored) === summary ? colored : summary;
+	} catch {
+		return summary;
+	}
 }
 
 /** 与 pi 原生一致：不到 1 分显示两位有效数字。 */
@@ -209,6 +265,8 @@ export function codemodeCollapsedLines(options: {
 	width: number;
 	/** 鼠标悬停整卡时展开提示用 text 色，与其它折叠卡一致。 */
 	hovered?: boolean;
+	/** 脚本源码；没有子调用时用来补一行 `code:` 摘要。 */
+	code?: unknown;
 }): string[] {
 	const { result, theme, running, isError } = options;
 	const fg = theme.fg.bind(theme);
@@ -216,6 +274,16 @@ export function codemodeCollapsedLines(options: {
 	const rowWidth = toolViewportWidth(options.width);
 	const shown = calls.slice(-COLLAPSED_CALL_LIMIT);
 	const lines: string[] = [];
+	// 没有子调用时脚本本身是唯一线索：补一行 `code: 步骤 → 步骤`，
+	// 与子调用行同一套树线，汇总行仍用 └ 收尾。
+	if (shown.length === 0) {
+		const summary = codemodeCodeSummary(options.code);
+		if (summary) {
+			const prefix = `${INDENT}${fg("dim", "├")} ${fg("dim", "code:")} `;
+			const colored = highlightCodeSummary(summary);
+			lines.push(truncateToWidth(`${prefix}${colored}`, rowWidth, ""));
+		}
+	}
 	if (shown.length < calls.length) {
 		const hidden = calls.length - shown.length;
 		lines.push(
@@ -229,8 +297,8 @@ export function codemodeCollapsedLines(options: {
 	for (const call of shown) lines.push(callRow(call, theme, rowWidth));
 
 	const summary = codemodeSummaryParts(calls, codemodeOutputLineCount(result), running);
-	// 没有子调用时不画衔接符，避免孤零零一个 └
-	const prefix = shown.length > 0 ? `${INDENT}${fg("dim", "└")} ` : INDENT;
+	// 上面已有行（子调用或代码摘要）时用 └ 收尾，否则不画衔接符
+	const prefix = lines.length > 0 ? `${INDENT}${fg("dim", "└")} ` : INDENT;
 	// 圆点保持 dim；hover 只高亮可点击文字。
 	const hint = running
 		? ""
@@ -281,6 +349,8 @@ export function createCodemodeResultComponent(options: {
 	isError: boolean;
 	/** 折叠态 hover 查询，与 diff 卡同一套（mouse/hover）。 */
 	isHovered?: () => boolean;
+	/** 脚本源码；没有子调用时用来补一行 `code:` 摘要。 */
+	code?: unknown;
 }): any {
 	const { result, theme, running, isError } = options;
 	return {
@@ -292,6 +362,7 @@ export function createCodemodeResultComponent(options: {
 				isError,
 				width,
 				hovered: options.isHovered?.() ?? false,
+				code: options.code,
 			});
 		},
 		invalidate(): void {},

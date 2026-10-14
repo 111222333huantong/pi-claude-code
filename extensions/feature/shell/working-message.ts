@@ -15,6 +15,7 @@ import {
 import { pickVerb } from "./spinner-verbs.ts";
 import {
 	carryTokenRate,
+	lastTokenAt,
 	markFirstToken,
 	pauseTokenRate,
 	recordProviderUsage,
@@ -284,6 +285,9 @@ const MIN_THINKING_SHOW_MS = 100;
 /** Completion message linger. */
 const TURN_COMPLETION_MS = 2_500;
 
+/** 无工具执行且无 token 活动超过此时长，working 行追加 stalled 提示。 */
+const STALL_AFTER_MS = 30_000;
+
 /**
  * Claude-style working row with verb shimmer. Replaces Pi's default
  * `Working...` while a turn runs; gated by `enableWorkingMessage` in config.
@@ -339,6 +343,12 @@ export default function (pi: ExtensionAPI): void {
 
 		if (tokens > 0) {
 			statusParts.push(`↓ ${formatTokenCount(tokens)} tokens`);
+		}
+		// 停滞提示（抄 pi-ui 三色 working 的思想，取文本不断色）：
+		// 无工具执行且 30s 无 token 活动，大概率卡住。工具执行中不报（预期内等待）。
+		const idleMs = Date.now() - Math.max(turnStartTime, lastTokenAt());
+		if (activeTools.size === 0 && idleMs >= STALL_AFTER_MS) {
+			statusParts.push(`stalled ${formatDuration(idleMs)}`);
 		}
 		const activity = activitySuffix();
 		if (activity) statusParts.unshift(activity);

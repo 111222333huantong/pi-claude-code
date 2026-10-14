@@ -32,6 +32,7 @@ let activeTools = 0;
 let lastRate = 0;
 let lastLiveRate = 0;
 let firstTokenAt = 0;
+let lastActivityAt = 0;
 let samples: TokenSample[] = [];
 let usageAnchorTime = 0;
 let usageAnchorTokens = 0;
@@ -47,6 +48,7 @@ export function resetTokenRate(startAt = 0): void {
 	lastRate = 0;
 	lastLiveRate = 0;
 	firstTokenAt = 0;
+	lastActivityAt = startAt;
 	samples = [];
 	usageAnchorTime = 0;
 	usageAnchorTokens = 0;
@@ -81,6 +83,12 @@ export function resumeTokenRate(): void {
 /** 本指令第一个内容块开始时调用；同一指令后续消息不覆盖。 */
 export function markFirstToken(now = Date.now()): void {
 	if (runStartTime && !firstTokenAt) firstTokenAt = now;
+	if (runStartTime && now > lastActivityAt) lastActivityAt = now;
+}
+
+/** 最近一次 token 活动时间（采样/usage/首 token 的最大者）；无则返回 run 起点。 */
+export function lastTokenAt(): number {
+	return lastActivityAt;
 }
 
 function estimateTokens(text: string): number {
@@ -111,6 +119,7 @@ function updateRates(now: number): void {
 /** 每个文本增量采样一次。工具暂停期的增量只累计 token，不进窗口。 */
 export function sampleTokenDelta(delta: string, now = Date.now()): void {
 	if (!runStartTime) return;
+	if (now > lastActivityAt) lastActivityAt = now;
 	const added = estimateTokens(delta);
 	if (added <= 0) return;
 	currentTokens += added;
@@ -125,6 +134,7 @@ export function sampleTokenDelta(delta: string, now = Date.now()): void {
  */
 export function recordProviderUsage(output: number, now = Date.now()): void {
 	if (!runStartTime || output <= 0) return;
+	if (now > lastActivityAt) lastActivityAt = now;
 	const firstReport = countedUsage === 0;
 	const jump = output - countedUsage;
 	countedUsage = output;

@@ -7,6 +7,7 @@ import {
 	currentTtftMs,
 	displayTokenRate,
 	formatTokenRate,
+	lastTokenAt,
 	markFirstToken,
 	pauseTokenRate,
 	recordProviderUsage,
@@ -200,4 +201,17 @@ describe("token rate", { concurrency: false }, () => {
 			await events.get("agent_end")?.({}, ctx);
 		}
 	});
+});
+
+test("lastTokenAt tracks the newest token activity", () => {
+	resetTokenRate(1_000);
+	assert.equal(lastTokenAt(), 1_000);
+	markFirstToken(1_500);
+	assert.equal(lastTokenAt(), 1_500);
+	sampleTokenDelta("a".repeat(400), 2_000);
+	assert.equal(lastTokenAt(), 2_000);
+	recordProviderUsage(100, 1_800);
+	assert.equal(lastTokenAt(), 2_000, "旧时间戳不回退");
+	resetTokenRate(5_000);
+	assert.equal(lastTokenAt(), 5_000);
 });

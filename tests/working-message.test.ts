@@ -186,3 +186,30 @@ test("spinner shimmer helpers behave", () => {
 	assert.ok(swept.length > "Cooking…".length);
 	assert.ok(visible(swept).endsWith("Cooking…"));
 });
+
+test("stalled hint appears after 30s idle without tools, suppressed while tools run", async () => {
+	const { events, messages, ctx } = install();
+	const realNow = Date.now;
+	let now = 1_000_000;
+	Date.now = () => now;
+	try {
+		await events.get("turn_start")?.({}, ctx);
+		now += 10_000;
+		await events.get("message_update")?.(
+			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" } },
+			ctx,
+		);
+		assert.doesNotMatch(visible(messages.at(-1) ?? ""), /stalled/);
+		// 工具执行中不报（预期内等待）：用未知 id 触发重建但保留真工具。
+		await events.get("tool_execution_start")?.({ toolCallId: "1", toolName: "bash" }, ctx);
+		now += 60_000;
+		await events.get("tool_execution_end")?.({ toolCallId: "unknown" }, ctx);
+		assert.doesNotMatch(visible(messages.at(-1) ?? ""), /stalled/);
+		await events.get("tool_execution_end")?.({ toolCallId: "1" }, ctx);
+		// 真工具结束、31s 无活动 → 报 stalled。
+		await events.get("tool_execution_end")?.({ toolCallId: "unknown" }, ctx);
+		assert.match(visible(messages.at(-1) ?? ""), /stalled 1m 0s/);
+	} finally {
+		Date.now = realNow;
+	}
+});

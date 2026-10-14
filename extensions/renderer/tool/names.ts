@@ -717,11 +717,27 @@ export function renderToolSummary(
 	fg: (color: ThemeColor, text: string) => string,
 ): string {
 	const title = fitToolCallSummary(summary, width);
-	if (!summary.payload) return fg("toolTitle", title);
+	const styledTitle = colorTitlePrefix(summary, title, fg);
+	if (!summary.payload) return styledTitle;
 	const room = width - visibleWidth(title);
 	return room >= MIN_PAYLOAD_WIDTH
-		? `${fg("toolTitle", title)}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
-		: fg("toolTitle", title);
+		? `${styledTitle}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
+		: styledTitle;
+}
+
+/**
+ * CC 规则：工具名加粗强调，路径不着色（仅 OSC8 超链接）。
+ * fitted 以 prefix 开头时只给 prefix 上色，余下原文（含 OSC8 序列）不动；
+ * prefix 本身被截断时回落整行着色。
+ */
+function colorTitlePrefix(
+	summary: ToolCallSummary,
+	fitted: string,
+	fg: (color: ThemeColor, text: string) => string,
+): string {
+	const prefix = summary.path?.prefix;
+	if (!prefix || !fitted.startsWith(prefix)) return fg("toolTitle", fitted);
+	return fg("toolTitle", prefix) + fitted.slice(prefix.length);
 }
 
 let toolTuiFullscreen: boolean | undefined;

@@ -1552,10 +1552,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	/**
-	 * 尾行归位。运行中（含收尾静默期）尾行恒为容器最末一行：计数行钉在
-	 * transcript 底缘，运行中到达的提示行/custom 条目只能落在它上方，计数
-	 * 不会被顶离底部截成两行。回合收尾后摘要行回落到回合最后一个成员之后，
-	 * 外来行统一换到摘要行之下，通知行永远落在回合边界外。
+	 * 尾行归位。目标位：活回合（运行中/收尾静默期）且未展开 → 容器最末，
+	 * 计数行钉在 transcript 可写底缘，运行中到达的提示行/custom 条目只能落在
+	 * 它上方，不会被顶离底部截成两行；其余（收尾回合、展开的回合）→ 回合最后
+	 * 一个成员之后，外来行统一换到摘要行之下。展开的回合不按 live 推到底：
+	 * 展开卡属于回合原位，推进容器末尾会把它挪到别的消息之间。
+	 * 尾行已在目标位就不动容器：展开/收起只换 tail.parts，无谓的重摘重插
+	 * 本身就是摘要行挪位的来源。
 	 */
 	const syncTailPosition = (round: CompactRound): void => {
 		const tail = round.tail;
@@ -1567,11 +1570,20 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (!container || !Array.isArray(container.children)) return;
 		tail.container = container;
 		const children = container.children as any[];
-		const current = children.indexOf(tail.host);
-		if (current >= 0) children.splice(current, 1);
 		const isMember = roundMemberMatcher(round);
-		let first = -1;
+		const current = children.indexOf(tail.host);
+		// 摘尾行前先定目标位，已在位就整段跳过。
 		let last = -1;
+		for (let i = 0; i < children.length; i++) {
+			if (children[i] === tail.host || !isMember(children[i])) continue;
+			last = i;
+		}
+		const pinToEnd = roundLive(round) && round.anchor?.expanded !== true;
+		const desired = pinToEnd || last < 0 ? children.length - 1 : last + 1;
+		if (current === desired) return;
+		if (current >= 0) children.splice(current, 1);
+		let first = -1;
+		last = -1;
 		for (let i = 0; i < children.length; i++) {
 			if (!isMember(children[i])) continue;
 			if (first < 0) first = i;
@@ -1586,7 +1598,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		if (lastMember) last = children.indexOf(lastMember);
 		const insertAt = last < 0 ? children.length : last + 1;
-		if (roundLive(round)) {
+		if (pinToEnd) {
 			// 活回合：外来行压到最后成员之后，尾行占容器最末。
 			children.splice(insertAt, 0, ...intruders);
 			children.push(tail.host);

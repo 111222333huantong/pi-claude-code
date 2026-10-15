@@ -10,6 +10,7 @@
  */
 import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { oneLine } from "../../utils/format.ts";
 import { toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
@@ -137,7 +138,52 @@ export function codemodeCodeSummary(code: unknown): string | undefined {
 }
 
 /**
- * 摘要行着色。highlightCode 按完整脚本着色，单行片段直接喂会把跨行字符串拆开，
+ * 没有子调用时的脚本行：语句逐行用 │ 树线列出，行数跟 expandedInputMaxLines。
+ * 超出的收成一行 `… N more lines`。注释、空行和 `// @options` 不占行。
+ */
+export function codemodeCodeLines(
+	code: unknown,
+	fg: (color: string, text: string) => string,
+	rowWidth: number,
+): string[] {
+	if (typeof code !== "string" || !code.trim()) return [];
+	const statements: string[] = [];
+	let skippingBlock = false;
+	for (const raw of code.split("\n")) {
+		const line = raw.trim();
+		if (skippingBlock) {
+			if (line.includes("*/")) skippingBlock = false;
+			continue;
+		}
+		if (line.startsWith("/*")) {
+			if (!line.includes("*/")) skippingBlock = true;
+			continue;
+		}
+		if (!line || line.startsWith("//") || line.startsWith("*")) continue;
+		const text = oneLine(line);
+		if (text) statements.push(text);
+	}
+	if (statements.length === 0) return [];
+	const limit = Math.max(1, config.expandedInputMaxLines);
+	const visible = statements.slice(0, limit);
+	const rail = `${INDENT}${fg("dim", "│")} `;
+	const lines = visible.map((statement) =>
+		truncateToWidth(`${rail}${highlightCodeSummary(statement)}`, rowWidth, ""),
+	);
+	const hidden = statements.length - visible.length;
+	if (hidden > 0) {
+		lines.push(
+			truncateToWidth(
+				`${rail}${fg("dim", `… ${hidden} more ${hidden === 1 ? "line" : "lines"}`)}`,
+				rowWidth,
+				"",
+			),
+		);
+	}
+	return lines;
+}
+
+/**
  * 所以包一层 `() => { … }` 再取中间那一行。失败或没着色时退回原文。
  */
 export function highlightCodeSummary(summary: string): string {
@@ -277,15 +323,10 @@ export function codemodeCollapsedLines(options: {
 	const rowWidth = toolViewportWidth(options.width);
 	const shown = calls.slice(-COLLAPSED_CALL_LIMIT);
 	const lines: string[] = [];
-	// 没有子调用时脚本本身是唯一线索：补一行 `code: 步骤 → 步骤`，
-	// 与子调用行同一套树线，汇总行仍用 └ 收尾。
+	// 没有子调用时脚本本身是唯一线索：逐行用 │ 树线列出，行数跟 expandedInputMaxLines，
+	// 汇总行仍用 └ 收尾。
 	if (shown.length === 0) {
-		const summary = codemodeCodeSummary(options.code);
-		if (summary) {
-			const prefix = `${INDENT}${fg("dim", "├")} ${fg("dim", "code:")} `;
-			const colored = highlightCodeSummary(summary);
-			lines.push(truncateToWidth(`${prefix}${colored}`, rowWidth, ""));
-		}
+		lines.push(...codemodeCodeLines(options.code, fg, rowWidth));
 	}
 	if (shown.length < calls.length) {
 		const hidden = calls.length - shown.length;

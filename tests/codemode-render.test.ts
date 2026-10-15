@@ -164,13 +164,12 @@ test("折叠态：没有子调用时补一行代码摘要，汇总用 └ 收尾
 		width: 160,
 		code: "const rows = scan()\nconst hits = grep(rows)\nreturn write(hits)",
 	});
-	// code: 标签走 theme 桩，语句由 highlightCode 按全局 theme 着色，比对时剥掉 ANSI。
-	// grep(rows) 与 write(hits) 都是调用，取更长的那行。
-	assert.equal(
-		lines[0]!.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
-		" ├ code: const hits = grep(rows)",
-	);
-	assert.equal(lines[1], " └ 2 lines output · click to show more");
+	const plain = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	// 语句逐行用 │ 列出，3 行脚本不超过 expandedInputMaxLines（默认 5）。
+	assert.equal(plain(lines[0]!), " │ const rows = scan()");
+	assert.equal(plain(lines[1]!), " │ const hits = grep(rows)");
+	assert.equal(plain(lines[2]!), " │ return write(hits)");
+	assert.equal(lines[3], " └ 2 lines output · click to show more");
 });
 
 test("折叠态：没有子调用也没有脚本时不画衔接符", () => {

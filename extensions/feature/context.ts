@@ -72,7 +72,15 @@ function localMouseFromSgr(
 	mouse: { code: number; col: number; row: number; final: "M" | "m" },
 	fallback: { col: number; row: number },
 ) {
-	const layout = tui.renderedOverlayLayouts?.at(-1) ?? fallback;
+	// 用焦点组件自己的布局。取最上层会在多个 overlay 叠放时把下层的点击算偏。
+	const layouts = Array.isArray(tui.renderedOverlayLayouts) ? tui.renderedOverlayLayouts : [];
+	const focused = tui.focusedComponent;
+	const layout =
+		layouts.findLast((candidate: { entry?: { component?: unknown } }) =>
+			focused ? candidate.entry?.component === focused : false,
+		) ??
+		(focused ? undefined : layouts.at(-1)) ??
+		fallback;
 	return {
 		col: mouse.col - 1 - layout.col,
 		row: mouse.row - 1 - layout.row,

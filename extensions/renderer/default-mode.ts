@@ -14,7 +14,7 @@ import {
 	TOOL_EXPANDED_BACKGROUND_PATCH,
 } from "../utils/patch-keys.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
-import { isLiveToolCall } from "./tool/tool-state.ts";
+import { isLiveToolCall, toolCardBgSlot } from "./tool/tool-state.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { createCcstyleTool } from "./tool/ccstyle-tool.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/index.ts";
@@ -373,9 +373,9 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 	}
 }
 
-/** 展开面板背景统一为配置槽位；折叠行保持原生状态色。
+/** 展开面板背景按工具状态取槽位；折叠行保持原生状态色。
  *  compact 下 ask_user_question 等普通工具的展开也走原生 contentBox，
- *  同样要盖住原生按状态的 toolSuccessBg/toolErrorBg。
+ *  这里按同一套状态覆盖它的底色。
  *  必须在 compact-mode 之后安装，shutdown 时先于 compact-mode 释放。 */
 export function installToolExpandedBackground(): () => void {
 	const previous = patchRegistry.get<ToolExpandedBackgroundPatch>(TOOL_EXPANDED_BACKGROUND_PATCH);
@@ -396,7 +396,8 @@ export function installToolExpandedBackground(): () => void {
 				box.paddingX = 1;
 				box.paddingY = 1;
 				if (box.setBgFn) {
-					box.setBgFn((text: string) => theme.bg(config.expandedCardBackground, text));
+					const slot = toolCardBgSlot(this);
+					box.setBgFn((text: string) => theme.bg(slot, text));
 				}
 			}
 		},

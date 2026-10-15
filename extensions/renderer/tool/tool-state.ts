@@ -1,3 +1,4 @@
+import type { ThemeBg } from "@earendil-works/pi-coding-agent";
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 
@@ -92,6 +93,54 @@ export function pendingIcon(_name: string): string {
 }
 
 type ToolVisualState = "pending" | "success" | "error";
+
+/** 展开卡底色槽位：与工具状态一一对应，不再读配置。 */
+export const TOOL_CARD_BG_SLOT: Record<ToolVisualState, ThemeBg> = {
+	pending: "toolPendingBg",
+	success: "toolSuccessBg",
+	error: "toolErrorBg",
+};
+
+/** 单张工具卡的状态。有失败取失败，没有结果或仍在输出取进行中，其余取成功。 */
+export function toolCardStatus(tool: any): ToolVisualState {
+	if (tool?.result?.isError === true || tool?.isError === true) return "error";
+	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result) || !tool?.result) {
+		return "pending";
+	}
+	return "success";
+}
+
+/**
+ * 一张卡里多个工具的汇总状态。
+ * 有一个失败取失败；没有失败但还有进行中取进行中；全部成功取成功。
+ */
+export function aggregateToolCardStatus(tools: readonly any[]): ToolVisualState {
+	let pending = false;
+	for (const tool of tools) {
+		const value = toolCardStatus(tool);
+		if (value === "error") return "error";
+		if (value === "pending") pending = true;
+	}
+	return pending ? "pending" : "success";
+}
+
+/**
+ * 单张工具卡的底色。
+ * edit/write 的新增行底色由 toolSuccessBg 混出，成功卡不能再用同一块绿，否则两层叠在一起。
+ * 成功的 edit/write 改用中性的 toolPendingBg；失败卡仍用 toolErrorBg。
+ */
+export function toolCardBgSlot(tool: any): ThemeBg {
+	const status = toolCardStatus(tool);
+	const name = String(tool?.toolName ?? "");
+	if ((name === "edit" || name === "write") && status !== "error") {
+		return TOOL_CARD_BG_SLOT.pending;
+	}
+	return TOOL_CARD_BG_SLOT[status];
+}
+
+export function aggregateToolCardBgSlot(tools: readonly any[]): string {
+	return TOOL_CARD_BG_SLOT[aggregateToolCardStatus(tools)];
+}
 
 export function settledIcon(name: string, state: ToolVisualState | undefined): string {
 	if (state === "success") return "✓";

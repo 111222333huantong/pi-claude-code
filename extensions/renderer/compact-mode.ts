@@ -2,7 +2,7 @@
  * Compact mode：每条含 toolCall 的 assistant message 折叠为一条逐步累加的摘要行
  * （`Ran for 8s, bash×2, read×2`），edit/write 独立标题行（`✓ write <path> (+25 -0)`），
  * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）时助手文本按原生渲染，
- * thinking 与工具卡装进 userMessageBg 面板（卡内恢复 compact-thinking/Pi 原生或专用
+ * thinking 与工具卡装进按状态着色的面板（卡内恢复 compact-thinking/Pi 原生或专用
  * renderer）。edit/write 复用 mode=on 的 rich diff
  * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
@@ -37,6 +37,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
+import { aggregateToolCardBgSlot, toolCardBgSlot } from "./tool/tool-state.ts";
 import { ASK_USER_QUESTION_TOOL_NAME } from "./tool/ask-user-question.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
@@ -355,14 +356,13 @@ function toolCardBgRow(
 	const inset = (n: number) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
 	return `${inset(leftInset)}${bgAnsi}${stable}\x1b[49m${inset(rightInset)}`;
 }
-/** edit/write 展开卡：保持原样式（展开卡背景 Box），不应用工具卡深色/间距改动。 */
-function editWriteExpandedCard(theme: any): any {
+/** edit/write 展开卡：按这张工具卡自己的状态取底色，不应用工具卡深色/间距改动。 */
+function editWriteExpandedCard(theme: any, component: any): any {
+	const slot = toolCardBgSlot(component);
 	return new Box(
 		1,
 		1,
-		typeof theme.bg === "function"
-			? (text: string) => theme.bg(config.expandedCardBackground, text)
-			: undefined,
+		typeof theme.bg === "function" ? (text: string) => theme.bg(slot, text) : undefined,
 	);
 }
 
@@ -383,7 +383,7 @@ function layoutExpandedToolCard(
 	toolHits = false,
 	live = false,
 ): { lines: string[]; hits: Array<{ child: any; start: number; end: number }> } {
-	const slot = config.expandedCardBackground;
+	const slot = aggregateToolCardBgSlot(children.map((child) => child?.__ccTool).filter(Boolean));
 	const toolBgAnsi = darkenBgAnsi(theme, slot);
 	/** live 每行前面的标记宽度（首行 `↳ `，其余对齐空格）。 */
 	const markerWidth = live ? 2 : 0;
@@ -502,7 +502,9 @@ function compactRoundCard(
 		| undefined;
 	const layout = (width: number) => {
 		const theme = themeOf();
-		const bgSlot = config.expandedCardBackground;
+		const bgSlot = aggregateToolCardBgSlot(
+			children.map((child) => child?.__ccTool).filter(Boolean),
+		);
 		const innerWidth = contentWidth(width);
 		const paints = children.map((child) => {
 			const lines = child.render?.(innerWidth);
@@ -811,7 +813,7 @@ function compactEditWriteLines(
 			hit &&
 			hit.width === width &&
 			hit.theme === theme &&
-			hit.bgSlot === config.expandedCardBackground &&
+			hit.bgSlot === toolCardBgSlot(component) &&
 			hit.diffConfigKey === diffConfigKey &&
 			hit.expanded === expanded &&
 			hit.result === component.result &&
@@ -828,7 +830,7 @@ function compactEditWriteLines(
 		compactEditPaintCache.set(component, {
 			width,
 			theme,
-			bgSlot: config.expandedCardBackground,
+			bgSlot: toolCardBgSlot(component),
 			diffConfigKey,
 			expanded,
 			result: component.result,
@@ -923,7 +925,7 @@ function paintCompactEditWrite(
 		return [...title, ...detail.render(width)];
 	}
 
-	const box = editWriteExpandedCard(theme);
+	const box = editWriteExpandedCard(theme, component);
 	box.addChild({
 		render(innerWidth: number): string[] {
 			return compactEditWriteLine(component, innerWidth, writeMetadata, {

@@ -8,7 +8,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { config } from "../extensions/config/config.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
 	humanizeToolLabel,
@@ -193,13 +192,12 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 	}
 });
 
-test("expanded group rows repaint when the card background slot changes", () => {
+test("expanded group rows follow the worst tool status", () => {
 	const hooks = installToolGrouping(() => true);
-	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走
 	const ANSI_BY_SLOT: Record<string, string> = {
-		userMessageBg: "\x1b[48;2;10;20;30m",
 		toolPendingBg: "\x1b[48;2;40;40;40m",
-		customMessageBg: "\x1b[48;2;50;60;70m",
+		toolSuccessBg: "\x1b[48;2;15;42;36m",
+		toolErrorBg: "\x1b[48;2;38;20;24m",
 	};
 	const bgAnsiOf = (slot: string) => ANSI_BY_SLOT[slot] ?? "\x1b[48;2;90;90;90m";
 	hooks.setTheme({
@@ -207,8 +205,6 @@ test("expanded group rows repaint when the card background slot changes", () => 
 		bg: (slot: string, text: string) => `${bgAnsiOf(slot)}${text}\x1b[49m`,
 		getBgAnsi: bgAnsiOf,
 	});
-	const previousSlot = config.expandedCardBackground;
-	const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 	try {
 		const parent = new Container() as any;
 		const read = started("read", "bg-read");
@@ -223,31 +219,37 @@ test("expanded group rows repaint when the card background slot changes", () => 
 		bash.render = () => (bashPaints ??= [" ✓ Bash ls", " done"]);
 		group.setExpanded(true);
 
-		const first = group.render(80);
+		const running = group.render(80);
 		assert.ok(
-			first.some((line: string) => line.includes(bgAnsiOf(previousSlot))),
-			"expanded panel rows use the configured slot",
+			running.some((line: string) => line.includes(bgAnsiOf("toolPendingBg"))),
+			"a running tool paints the pending background",
 		);
-		assert.ok(
-			first.every((line: string) => !line.includes(bgAnsiOf(targetSlot))),
-			"configured slot leaves no other background behind",
-		);
-		assert.strictEqual(group.render(80), first, "identical frame reuses the cached expanded rows");
 
-		// issue 46：改槽位后已展开的分组必须重画，不能命中旧底色的缓存行。
-		config.expandedCardBackground = targetSlot;
-		const repainted = group.render(80);
-		assert.notStrictEqual(repainted, first, "slot switch drops the stale expanded rows");
+		read.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		const settled = group.render(80);
+		assert.notStrictEqual(settled, running, "status change drops the stale expanded rows");
 		assert.ok(
-			repainted.some((line: string) => line.includes(bgAnsiOf(targetSlot))),
-			"expanded panel rows use the configured slot",
+			settled.some((line: string) => line.includes(bgAnsiOf("toolSuccessBg"))),
+			"all settled tools paint the success background",
+		);
+		assert.strictEqual(
+			group.render(80),
+			settled,
+			"identical frame reuses the cached expanded rows",
+		);
+
+		bash.updateResult({ content: [{ type: "text", text: "failed" }], isError: true });
+		const failed = group.render(80);
+		assert.ok(
+			failed.some((line: string) => line.includes(bgAnsiOf("toolErrorBg"))),
+			"one failed tool paints the error background",
 		);
 		assert.ok(
-			repainted.every((line: string) => !line.includes(bgAnsiOf(previousSlot))),
-			"slot switch repaints every panel row",
+			failed.every((line: string) => !line.includes(bgAnsiOf("toolSuccessBg"))),
+			"the success background leaves no row behind",
 		);
 	} finally {
-		config.expandedCardBackground = previousSlot;
 		hooks.shutdown();
 	}
 });

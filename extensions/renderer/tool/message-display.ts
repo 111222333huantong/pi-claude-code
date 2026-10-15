@@ -6,6 +6,7 @@ import {
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 import { config } from "../../config/config.ts";
+import { TOOL_CARD_BG_SLOT } from "./tool-state.ts";
 import { showMoreHintText } from "./names.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 
@@ -82,11 +83,11 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 		component.addChild(new Text(`${icon} ${title}${hint}`, 0, 0));
 		return;
 	}
-	// 展开卡与 tool 一致：同一个展开卡背景 + 上下左右 1 格
+	// 展开卡与成功的工具卡同底色，上下左右各 1 格。
 	component.paddingX = 1;
 	component.paddingY = 1;
 	if (typeof theme.bg === "function" && typeof component.setBgFn === "function") {
-		component.setBgFn((text: string) => theme.bg(config.expandedCardBackground, text));
+		component.setBgFn((text: string) => theme.bg(TOOL_CARD_BG_SLOT.success, text));
 	}
 	component.addChild(new Text(`${icon} ${title}`, 0, 0));
 	component.addChild(new Spacer(1));

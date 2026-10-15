@@ -4,7 +4,7 @@
  * 渲染副作用（applyStyleMode / refreshCurrentTranscript）由 renderer 经
  * CcstylePanelHooks 注入，避免 config → renderer 循环依赖。
  */
-import { getSettingsListTheme, type ThemeBg } from "@earendil-works/pi-coding-agent";
+import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import {
@@ -39,7 +39,6 @@ import {
 	DIFF_SPLIT_MIN_WIDTH_VALUES,
 	DIFF_VIEW_MODES,
 	EXCLUDE_RENDERER_CANDIDATES,
-	EXPANDED_CARD_BACKGROUND_SLOTS,
 	EXPANDED_INPUT_MAX_LINES_VALUES,
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
@@ -235,14 +234,6 @@ function diffIndicatorDescription(mode: DiffIndicatorMode): string {
 	if (mode === "classic") return "Classic +/- gutters on changed lines.";
 	if (mode === "none") return "No change indicators; rely on color alone.";
 	return "Vertical bar indicators on changed lines (default).";
-}
-
-function expandedCardBackgroundDescription(slot: ThemeBg): string {
-	if (slot === "userMessageBg") {
-		return "Expanded cards share the user message background. Pick another slot to tell them apart.";
-	}
-	if (slot === "toolPendingBg") return "Expanded cards use the theme's neutral tool background.";
-	return `Expanded cards use the theme's ${slot} background.`;
 }
 
 /** 额外功能开关项：on/off 二值，描述随状态切换；切换后需重启生效。 */
@@ -568,13 +559,6 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, expandedMaxSetting, closeSubmenu),
 		};
-		const expandedCardBgSetting = {
-			id: "expandedCardBackground",
-			label: "Expanded card bg",
-			description: expandedCardBackgroundDescription(config.expandedCardBackground),
-			currentValue: config.expandedCardBackground,
-			values: [...EXPANDED_CARD_BACKGROUND_SLOTS],
-		};
 		const thinkingTitleSetting = {
 			id: "useSummaryTitlesAsThinkingTitle",
 			label: "Summary title",
@@ -740,13 +724,13 @@ export async function showCcstylePanel(
 			currentValue: config.footerNerdIcons ? "on" : "off",
 			values: ["on", "off"],
 		};
-		const inputPromptSetting = {
-			id: "enableInputPrompt",
-			label: "Input prompt",
-			description: config.enableInputPrompt
+		const editorPrefixSetting = {
+			id: "enableEditorPrefix",
+			label: "Editor prefix",
+			description: config.enableEditorPrefix
 				? "Show ❯ before the input line; color follows thinking level / bash mode."
 				: "Plain input line, no ❯ glyph.",
-			currentValue: config.enableInputPrompt ? "on" : "off",
+			currentValue: config.enableEditorPrefix ? "on" : "off",
 			values: ["on", "off"],
 		};
 		const customFooterSetting = {
@@ -881,11 +865,11 @@ export async function showCcstylePanel(
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
-			if (id === "enableInputPrompt") {
+			if (id === "enableEditorPrefix") {
 				const enabled = value === "on";
-				updateConfig({ enableInputPrompt: enabled });
-				inputPromptSetting.currentValue = enabled ? "on" : "off";
-				inputPromptSetting.description = enabled
+				updateConfig({ enableEditorPrefix: enabled });
+				editorPrefixSetting.currentValue = enabled ? "on" : "off";
+				editorPrefixSetting.description = enabled
 					? "Show ❯ before the input line; color follows thinking level / bash mode."
 					: "Plain input line, no ❯ glyph.";
 				if (enabled) applyPromptEditor(ctx);
@@ -1003,12 +987,6 @@ export async function showCcstylePanel(
 					});
 					expandedMaxSetting.currentValue = String(config.expandedPreviewMaxLines);
 					break;
-				case "expandedCardBackground":
-					updateConfig({ expandedCardBackground: value as ThemeBg });
-					expandedCardBgSetting.description = expandedCardBackgroundDescription(
-						config.expandedCardBackground,
-					);
-					break;
 				case "useSummaryTitlesAsThinkingTitle":
 					updateConfig({ useSummaryTitlesAsThinkingTitle: value === "on" });
 					break;
@@ -1080,12 +1058,11 @@ export async function showCcstylePanel(
 					expandedInputSetting,
 					expandedOutputSetting,
 					expandedMaxSetting,
-					expandedCardBgSetting,
 					toolLabelClipSetting,
 					stickyUserMessageSetting,
 					scrollButtonSetting,
 					startupHeaderSetting,
-					inputPromptSetting,
+					editorPrefixSetting,
 				],
 			},
 			{

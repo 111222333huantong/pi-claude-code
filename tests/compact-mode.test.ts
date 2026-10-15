@@ -218,25 +218,6 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ expandedOutputMaxLines: 40 }).expandedOutputMaxLines, 40);
 	assert.match(formatConfigStatus(normalizeConfig({})), /expandedInput=5/);
 	assert.match(formatConfigStatus(normalizeConfig({})), /expandedOutput=10/);
-	// issue 46：展开卡背景槽位白名单，默认与旧行为一致。
-	assert.equal(normalizeConfig({}).expandedCardBackground, "userMessageBg");
-	assert.equal(
-		normalizeConfig({ expandedCardBackground: "toolPendingBg" }).expandedCardBackground,
-		"toolPendingBg",
-	);
-	assert.equal(
-		normalizeConfig({ expandedCardBackground: "selectedBg" }).expandedCardBackground,
-		"selectedBg",
-	);
-	// 非背景 token（fg 槽位）与垃圾值都回退默认，theme.bg 不会拿到未知 token。
-	assert.equal(
-		normalizeConfig({ expandedCardBackground: "toolTitle" }).expandedCardBackground,
-		"userMessageBg",
-	);
-	assert.equal(
-		normalizeConfig({ expandedCardBackground: 42 }).expandedCardBackground,
-		"userMessageBg",
-	);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {
@@ -547,24 +528,8 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			cardLines.every((line: string) => line === "" || visibleWidth(line) === 80),
 			"expanded round is wrapped by one width-safe tool card",
 		);
-		// 面板铺的就是当前配置的槽位（默认 userMessageBg 由 normalizeConfig 用例守）
-		assert.deepEqual([...new Set(backgroundSlots)], [config.expandedCardBackground]);
-		// issue 46：展开面板背景槽位可配，改配置后重新渲染要跟着换。
-		// 当前值可能已被本机配置设成 toolPendingBg，换个槽位验证跟随。
-		const previousSlot = config.expandedCardBackground;
-		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-		try {
-			backgroundSlots.length = 0;
-			config.expandedCardBackground = targetSlot;
-			assistant1.render(80);
-			assert.deepEqual(
-				[...new Set(backgroundSlots)],
-				[targetSlot],
-				"expanded round card follows the configured slot",
-			);
-		} finally {
-			config.expandedCardBackground = previousSlot;
-		}
+		// 回合里的工具都已成功：整张展开卡用成功底色。
+		assert.deepEqual([...new Set(backgroundSlots)], ["toolSuccessBg"]);
 		setMessageDisplayTheme(previousTheme);
 		assert.deepEqual(renderText(bash), [], "round tools render only inside the summary card");
 		assistant1.setExpanded(false);
@@ -662,28 +627,24 @@ test("expanded round panel repaints when the card background slot changes", () =
 				},
 			}),
 		);
-		const initialSlot = config.expandedCardBackground;
 		anchor.render(120);
-		assert.ok(backgroundSlots.includes(initialSlot), "panel starts on the configured slot");
+		assert.ok(
+			backgroundSlots.includes("toolSuccessBg"),
+			"settled round panel uses the success background",
+		);
 
 		backgroundSlots.length = 0;
 		anchor.render(120);
 		assert.deepEqual(backgroundSlots, [], "identical frame reuses the cached panel rows");
 
-		// issue 46：改槽位后已展开的回合面板必须重画，不能命中旧底色的缓存。
-		const previousSlot = config.expandedCardBackground;
-		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-		try {
-			config.expandedCardBackground = targetSlot;
-			anchor.render(120);
-			assert.deepEqual(
-				[...new Set(backgroundSlots)],
-				[targetSlot],
-				"panel follows the configured slot",
-			);
-		} finally {
-			config.expandedCardBackground = previousSlot;
-		}
+		// 其中一个工具失败：整张回合卡改用失败底色，不能命中旧底色的缓存。
+		second.updateResult({ content: [{ type: "text", text: "failed" }], isError: true });
+		anchor.render(120);
+		assert.deepEqual(
+			[...new Set(backgroundSlots)],
+			["toolErrorBg"],
+			"one failed tool paints the whole round card",
+		);
 	} finally {
 		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
@@ -2577,22 +2538,16 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		assert.match(expanded, /old/);
 		assert.match(expanded, /new/);
 		assert.doesNotMatch(expanded, /Input|Output|Details:/);
-		assert.ok(backgroundSlots.includes("userMessageBg"));
-		// issue 46：edit/write 展开卡单独一条取槽位路径，同样跟随配置。
-		const previousSlot = config.expandedCardBackground;
-		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-		try {
-			backgroundSlots.length = 0;
-			config.expandedCardBackground = targetSlot;
-			edit.render(120);
-			assert.deepEqual(
-				[...new Set(backgroundSlots)],
-				[targetSlot],
-				"expanded edit card follows the configured slot",
-			);
-		} finally {
-			config.expandedCardBackground = previousSlot;
-		}
+		assert.ok(backgroundSlots.includes("toolSuccessBg"));
+		// 失败的 edit 单独走自己的状态，整张展开卡改用失败底色。
+		backgroundSlots.length = 0;
+		edit.updateResult({ content: [], details: { diff: EDIT_DIFF }, isError: true });
+		edit.render(120);
+		assert.deepEqual(
+			[...new Set(backgroundSlots)],
+			["toolErrorBg"],
+			"failed edit card uses the error background",
+		);
 		setMessageDisplayTheme(previousTheme);
 
 		// edit 缺 diff 时统计未知，不能伪报 (+0 -0)，退回 Input/Output。

@@ -11,7 +11,7 @@
  *
  * `userPaddingX` 记录渲染时读到的用户 editorPaddingX（pi 通过 setPaddingX
  * 同步进本编辑器），footer 用 `inputTextIndent()` 对齐输入文本起始列：
- * 提示符开 = userPaddingX + 2，关 = userPaddingX。
+ * 前缀开 = userPaddingX + 2，关 = userPaddingX。
  */
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
@@ -25,7 +25,7 @@ let userPaddingX = 0;
 
 /** 输入文本起始列：footer 按它对齐。 */
 export function inputTextIndent(): number {
-	return config.enableInputPrompt ? userPaddingX + PROMPT_COLS : userPaddingX;
+	return config.enableEditorPrefix ? userPaddingX + PROMPT_COLS : userPaddingX;
 }
 
 export class PromptEditor extends CustomEditor {
@@ -50,11 +50,11 @@ export class PromptEditor extends CustomEditor {
 	}
 }
 
-/** 应用/恢复输入框提示符。enableInputPrompt=false 时不占扩展点。 */
+/** 应用/恢复输入框前缀。enableEditorPrefix=false 时不占扩展点。 */
 export function applyPromptEditor(ctx: ExtensionContext): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setEditorComponent !== "function") return;
 	try {
-		if (config.enableInputPrompt) {
+		if (config.enableEditorPrefix) {
 			ctx.ui.setEditorComponent(
 				(tui, theme, keybindings) =>
 					new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true }),

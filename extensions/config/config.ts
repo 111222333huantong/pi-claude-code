@@ -1,4 +1,3 @@
-import type { ThemeBg } from "@earendil-works/pi-coding-agent";
 import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
 import {
 	DEFAULT_FOOTER_CHIP_LAYOUT,
@@ -58,7 +57,6 @@ export type Config = {
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
-	expandedCardBackground: ThemeBg;
 	expandedInputMaxLines: number;
 	expandedOutputMaxLines: number;
 	toolLabelClip: number;
@@ -76,8 +74,8 @@ export type Config = {
 	enableAgentSummary: boolean;
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
-	/** 输入框 `❯ ` 提示符（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
-	enableInputPrompt: boolean;
+	/** 输入框 `❯ ` 前缀（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
+	enableEditorPrefix: boolean;
 	enableCustomFooter: boolean;
 	/** footer 输出速率芯片。关则不显示。 */
 	footerTokenRate: boolean;
@@ -112,20 +110,6 @@ export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "
 export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
 export const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
-/**
- * 展开卡可用的主题背景槽位。theme.bg/getBgAnsi 只认这些 token，
- * 别的名字会抛 Unknown theme color，所以按白名单校验；
- * 面板顺序把 userMessageBg（默认）和 toolPendingBg（内置主题的中性灰）放最前。
- */
-export const EXPANDED_CARD_BACKGROUND_SLOTS: readonly ThemeBg[] = [
-	"userMessageBg",
-	"toolPendingBg",
-	"customMessageBg",
-	"selectedBg",
-	"searchMatchBg",
-	"toolSuccessBg",
-	"toolErrorBg",
-];
 /** 展开工具卡 Input 可见行数预设。 */
 export const EXPANDED_INPUT_MAX_LINES_VALUES = ["5", "10", "20", "40", "80"];
 /** 展开工具卡 Output 可见行数预设。 */
@@ -158,8 +142,6 @@ export const DEFAULT_CONFIG: Config = {
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
-	/** 展开卡背景。userMessageBg 与用户消息同色（ccstyle 原约定）。 */
-	expandedCardBackground: "userMessageBg",
 	expandedInputMaxLines: 5,
 	expandedOutputMaxLines: 10,
 	toolLabelClip: 0,
@@ -175,7 +157,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableAgentSummary: true,
 	enableWorkingMessage: true,
 	enableAliases: true,
-	enableInputPrompt: true,
+	enableEditorPrefix: true,
 	enableCustomFooter: true,
 	footerTokenRate: true,
 	footerTokenRateMode: "average",
@@ -269,11 +251,6 @@ export function normalizeConfig(input: unknown): Config {
 			10,
 			50_000,
 		),
-		expandedCardBackground: pickEnum(
-			source.expandedCardBackground,
-			EXPANDED_CARD_BACKGROUND_SLOTS,
-			DEFAULT_CONFIG.expandedCardBackground,
-		),
 		expandedInputMaxLines: pickPositiveInt(
 			source.expandedInputMaxLines,
 			DEFAULT_CONFIG.expandedInputMaxLines,
@@ -313,7 +290,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableAgentSummary: source.enableAgentSummary !== false,
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
-		enableInputPrompt: source.enableInputPrompt !== false,
+		enableEditorPrefix: (source.enableEditorPrefix ?? source.enableInputPrompt) !== false, // 兼容旧配置键
 		enableCustomFooter: source.enableCustomFooter !== false,
 		footerTokenRate: source.footerTokenRate !== false,
 		footerTokenRateMode: pickEnum(
@@ -384,7 +361,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
-		`inputPrompt=${source.enableInputPrompt ? "on" : "off"}`,
+		`editorPrefix=${source.enableEditorPrefix ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
 		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
 		`footerTokenRateMode=${source.footerTokenRateMode}`,

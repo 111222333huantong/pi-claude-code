@@ -194,12 +194,10 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		},
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
-	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40。
-	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走。
 	const CARD_BG_ANSI: Record<string, string> = {
-		userMessageBg: "\x1b[48;2;52;53;65m",
 		toolPendingBg: "\x1b[48;2;40;40;40m",
-		customMessageBg: "\x1b[48;2;60;50;70m",
+		toolSuccessBg: "\x1b[48;2;15;42;36m",
+		toolErrorBg: "\x1b[48;2;38;20;24m",
 	};
 	const cardBgAnsi = (slot: string) => CARD_BG_ANSI[slot] ?? "\x1b[48;2;90;90;90m";
 	const ui = {
@@ -268,12 +266,11 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
 
 		const cardLines = component.render(60);
-		// 展开面板背景取配置的槽位（默认 userMsgBg #343541），不再按状态区分。
-		const panelAnsi = cardBgAnsi(config.expandedCardBackground);
-		assert.ok(cardLines.some((line: string) => line.includes(panelAnsi)));
+		// 成功的工具展开后整卡用成功底色。
+		assert.ok(cardLines.some((line: string) => line.includes(cardBgAnsi("toolSuccessBg"))));
 		assert.ok(
-			cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
-			"no toolSuccessBg remains in the expanded panel",
+			cardLines.every((line: string) => !line.includes(cardBgAnsi("toolErrorBg"))),
+			"a successful tool leaves no error background",
 		);
 		const callLine = cardLines.find((line: string) =>
 			line.replace(/\x1b\[[0-9;]*m/g, "").includes("Bash "),
@@ -290,25 +287,21 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
 
-		// issue 46：展开卡背景槽位可配，渲染时现读配置。
-		// 单卡 paint 缓存不含主题/槽位，靠面板的 refresh 走 invalidate 重画。
-		const previousSlot = config.expandedCardBackground;
-		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-		try {
-			config.expandedCardBackground = targetSlot;
-			component.invalidate();
-			const repainted = component.render(60);
-			assert.ok(
-				repainted.some((line: string) => line.includes(cardBgAnsi(targetSlot))),
-				"expanded card uses the configured background slot",
-			);
-			assert.ok(
-				repainted.every((line: string) => !line.includes(cardBgAnsi(previousSlot))),
-				"the previous slot leaves no expanded row behind",
-			);
-		} finally {
-			config.expandedCardBackground = previousSlot;
-		}
+		// 失败后整卡改用失败底色，成功底色不留在任何一行。
+		component.updateResult({
+			content: [{ type: "text", text: "failed" }],
+			isError: true,
+		});
+		component.invalidate();
+		const repainted = component.render(60);
+		assert.ok(
+			repainted.some((line: string) => line.includes(cardBgAnsi("toolErrorBg"))),
+			"a failed tool paints the error background",
+		);
+		assert.ok(
+			repainted.every((line: string) => !line.includes(cardBgAnsi("toolSuccessBg"))),
+			"the success background leaves no expanded row behind",
+		);
 		component.setExpanded(false);
 		assert.equal(component.children.includes(component.selfRenderContainer), true);
 

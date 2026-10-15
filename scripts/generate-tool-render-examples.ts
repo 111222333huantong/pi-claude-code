@@ -827,7 +827,7 @@ async function generateCompact() {
 					[
 						"含 toolCall 的 assistant 折叠为一行摘要（运行时长 + 工具计数）。普通工具不单独成行。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：",
 						fence([...activeLines, ...doneLines]),
-						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：",
+						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（底色按工具状态取 toolPendingBg / toolSuccessBg / toolErrorBg）：",
 						fence(expandedLines),
 						[
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",

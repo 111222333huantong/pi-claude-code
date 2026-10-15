@@ -7,6 +7,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
+import { aggregateToolCardBgSlot, toolCardStatus } from "./tool-state.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import {
 	ASK_USER_QUESTION_TOOL_NAME,
@@ -105,9 +106,7 @@ function previousSibling(
 type ToolStatus = "pending" | "success" | "error";
 
 function status(tool: any): ToolStatus {
-	if (tool?.result?.isError) return "error";
-	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result)) return "pending";
-	return tool?.result ? "success" : "pending";
+	return toolCardStatus(tool);
 }
 
 function statusIcon(value: ToolStatus): string {
@@ -528,7 +527,7 @@ export class ToolGroupComponent extends Container {
 				expandedHit.hover === this.hintHovered &&
 				expandedHit.theme === this.patch.theme &&
 				expandedHit.fullscreen === isToolTuiFullscreen() &&
-				expandedHit.bgSlot === config.expandedCardBackground &&
+				expandedHit.bgSlot === aggregateToolCardBgSlot(this.children) &&
 				expandedHit.paints.length === childPaints.length &&
 				expandedHit.paints.every((paint, index) => paint === childPaints[index])
 			) {
@@ -565,8 +564,8 @@ export class ToolGroupComponent extends Container {
 			}
 		}
 		if (this._expanded) {
-			// 展开面板统一一个背景槽位（ccstyle 约定），不按状态区分。
-			const backgroundSlot = config.expandedCardBackground;
+			// 有一个失败整卡用失败底色；没有失败但还有进行中用进行中底色。
+			const backgroundSlot = aggregateToolCardBgSlot(this.children);
 			for (const line of expandedLines) {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}

@@ -6,7 +6,6 @@ import test from "node:test";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
-import { config as ccstyleConfig } from "../extensions/config/config.ts";
 import {
 	clearThinkingPreviewCache,
 	installCompactThinking,
@@ -782,7 +781,7 @@ test("thinking preview expands the full body and keeps that state across updateC
 		const rawExpanded = component.render(120) as string[];
 		assert.ok(
 			rawExpanded.some((line) => line.includes("<bg>")),
-			"expanded thinking is wrapped in the userMessageBg card",
+			"expanded thinking is wrapped in the success card",
 		);
 		const expanded = renderText(component);
 		assert.ok(!expanded.some((line) => line.includes("more line")));
@@ -793,23 +792,9 @@ test("thinking preview expands the full body and keeps that state across updateC
 			"expanded body shows more than the preview window",
 		);
 		assert.ok(
-			bgSlots.includes(ccstyleConfig.expandedCardBackground),
-			"expanded thinking card uses the configured slot",
+			bgSlots.includes("toolSuccessBg"),
+			"expanded thinking card uses the success background",
 		);
-
-		// issue 46：展开卡背景槽位可配，渲染时现读配置。
-		const previousSlot = ccstyleConfig.expandedCardBackground;
-		// 本机的 pi-cc-extensions.json 可能就设成了 toolPendingBg，换个槽位验证跟随
-		const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-		try {
-			bgSlots.length = 0;
-			ccstyleConfig.expandedCardBackground = targetSlot;
-			component.render(120);
-			assert.ok(bgSlots.includes(targetSlot), "thinking card follows the configured slot");
-			assert.ok(!bgSlots.includes(previousSlot), "the previous slot leaves no card behind");
-		} finally {
-			ccstyleConfig.expandedCardBackground = previousSlot;
-		}
 
 		component.updateContent(msg);
 		assert.equal(thinkingBlockOf(component).expanded, true);

@@ -15,7 +15,7 @@
      ↳ 1 line returned
 ```
 
-展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：
+展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（底色按工具状态取 toolPendingBg / toolSuccessBg / toolErrorBg）：
 
 ```text
  checking the diff

@@ -31,8 +31,8 @@ export interface DiffPalette {
 	removeEmphasisBgAnsi: string;
 }
 
-const ADD_ROW_BACKGROUND_MIX_RATIO = 0.12;
-const REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.35;
+const ADD_ROW_BACKGROUND_MIX_RATIO = 0.04;
+const REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.12;
 const ADD_INLINE_EMPHASIS_MIX_RATIO = 0.26;
 const REMOVE_INLINE_EMPHASIS_MIX_RATIO = 0.5;
 const ADDITION_TINT_TARGET: RgbColor = { r: 84, g: 190, b: 118 };

@@ -48,6 +48,7 @@ import {
 import {
 	fullscreenLazyTui,
 	hideScrollButton,
+	dockScrollButtonActive,
 	restoreOfficialScrollToEnd,
 	syncOfficialScrollToEnd,
 	isScrollBottomInput,
@@ -503,8 +504,8 @@ function keepViewportOnExpand(tui: any): void {
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo !== "function" || typeof view.scrollTop !== "number") return;
 	view.scrollTo(view.scrollTop, { disableFollow: true });
-	// 已脱离底部跟随：亮出回到底部按钮，新输出到来时仍有入口。
-	if (view.isFollowingEnd === false) setScrollButtonVisible(true);
+	// 已脱离底部跟随：dock 模式亮出回到底部按钮，新输出到来时仍有入口。
+	if (view.isFollowingEnd === false && dockScrollButtonActive()) setScrollButtonVisible(true);
 }
 
 /**

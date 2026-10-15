@@ -509,11 +509,7 @@ const createCustomFooterFactory =
 			const fit = (line: string) =>
 				indent + truncateToWidth(line, Math.max(1, width - indent.length));
 
-			return [
-				fit(line1),
-				...(line2 ? [fit(line2)] : []),
-				...(line3 ? [fit(line3)] : []),
-			];
+			return [fit(line1), ...(line2 ? [fit(line2)] : []), ...(line3 ? [fit(line3)] : [])];
 		};
 
 		return {

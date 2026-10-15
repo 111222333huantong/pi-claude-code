@@ -40,13 +40,15 @@ export function insetComponent(component: any): any {
 export function expandedBodyComponent(component: any): any {
 	const wrapped: Record<string, unknown> = {
 		render: (width: number) =>
-			component.render(width).map((line: string) =>
-				truncateToWidth(
-					line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳"),
-					Math.max(0, width),
-					"",
+			component
+				.render(width)
+				.map((line: string) =>
+					truncateToWidth(
+						line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳"),
+						Math.max(0, width),
+						"",
+					),
 				),
-			),
 		invalidate: () => component.invalidate?.(),
 	};
 	if (typeof component.isCollapsedHintLine === "function") {

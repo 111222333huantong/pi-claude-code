@@ -304,10 +304,8 @@ export function resolveDiffPalette(theme: DiffTheme): DiffPalette {
 	// 浅色基底保持原 tint 口径，免得行底深得盖过文字。
 	const removeBaseLuminance =
 		(removeBaseBg.r * 299 + removeBaseBg.g * 587 + removeBaseBg.b * 114) / 1000;
-	const removeRowTarget =
-		removeBaseLuminance < 128 ? DELETION_ROW_TARGET : removeTint;
-	const removeEmphasisTarget =
-		removeBaseLuminance < 128 ? DELETION_EMPHASIS_TARGET : removeTint;
+	const removeRowTarget = removeBaseLuminance < 128 ? DELETION_ROW_TARGET : removeTint;
+	const removeEmphasisTarget = removeBaseLuminance < 128 ? DELETION_EMPHASIS_TARGET : removeTint;
 	const removeRowBg = desaturateRgb(
 		mixRgb(removeBaseBg, removeRowTarget, REMOVE_ROW_BACKGROUND_MIX_RATIO),
 		ROW_DESATURATE_RATIO,

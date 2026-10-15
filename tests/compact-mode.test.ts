@@ -1364,7 +1364,10 @@ test("compact：同一组件流式切换 text/toolCall 形态不拆回合", () =
 		chat.addChild(tool("grep", "g1", { pattern: "x" }));
 
 		// pi 的流式 message_update：同一组件反复 updateContent，content 形态会变。
-		anchor.updateContent({ ...base, content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } }] });
+		anchor.updateContent({
+			...base,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } }],
+		});
 		anchor.updateContent({
 			...base,
 			content: [

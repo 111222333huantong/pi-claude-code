@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.0.3 · mode=`compact`。
+> 当前版本：ccstyle 1.0.4 · mode=`compact`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 消息折叠摘要行
@@ -20,13 +20,13 @@
 ```text
  checking the diff
 
-  Thinking...
+ Thinking...
 
-  ✓ Bash npm test
-    ↳ 1 line returned · click to show more
+ ✓ Bash npm test
+   ↳ 1 line returned · click to show more
 
-  ✓ Read a.ts
-    ↳ 2 lines loaded · click to show more
+ ✓ Read a.ts
+   ↳ 2 lines loaded · click to show more
 ```
 
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
@@ -101,7 +101,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
 
 ```text
  ✓ edit sample.ts
- ↳ diff · +1 · -1 · unified [━━━━━━━━]
+   ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1

@@ -304,6 +304,30 @@ function textPreviewHarness(
 	};
 }
 
+test("showTextPreview closes from a regular-mode SGR click without overlay layout", async () => {
+	const tui = { terminal: { columns: 80, rows: 24 }, requestRender() {} };
+	const ui = textPreviewHarness(undefined, (c) => c.render(64), tui);
+	const preview = showTextPreview({ ui } as any, "Output", "hello");
+	// margin 2、80x24、宽 64、高 19：起点 col=8 row=2。局部 [esc] (60,1) → 屏幕 69,4。
+	ui.component.handleInput("\x1b[<0;69;4M");
+	await preview;
+	assert.equal(hasActiveTextPreview(), false);
+});
+
+test("showTextPreview closes from a regular-mode SGR click on [esc]", async () => {
+	const tui = {
+		terminal: { columns: 80, rows: 24 },
+		requestRender() {},
+		renderedOverlayLayouts: [{ col: 0, row: 0, width: 64, height: 20 }],
+	};
+	const ui = textPreviewHarness(undefined, (c) => c.render(64), tui);
+	const preview = showTextPreview({ ui } as any, "Output", "hello");
+	// 局部 x=60 是 [esc]；SGR 是 1-based 屏幕坐标，overlay 在 0,0 时 col=61 row=2。
+	ui.component.handleInput("\x1b[<0;61;2M");
+	await preview;
+	assert.equal(hasActiveTextPreview(), false);
+});
+
 test("showTextPreview highlights and closes from the [esc] mouse hitbox", async () => {
 	let escColor = "";
 	const ui = textPreviewHarness(

@@ -1613,6 +1613,72 @@ test("compact 回合不跨用户消息：重放后 refresh 重新分组，边界
 	}
 });
 
+test("compact 尾行：同一条消息的 timestamp 不前进时，活回合仍用挂钟", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const realNow = Date.now;
+	const t0 = 1_700_000_000_000;
+	let now = t0;
+	Date.now = () => now;
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: t0,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "one" }));
+		anchor.updateContent(message);
+		now += 5_000;
+		anchor.updateContent({
+			role: "assistant",
+			timestamp: t0,
+			content: [{ type: "text", text: "done" }],
+		});
+		await settleFold();
+		assert.match(renderText(chat).join("\n"), /Ran for 5s/);
+	} finally {
+		Date.now = realNow;
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：回放同一毫秒收尾，不用现在减历史 timestamp", async () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	const realNow = Date.now;
+	const t0 = 1_700_000_000_000;
+	Date.now = () => t0 + 60_000;
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: t0,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "one" }));
+		anchor.updateContent(message);
+		anchor.updateContent({
+			role: "assistant",
+			timestamp: t0,
+			content: [{ type: "text", text: "done" }],
+		});
+		await settleFold();
+		const text = renderText(chat).join("\n");
+		assert.match(text, /Ran for 1ms/);
+		assert.doesNotMatch(text, /Ran for 60s|Ran for 1m(?!s)/);
+	} finally {
+		Date.now = realNow;
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
 test("compact 尾行：refresh 重建保留挂钟与收尾态，不回摆 Running", async () => {
 	const { hooks, restore } = installHooks();
 	const chat = new Container() as any;

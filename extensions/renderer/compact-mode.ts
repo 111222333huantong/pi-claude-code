@@ -1195,6 +1195,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		foldTimer?: ReturnType<typeof setTimeout>;
 		/** 回合挂钟起点，保证 Running 时长连续递增。 */
 		startedAt: number;
+		/** 本进程看见回合的挂钟起点。消息 timestamp 不随工具执行前进。 */
+		wallStartedAt: number;
 		endedAt?: number;
 		/** 回合尾行（摘要 + live 槽位），挂在 transcript 容器的回合末尾。 */
 		tail?: MountedRoundTail;
@@ -1268,8 +1270,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		value >= 1_600_000_000_000 &&
 		value <= Date.now() + 60_000;
 
-	/** 结束回合活动态；不做任何重绘。endTimestamp 用后一段内容的真实时刻收边（回放里
-	 * 同一毫秒完成的 create/finalize 差不出真实耗时）；缺省取回合内消息的最大 timestamp。 */
+	/** 结束回合活动态；不做任何重绘。更晚的消息 timestamp 用来保住回放时长；
+	 * 同一条消息的 timestamp 不动，活回合改用本进程挂钟，避免把历史 timestamp 收到「现在」。 */
 	const finalizeRound = (round: CompactRound, endTimestamp?: number): void => {
 		clearFoldTimer(round);
 		round.active = false;
@@ -1280,10 +1282,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					fallback = message.timestamp;
 				}
 			}
-			round.endedAt = Math.max(
-				round.startedAt,
-				isUsableTimestamp(endTimestamp) ? endTimestamp : fallback || Date.now(),
-			);
+			const stamped = isUsableTimestamp(endTimestamp) ? endTimestamp : fallback;
+			if (stamped > round.startedAt) round.endedAt = stamped;
+			else if (typeof round.wallStartedAt === "number") {
+				round.endedAt = round.startedAt + Math.max(0, Date.now() - round.wallStartedAt);
+			} else round.endedAt = Math.max(round.startedAt, Date.now());
 		}
 		if (activeRound === round) {
 			activeRound = undefined;
@@ -1658,6 +1661,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		if (!prior) return;
 		round.startedAt = prior.startedAt;
+		if (typeof prior.wallStartedAt === "number") round.wallStartedAt = prior.wallStartedAt;
 		if (prior.detachedMessages.length) round.detachedMessages.push(...prior.detachedMessages);
 		if (!prior.active) {
 			round.active = false;
@@ -1683,6 +1687,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			suppressedToolIds: new Set(),
 			liveSlotToolIds: new Set(),
 			startedAt: isUsableTimestamp(message?.timestamp) ? message.timestamp : Date.now(),
+			wallStartedAt: Date.now(),
 		};
 		liveRounds.add(round);
 		activateRound(round);

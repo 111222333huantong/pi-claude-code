@@ -1425,6 +1425,41 @@ test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components
 	installToolMouseInteraction({});
 });
 
+test("lazy-proxy tui: missing or stale overlay layouts are not consumed as tool clicks", () => {
+	const tool = createTool("tool-overlay-untrusted");
+	const terminal = { columns: 80, rows: 24, write() {} };
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	renderer.hasOverlay = () => true;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	const hintCol = tool.render()[1].indexOf("(ctrl+o expand / click)") + 1;
+	const hintClick = `\x1b[<0;${hintCol};2M`;
+
+	tui.handleViewportInput(hintClick);
+	assert.equal(tool.expanded, false, "missing layouts do not expand the tool");
+	assert.equal(
+		renderer.officialInputs.length,
+		0,
+		"missing layouts are not sent to the official chain",
+	);
+
+	const overlay = { handleInput() {} };
+	(renderer as any).isOverlayFocused = () => true;
+	(renderer as any).focusedComponent = overlay;
+	(renderer as any).renderedOverlayLayouts = [
+		{ col: 0, row: 0, width: 80, height: 24, entry: { component: { handleInput() {} } } },
+	];
+	tui.handleViewportInput(hintClick);
+	assert.equal(tool.expanded, false, "previous-frame layouts do not expand the tool");
+	assert.equal(
+		renderer.officialInputs.length,
+		0,
+		"stale layouts are not sent to the official chain",
+	);
+	installToolMouseInteraction({});
+});
+
 test("lazy-proxy tui: overlay bounds route mouse to overlay, outside stays with the extension", async () => {
 	const tool = createTool("tool-overlay");
 	const terminal = { columns: 80, rows: 24, write() {} };

@@ -579,6 +579,18 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	applyFullscreenHover(tui, target);
 }
 
+/** 布局缺失，或焦点 overlay 还不在上一帧列表里：这份矩形不能拿来判点击。 */
+function overlayLayoutsCurrent(tui: any): boolean {
+	const layouts = tui?.renderedOverlayLayouts;
+	if (!Array.isArray(layouts) || layouts.length === 0) return false;
+	if (typeof tui.isOverlayFocused === "function" && tui.isOverlayFocused()) {
+		const focused = tui.focusedComponent;
+		if (focused && !layouts.some((layout: any) => layout?.entry?.component === focused))
+			return false;
+	}
+	return true;
+}
+
 /**
  * 鼠标包（1-based 屏幕坐标）是否落在某个已渲染 overlay 的矩形内。
  * renderedOverlayLayouts 与官方 dispatchMouseToOverlay 同源：只含上一帧画出的可见 overlay。
@@ -623,8 +635,9 @@ function patchFullscreenViewportInput(tui: any): void {
 			// dispatchMouseToOverlay → overlay.handleMouse；overlay 外的包仍
 			// 走扩展收起/展开/hover。两条路径各管各的。
 			if (packets) {
-				// overlay 可见时：落在 overlay 矩形内的包全部放行官方（文本预览的
-				// [esc] 点击/滚轮、官方搜索框等），扩展不展开/收起/hover。
+				// 布局还没出来或仍是上一帧：不要把点击收成工具展开。返回 undefined
+				// 让焦点 overlay 的 handleInput 拿到原始 SGR；官方链也靠这份布局，调它会消费且打到 transcript。
+				if (tui.hasOverlay?.() && !overlayLayoutsCurrent(tui)) return undefined;
 				const overlayPackets = tui.hasOverlay?.()
 					? packets.filter((packet) => packetInsideOverlay(tui, packet))
 					: undefined;

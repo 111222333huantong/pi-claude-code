@@ -28,6 +28,7 @@ import {
 	toggleFooterKeyHidden,
 	type FooterChipLayout,
 } from "../feature/shell/footer-layout.ts";
+import { applyPromptEditor, clearPromptEditor } from "../feature/shell/prompt-editor.ts";
 import { applyStartupHeader, clearStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
@@ -727,6 +728,15 @@ export async function showCcstylePanel(
 			currentValue: config.footerNerdIcons ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const inputPromptSetting = {
+			id: "enableInputPrompt",
+			label: "Input prompt",
+			description: config.enableInputPrompt
+				? "Show ❯ before the input line; color follows thinking level / bash mode."
+				: "Plain input line, no ❯ glyph.",
+			currentValue: config.enableInputPrompt ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const customFooterSetting = {
 			id: "enableCustomFooter",
 			label: "Status bar",
@@ -856,6 +866,18 @@ export async function showCcstylePanel(
 				updateConfig({ footerTokenRateTtft: enabled });
 				footerTokenRateTtftSetting.currentValue = enabled ? "on" : "off";
 				footerTokenRateTtftSetting.description = footerTokenRateTtftDescription(enabled);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "enableInputPrompt") {
+				const enabled = value === "on";
+				updateConfig({ enableInputPrompt: enabled });
+				inputPromptSetting.currentValue = enabled ? "on" : "off";
+				inputPromptSetting.description = enabled
+					? "Show ❯ before the input line; color follows thinking level / bash mode."
+					: "Plain input line, no ❯ glyph.";
+				if (enabled) applyPromptEditor(ctx);
+				else clearPromptEditor(ctx);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1042,6 +1064,7 @@ export async function showCcstylePanel(
 					toolLabelClipSetting,
 					stickyUserMessageSetting,
 					startupHeaderSetting,
+					inputPromptSetting,
 				],
 			},
 			{

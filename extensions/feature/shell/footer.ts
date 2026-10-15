@@ -40,6 +40,7 @@ import {
 } from "./footer-layout.ts";
 import { createGitStatsRefresher, readGitStats, type GitStats } from "./git-stats.ts";
 import { MCP_STATUS_KEY, buildMcpChip } from "./mcp-chip.ts";
+import { inputTextIndent } from "./prompt-editor.ts";
 import { currentTtftMs, displayTokenRate, formatTokenRate } from "./token-rate.ts";
 
 export { parseGitStats } from "./git-stats.ts";
@@ -503,10 +504,15 @@ const createCustomFooterFactory =
 			const line2 = lineOf(layout.footerLine2Keys);
 			const line3 = lineOf(layout.footerLine3Keys);
 
+			// 对齐输入文本起始列：editorPaddingX + `❯ ` 的 2 列（随编辑器 render 实时更新）。
+			const indent = " ".repeat(inputTextIndent());
+			const fit = (line: string) =>
+				indent + truncateToWidth(line, Math.max(1, width - indent.length));
+
 			return [
-				truncateToWidth(line1, width),
-				...(line2 ? [truncateToWidth(line2, width)] : []),
-				...(line3 ? [truncateToWidth(line3, width)] : []),
+				fit(line1),
+				...(line2 ? [fit(line2)] : []),
+				...(line3 ? [fit(line3)] : []),
 			];
 		};
 

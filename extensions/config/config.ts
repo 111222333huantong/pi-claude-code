@@ -73,6 +73,8 @@ export type Config = {
 	enableAgentSummary: boolean;
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
+	/** 输入框 `❯ ` 提示符（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
+	enableInputPrompt: boolean;
 	enableCustomFooter: boolean;
 	/** footer 输出速率芯片。关则不显示。 */
 	footerTokenRate: boolean;
@@ -168,6 +170,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableAgentSummary: true,
 	enableWorkingMessage: true,
 	enableAliases: true,
+	enableInputPrompt: true,
 	enableCustomFooter: true,
 	footerTokenRate: true,
 	footerTokenRateMode: "average",
@@ -300,6 +303,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableAgentSummary: source.enableAgentSummary !== false,
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
+		enableInputPrompt: source.enableInputPrompt !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
 		footerTokenRate: source.footerTokenRate !== false,
 		footerTokenRateMode: pickEnum(
@@ -369,6 +373,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
+		`inputPrompt=${source.enableInputPrompt ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
 		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
 		`footerTokenRateMode=${source.footerTokenRateMode}`,

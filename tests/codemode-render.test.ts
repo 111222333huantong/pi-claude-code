@@ -103,23 +103,6 @@ test("异常数据不崩：calls 非数组、元素为 null、args 非字符串"
 	assert.equal(lines[3], " └ 3 calls · 2 lines output · click to show more");
 });
 
-test("折叠态：有子调用时也先列一行代码摘要", () => {
-	const lines = codemodeCollapsedLines({
-		result: result(),
-		theme,
-		running: false,
-		isError: false,
-		width: 160,
-		code: "const rows = scan()\nconst hits = grep(rows)",
-	});
-	assert.equal(
-		lines[0]!.replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, ""),
-		" ├ code: const hits = grep(rows)",
-	);
-	assert.match(lines[1]!, /^ {1}├ ✓ /);
-	assert.equal(lines[2], " └ 1 call · 2 lines output · click to show more");
-});
-
 test("折叠态：子调用全用 ├，最后一行用 └ 收汇总", () => {
 	const lines = codemodeCollapsedLines({
 		result: result(),

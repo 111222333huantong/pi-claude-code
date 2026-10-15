@@ -277,13 +277,15 @@ export function codemodeCollapsedLines(options: {
 	const rowWidth = toolViewportWidth(options.width);
 	const shown = calls.slice(-COLLAPSED_CALL_LIMIT);
 	const lines: string[] = [];
-	// 脚本摘要放在子调用之上：没有子调用时它是唯一线索，有子调用时也先交代脚本在干什么。
+	// 没有子调用时脚本本身是唯一线索：补一行 `code: 步骤 → 步骤`，
 	// 与子调用行同一套树线，汇总行仍用 └ 收尾。
-	const codeSummary = codemodeCodeSummary(options.code);
-	if (codeSummary) {
-		const prefix = `${INDENT}${fg("dim", "├")} ${fg("dim", "code:")} `;
-		const colored = highlightCodeSummary(codeSummary);
-		lines.push(truncateToWidth(`${prefix}${colored}`, rowWidth, ""));
+	if (shown.length === 0) {
+		const summary = codemodeCodeSummary(options.code);
+		if (summary) {
+			const prefix = `${INDENT}${fg("dim", "├")} ${fg("dim", "code:")} `;
+			const colored = highlightCodeSummary(summary);
+			lines.push(truncateToWidth(`${prefix}${colored}`, rowWidth, ""));
+		}
 	}
 	if (shown.length < calls.length) {
 		const hidden = calls.length - shown.length;

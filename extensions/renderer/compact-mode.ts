@@ -2068,7 +2068,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	const sweepOrphanTails = (): void => {
 		for (const tail of [...mountedTails]) {
 			const round = tail.round as CompactRound | undefined;
-			if (round && liveRounds.has(round)) continue;
+			// 回合还在本 pass 名单里、且没有同 anchor 的更新 tail 顶位时保留。
+			if (round && liveRounds.has(round)) {
+				const anchor = round.anchor;
+				if (!anchor || tailByAnchor.get(anchor) === tail) continue;
+			}
 			removeTailHost(tail);
 			mountedTails.delete(tail);
 			if (round?.anchor && tailByAnchor.get(round.anchor) === tail) {
@@ -2146,16 +2150,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 		if (hasToolCalls) {
 			let round = roundByComponent.get(this);
-			if (hasText && (!round || round.anchor !== this)) {
-				if (round) {
-					round.messages.delete(this);
-					clearRoundAnchor(this);
-				}
-				if (activeRound) finishRound(activeRound, message.timestamp);
-				round = createRound(this, message);
-				roundByComponent.set(this, round);
-			} else if (!round) {
-				// 中间隔着用户消息就另起一回合，不并进上一个回合。
+			if (!round) {
+				// 本条消息是否带 text 不是回合边界：pi 流式协议里同一条
+				// assistant 消息会以 text+toolCall、toolCall-only 反复到达。
+				// 只在「组件未挂进任何回合」时并入 activeRound；被用户消息
+				// 隔开（steer/上回合没正文）时由 joinOrCreateRound 收尾另起。
 				round = joinOrCreateRound(this, message);
 				roundByComponent.set(this, round);
 			}

@@ -1067,16 +1067,16 @@ test("compact live: a superseding round folds the previous one immediately", () 
 		const roundB = new AssistantMessageComponent(messageB as any, true) as any;
 		roundB.updateContent(messageB);
 
-		// 收尾只少槽位卡：正文与摘要行原地不动，摘要行只换时态。
-		const foldedA = renderText(roundA);
-		assert.deepEqual(
-			foldedA.slice(0, 2),
-			["first-line", "latest-a"],
-			`收尾后正文原地不动: ${foldedA}`,
+		// roundB 的 text+toolCall 并入 roundA（同一 turn、无用户消息隔断）：
+		// roundA 仍 active，摘要行从 Running 里累计出 grep×1；roundB 只渲染自己的正文。
+		const mergedA = renderText(roundA);
+		assert.match(
+			mergedA[2] ?? "",
+			/^Running\.\.\..*bash×1.*grep×1/,
+			`并入同一回合后摘要累计: ${mergedA}`,
 		);
-		assert.match(foldedA[2] ?? "", /^Ran for .*bash×1/, `摘要行原地换时态: ${foldedA}`);
-		assert.equal(foldedA.length, liveA.length - 1, `收尾只该少槽位卡: ${liveA} → ${foldedA}`);
-		assert.ok(renderText(roundB).join("\n").includes("needle"), "新回合槽位应可见");
+		// roundB 并入 roundA 后不是 anchor：updateContent 走成员分支，自身渲染为空。
+		assert.deepEqual(renderText(roundB), [], "并入回合的成员不再独立渲染");
 	} finally {
 		hooks.shutdown();
 		config.mode = previousMode;
@@ -1128,18 +1128,13 @@ test("compact 尾行：展开的活回合不随新工具推到容器末尾，摘
 		chat.addChild(grep);
 		grep.updateDisplay?.();
 
-		// 展开的回合不抢容器最末：tail 停留在 round 的最后成员之后，
-		// 不越过后面挂进来的 second。second 自己起了活回合，容器最末是它的尾行。
+		// second 的 toolCall 并入第一回合（同一 turn，未被用户消息隔开），
+		// tail 位置钉在回合最后成员之后（grep 之后），展开面板里能看到 grep 卡。
 		const tailIdx = chat.children.indexOf(tail);
-		const secondIdx = chat.children.indexOf(second);
+		const grepIdx = chat.children.indexOf(grep);
 		assert.ok(tailIdx >= 0, "尾行仍在容器里");
-		assert.ok(secondIdx >= 0, "second 仍在容器里");
-		assert.ok(
-			tailIdx < secondIdx,
-			`展开的摘要行不该越过后续消息 (tail=${tailIdx}, second=${secondIdx})`,
-		);
-		assert.notEqual(chat.children.at(-1), tail, "容器最末不是被篡位的第一回合摘要行");
-		assert.ok(isCompactAssistantComponent(chat.children.at(-1)), "最末是第二回合的尾行");
+		assert.ok(tailIdx > grepIdx, `摘要行钉在回合末位 (tail=${tailIdx}, grep=${grepIdx})`);
+		assert.match(renderText(tail).join("\n"), /grep \/x\//, "新工具并入同一回合面板");
 	} finally {
 		setToolMouseTui(null);
 		restore();
@@ -1310,7 +1305,7 @@ test("compact resume：重放已结束的回合直接落成 Ran for，不停留�
 	}
 });
 
-test("compact：带正文的工具消息各起回合，无正文续接才并入上一回合", () => {
+test("compact：同一 turn 内 text+toolCall 消息不拆回合，用户消息才切断", () => {
 	const { hooks, restore } = installHooks();
 	const chat = new Container() as any;
 	setToolMouseTui({ children: [chat] });
@@ -1344,12 +1339,86 @@ test("compact：带正文的工具消息各起回合，无正文续接才并入�
 
 		hooks.settleReplayedRound();
 		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
-		// 每条消息都带可见正文 → 各自是自己的 anchor，两个 bash 各成一行（截图语义）。
-		assert.deepEqual(summaries.length, 2, `两条带正文的消息应各起一行: ${summaries}`);
-		assert.ok(
-			summaries.every((line) => /bash×1/.test(line)),
-			`每行各记一次 bash: ${summaries}`,
+		// 同一 agent turn 里不带用户消息隔断的 text+toolCall 仍归同一回合。
+		assert.deepEqual(summaries.length, 1, `不应因正文拆回合: ${summaries}`);
+		assert.match(summaries[0] ?? "", /bash×2/, `两次调用累计: ${summaries}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：同一组件流式切换 text/toolCall 形态不拆回合", () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const base = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+		};
+		const anchor = new AssistantMessageComponent(base as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "ls" }));
+		chat.addChild(tool("grep", "g1", { pattern: "x" }));
+
+		// pi 的流式 message_update：同一组件反复 updateContent，content 形态会变。
+		anchor.updateContent({ ...base, content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } }] });
+		anchor.updateContent({
+			...base,
+			content: [
+				{ type: "text", text: "leading text" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+			],
+		});
+		anchor.updateContent({
+			...base,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "x" } },
+			],
+		});
+
+		hooks.settleReplayedRound();
+		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
+		assert.equal(summaries.length, 1, `同一组件形态变化不拆回合: ${summaries}`);
+		assert.match(summaries[0] ?? "", /bash×1, grep×1/, `两次工具都计入: ${summaries}`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact 尾行：reset 后同 anchor 残留的旧尾行被清扫", async () => {
+	const { hooks, restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "text", text: "hello" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } },
+			],
+		};
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		chat.addChild(anchor);
+		chat.addChild(tool("bash", "b1", { command: "one" }));
+		anchor.updateContent(message);
+		assert.equal(
+			renderText(chat).filter((line) => /Running\.\.\.|Ran for/.test(line)).length,
+			1,
+			"前置：单条摘要行",
 		);
+
+		// refresh 走 resetRounds + refreshTrackedComponents：重放 updateContent 后
+		// 同一 anchor 起新回合，sweepOrphanTails 应把残留旧 tail 摘掉。
+		hooks.refresh();
+		await settleFold();
+		const summaries = renderText(chat).filter((line) => /Running\.\.\.|Ran for/.test(line));
+		assert.equal(summaries.length, 1, `只该有一条摘要行: ${summaries}`);
 	} finally {
 		setToolMouseTui(null);
 		restore();
@@ -2910,7 +2979,8 @@ test("session_start and session_tree keep the compact patch outermost over compa
 		};
 		const afterTree = new AssistantMessageComponent(nextMessage as any, true) as any;
 		afterTree.updateContent(nextMessage);
-		assert.match(renderText(afterTree).join("\n"), /bash×1/);
+		// 未挂进容器的独立组件并入上一个 activeRound；摘要行落在该回合的 anchor 上。
+		assert.match(renderText(component).join("\n"), /bash×2/, "同一回合累计两次 bash");
 
 		// shutdown 恢复原生原型。
 		await emit("session_shutdown", {}, ctx);

@@ -106,6 +106,7 @@ function trimUrl(url: string): string {
 /**
  * 把代码块和行内代码外的裸 URL 转成 markdown 链接。
  * 已有的 [text](url) / ![alt](url) / <url> 自动链接用 lookbehind 排除。
+ * trimUrl 裁掉的尾部标点原样保留在链接后面，不能一起吞掉。
  */
 function linkifyUrls(markdown: string): string {
 	const lines = markdown.split("\n");
@@ -125,7 +126,7 @@ function linkifyUrls(markdown: string): string {
 				parts[p] = parts[p].replace(URL_RE, (url) => {
 					const trimmed = trimUrl(url);
 					if (trimmed.length === 0) return url;
-					return `[${trimmed}](${trimmed})`;
+					return `[${trimmed}](${trimmed})${url.slice(trimmed.length)}`;
 				});
 			}
 		}

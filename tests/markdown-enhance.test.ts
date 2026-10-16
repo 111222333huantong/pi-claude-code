@@ -131,16 +131,21 @@ test("含括号 URL 保留（括号平衡）", () => {
 	);
 });
 
-test("尾部 ] 与不成对 ) 截掉（避免无效链接）", () => {
-	// 列表项 [url] 的闭合方括号不能吞进链接
+test("尾部 ] 与不成对 ) 不进链接，原样留在正文", () => {
+	// 列表项 [url] 的闭合方括号不能吞进链接，但要留在原位
 	const out = run("列表 [https://example.com/a] 项");
 	assert.ok(
-		out.includes("[[https://example.com/a](https://example.com/a) 项"),
+		out.includes("[[https://example.com/a](https://example.com/a)] 项"),
 		JSON.stringify(out),
 	);
-	// 尾部不成对 ) 截掉
+	// 尾部不成对 ) 截出链接后要补回
 	const out2 = run("尾括号 https://example.com/x)");
-	assert.ok(out2.includes("[https://example.com/x](https://example.com/x)"), JSON.stringify(out2));
+	assert.ok(out2.includes("[https://example.com/x](https://example.com/x))"), JSON.stringify(out2));
+});
+
+test("括号里的裸 URL 保留右括号与后随标点", () => {
+	const out = run("(see https://example.com/docs).");
+	assert.strictEqual(out, "(see [https://example.com/docs](https://example.com/docs)).");
 });
 
 test("全角括号不吞进 URL", () => {

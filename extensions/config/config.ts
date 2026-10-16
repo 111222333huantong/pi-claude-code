@@ -74,7 +74,7 @@ export type Config = {
 	enableAgentSummary: boolean;
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
-	/** markdown 转换：Mermaid、提示框、URL 链接化、圈数字。关掉让位给其他扩展。 */
+	/** markdown 转换：Mermaid 方言渲染、圈数字转半角括号。关掉让位给其他扩展。 */
 	enableMarkdownEnhance: boolean;
 	/** 输入框 `❯ ` 前缀（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
 	enableEditorPrefix: boolean;

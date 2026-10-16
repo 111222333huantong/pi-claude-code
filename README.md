@@ -28,7 +28,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 功能                  | 说明                                                                            | 入口                                            |
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
-| Markdown 增强         | Mermaid 图、提示框、URL 链接化等                                                        | 自动生效；`enableMarkdownEnhance: false` 关闭   |
+| Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
@@ -55,7 +55,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
-  "enableMarkdownEnhance": true,             // markdown 转换：Mermaid、提示框、URL 链接化、圈数字；false 让位给其他扩展
+  "enableMarkdownEnhance": true,             // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui

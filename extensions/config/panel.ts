@@ -659,7 +659,7 @@ export async function showCcstylePanel(
 		const markdownEnhanceToggle = featureToggleSetting(
 			"enableMarkdownEnhance",
 			"Markdown enhance",
-			"Mermaid, admonitions, URL linking and circled numbers. Next restart applies.",
+			"Mermaid dialects and circled-number conversion. Next restart applies.",
 			"Markdown enhancements off; another extension can own the markdown pass.",
 			config.enableMarkdownEnhance,
 		);

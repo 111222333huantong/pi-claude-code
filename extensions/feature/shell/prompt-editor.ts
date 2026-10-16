@@ -50,18 +50,37 @@ export class PromptEditor extends CustomEditor {
 	}
 }
 
-/** 应用/恢复输入框前缀。enableEditorPrefix=false 时不占扩展点。 */
+type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
+
+const promptEditorFactory: EditorFactory = (tui, theme, keybindings) =>
+	new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+
+/** 是否正占着插槽；占据前的工厂用于原样还回去。 */
+let active = false;
+let previousEditorFactory: EditorFactory | undefined;
+
+/** 撤销本扩展占据的插槽；从未占用就不碰插槽。 */
+function releasePromptEditor(ctx: ExtensionContext): void {
+	if (!active) return;
+	ctx.ui.setEditorComponent(previousEditorFactory);
+	active = false;
+	previousEditorFactory = undefined;
+}
+
+/** 应用输入框前缀；enableEditorPrefix=false 时只撤自己装的那层。 */
 export function applyPromptEditor(ctx: ExtensionContext): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setEditorComponent !== "function") return;
 	try {
-		if (config.enableEditorPrefix) {
-			ctx.ui.setEditorComponent(
-				(tui, theme, keybindings) =>
-					new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true }),
-			);
-		} else {
-			ctx.ui.setEditorComponent(undefined);
+		if (!config.enableEditorPrefix) {
+			releasePromptEditor(ctx);
+			return;
 		}
+		if (!active) {
+			// pi 的插槽是硬替换、没有栈，先记住是谁占着，撤销时还回去。
+			previousEditorFactory = ctx.ui.getEditorComponent?.();
+			active = true;
+		}
+		ctx.ui.setEditorComponent(promptEditorFactory);
 	} catch (err) {
 		ctx.ui.notify(
 			`prompt editor error: ${err instanceof Error ? err.message : String(err)}`,
@@ -70,8 +89,8 @@ export function applyPromptEditor(ctx: ExtensionContext): void {
 	}
 }
 
-/** 恢复 pi 原生编辑器。 */
+/** 恢复本扩展占据前的编辑器；未占用时不动作。 */
 export function clearPromptEditor(ctx: ExtensionContext): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setEditorComponent !== "function") return;
-	ctx.ui.setEditorComponent(undefined);
+	releasePromptEditor(ctx);
 }

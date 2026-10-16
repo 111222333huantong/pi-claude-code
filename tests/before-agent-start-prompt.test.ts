@@ -63,3 +63,21 @@ test("a prompt without messageType still resolves session references", async (t)
 	assert.equal(result, undefined);
 	assert.ok(notices.some((message) => message.includes("not found")));
 });
+
+test("session_start does not prefetch the session store", async (t) => {
+	const listAll = mock.method(SessionManager, "listAll", async () => []);
+	t.after(() => listAll.mock.restore());
+	const events = install(sessionReferenceExtension);
+	const ctx = {
+		cwd: process.cwd(),
+		mode: "tui",
+		ui: { notify: () => {}, addAutocompleteProvider: () => {} },
+		sessionManager: {
+			getSessionId: () => "current",
+			getSessionFile: () => "/tmp/current.jsonl",
+		},
+	};
+
+	events.get("session_start")?.({}, ctx);
+	assert.equal(listAll.mock.calls.length, 0);
+});

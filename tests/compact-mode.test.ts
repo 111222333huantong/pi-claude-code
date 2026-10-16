@@ -202,6 +202,9 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ mode: "compact" }).mode, "compact");
 	assert.equal(normalizeConfig({}).mode, "on");
 	assert.equal(normalizeConfig({ mode: "invalid" }).mode, "on");
+	assert.equal(normalizeConfig({}).enableMarkdownEnhance, true);
+	assert.equal(normalizeConfig({ enableMarkdownEnhance: false }).enableMarkdownEnhance, false);
+	assert.match(formatConfigStatus(normalizeConfig({})), /markdownEnhance=on/);
 	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({}).toolLabelClip, 0);

@@ -656,6 +656,13 @@ export async function showCcstylePanel(
 			"Aliases disabled.",
 			config.enableAliases,
 		);
+		const markdownEnhanceToggle = featureToggleSetting(
+			"enableMarkdownEnhance",
+			"Markdown enhance",
+			"Mermaid, admonitions, URL linking and circled numbers. Next restart applies.",
+			"Markdown enhancements off; another extension can own the markdown pass.",
+			config.enableMarkdownEnhance,
+		);
 		const footerCurrencySetting = {
 			id: "footerCurrency",
 			label: "Cost currency",
@@ -798,6 +805,7 @@ export async function showCcstylePanel(
 			enableAgentSummary: agentSummaryToggle,
 			enableWorkingMessage: workingMessageToggle,
 			enableAliases: aliasesToggle,
+			enableMarkdownEnhance: markdownEnhanceToggle,
 		};
 
 		const onSettingChange = (id: string, value: string) => {
@@ -1049,6 +1057,7 @@ export async function showCcstylePanel(
 					agentSummaryToggle.setting,
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
+					markdownEnhanceToggle.setting,
 				],
 			},
 			{

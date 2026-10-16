@@ -116,10 +116,11 @@ pi -e .              # one run, does not edit settings.json
 
 ## Recommended companions
 
-| Extension                | Purpose                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| `npm:pi-web-access`      | Web search, URL fetching, GitHub cloning, PDF/video parsing |
-| `npm:@narumitw/pi-usage` | Current-account usage for Codex / Copilot / OpenRouter      |
+| Extension                                | Purpose                                                     |
+| ---------------------------------------- | ----------------------------------------------------------- |
+| `npm:pi-web-access`                      | Web search, URL fetching, GitHub cloning, PDF/video parsing |
+| `npm:@narumitw/pi-usage`                 | Current-account usage for Codex / Copilot / OpenRouter      |
+| `npm:@juicesharp/rpiv-ask-user-question` | Multiple-choice questionnaire the model can ask you         |
 
 ## Credits
 

@@ -120,6 +120,7 @@ pi -e .              # 只跑一次，不改 settings.json
 | ---------------------------------------- | ------------------------------------------------ |
 | `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
 | `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
+| `npm:@juicesharp/rpiv-ask-user-question` | 模型拿不准时向你提问的选择题面板                 |
 
 ## 致谢
 

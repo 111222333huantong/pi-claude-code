@@ -13,6 +13,7 @@ import {
 	setHoveredCompactAssistant,
 } from "../compact-mode.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
+import { isSubagentNotificationView } from "../tool/subagent-notification.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/names.ts";
 import {
@@ -573,7 +574,8 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			} else if (isCompactAssistantComponent(component)) {
 				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
 				if (component.expanded || overHint) target = { kind: "assistant", component };
-			} else if (isMessageDisplayComponent(component)) {
+			} else if (isMessageDisplayComponent(component) || isSubagentNotificationView(component)) {
+				// 单独出现的 subagent 通知行与消息卡一样：只在提示文字上高亮（单击由它自己的 handleMouse 处理）。
 				if (overHint) target = { kind: "message", component };
 			}
 		}

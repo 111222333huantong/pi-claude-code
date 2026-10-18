@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	AssistantMessageComponent,
+	CustomMessageComponent,
 	getMarkdownTheme,
 	initTheme,
 	SkillInvocationMessageComponent,
@@ -37,6 +38,7 @@ import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 } from "../extensions/renderer/tool/diff/index.ts";
 import { insetComponent } from "../extensions/renderer/tool/result.ts";
+import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -1313,6 +1315,48 @@ test("lazy-proxy tui: fullscreen skill hint click expands like other cards", asy
 	} finally {
 		installToolMouseInteraction({});
 		dispose();
+		config.mode = previousMode;
+	}
+});
+
+test("lazy-proxy tui: fullscreen standalone subagent hint highlights on hover", async () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	// 真实 ANSI：鼠标层按剥掉终端序列后的行尾识别提示，text 与 dim 用不同色号区分。
+	const ansiTheme = {
+		fg: (color: string, text: string) =>
+			`\x1b[${color === "text" ? "97" : color === "dim" ? "90" : "37"}m${text}\x1b[39m`,
+	};
+	const notification = new CustomMessageComponent(
+		{
+			role: "custom",
+			customType: "subagent-notification",
+			content: "<task-notification>…</task-notification>",
+			display: true,
+			details: { id: "a43b4a9d-fcf9-4b9", status: "completed", toolUses: 2 },
+			timestamp: 1,
+		} as any,
+		(message, options) => renderSubagentNotification(message, options, ansiTheme as any),
+	);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(notification, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const lines = notification.render(80);
+		const row = lines.findIndex((line: string) => line.includes("click to show more"));
+		assert.ok(row >= 0, "standalone row carries the hint");
+		const plain = lines[row]!.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const hintCol = plain.indexOf("click to show more") + 1;
+		const hint = () => notification.render(80)[row] ?? "";
+		assert.ok(hint().includes("\x1b[90mclick to show more"), "the hint starts dim");
+		tui.handleViewportInput(`\x1b[<35;${hintCol + 2};${row + 1}M`);
+		assert.ok(hint().includes("\x1b[97mclick to show more"), "hovering the hint highlights it");
+		tui.handleViewportInput(`\x1b[<35;3;${row + 1}M`);
+		assert.ok(hint().includes("\x1b[90mclick to show more"), "the row text is not a hover target");
+	} finally {
+		installToolMouseInteraction({});
 		config.mode = previousMode;
 	}
 });

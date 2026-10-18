@@ -226,6 +226,8 @@ class FinishedSubagentView implements Component {
 	private expanded: boolean;
 	/** 折叠行里展开提示的列区间（0-based，左闭右开）：fullscreen 单击只认这一段。 */
 	private hintBox: HintBox | undefined;
+	/** fullscreen 悬停在展开提示上（鼠标层经 setHintHovered 设置），提示文字提亮。 */
+	private hintHovered = false;
 
 	constructor(message: object, theme: any, pad: number, base: boolean) {
 		this.message = message;
@@ -246,7 +248,7 @@ class FinishedSubagentView implements Component {
 		const rowWidth = toolViewportWidth(width);
 		const indent = " ".repeat(this.pad);
 		const hintText = showMoreHintText();
-		const hint = ` ${fg("dim", "·")} ${fg("dim", hintText)}`;
+		const hint = ` ${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
 		const last = this.subagents.length - 1;
 		return this.subagents.map((subagent, index) => {
 			const prefix = `${indent}${statusIcon(subagent, fg)} `;
@@ -297,7 +299,16 @@ class FinishedSubagentView implements Component {
 		return { handled: true };
 	}
 
+	setHintHovered(hovered: boolean): void {
+		this.hintHovered = hovered;
+	}
+
 	invalidate(): void {}
+}
+
+/** 单独出现的 subagent 通知行：fullscreen 鼠标层据此做提示悬停高亮。 */
+export function isSubagentNotificationView(value: unknown): boolean {
+	return value instanceof FinishedSubagentView;
 }
 
 /** `subagent-notification` 的消息渲染器：单独出现时的结束行。 */

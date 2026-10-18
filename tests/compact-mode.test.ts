@@ -1235,10 +1235,10 @@ test("compact 尾行：只有 edit/write 的回合不挂摘要行", async () => 
 		chat.addChild(editB);
 		anchor.updateContent(message);
 
-		// 运行中摘要行仍在：它承载 Running... 状态。
+		// 外层独段不建回合：edit/write 行自己的 pending icon 表示进行中，不另挂摘要行。
 		assert.ok(
-			chat.children.some((child: any) => /Running\.\.\./.test(renderText(child).join("\n"))),
-			"运行中应挂摘要行",
+			!chat.children.some((child: any) => /Running\.\.\./.test(renderText(child).join("\n"))),
+			"外层独段不挂摘要行",
 		);
 
 		// steering / 下一条消息把回合收尾：没有普通工具也没有思考，摘要行撤掉。

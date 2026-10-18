@@ -2174,6 +2174,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		const hasOuterToolCall = content.some(
 			(item: any) => item?.type === "toolCall" && OUTER_TOOLS.has(String(item?.name ?? "")),
 		);
+		const hasInnerToolCall = content.some(
+			(item: any) => item?.type === "toolCall" && !OUTER_TOOLS.has(String(item?.name ?? "")),
+		);
+		const hasThinkingContent = content.some(
+			(item: any) => item?.type === "thinking" && String(item?.thinking ?? "").trim(),
+		);
 		const hasText = content.some(
 			(item: any) => item?.type === "text" && typeof item.text === "string" && item.text.trim(),
 		);
@@ -2189,21 +2195,43 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				: false;
 			if (!round) {
 				// 外层行打断摘要段：本条消息带外层调用且可并入的活动回合已有内容时，
-				// 旧回合就地完结（不走静默期），本条消息另起一段。消息级粒度：
-				// 同一条消息内 inner→outer→inner 混排不拆，整条留在它开始的段里。
+				// 旧回合就地完结（不走静默期）。本条消息自己含 inner 调用或思考才另起一段；
+				// 外层独段（edit-only 消息）不建回合——没有可汇总内容，建段只会挂空摘要行。
 				const joinable = joinableActiveRound(this);
 				if (joinable && hasOuterToolCall) {
 					sealRound(joinable, message?.timestamp);
-					round = createRound(this, message);
-				} else {
+					if (hasInnerToolCall || hasThinkingContent) {
+						round = createRound(this, message);
+						roundByComponent.set(this, round);
+						round.messages.set(this, message);
+						if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
+							round.startedAt = message.timestamp;
+						}
+						renderRound(round);
+						return undefined;
+					}
+					// 外层独段：text/thinking 照原生渲染，edit 行由 tool render 外置，没有摘要行。
+					return passThroughAssistant(this, message);
+				}
+				if (hasInnerToolCall || hasThinkingContent) {
 					// 本条消息是否带 text 不是回合边界：pi 流式协议里同一条
 					// assistant 消息会以 text+toolCall、toolCall-only 反复到达。
 					// 只在「组件未挂进任何回合」时并入 activeRound；被用户消息
 					// 隔开（steer/上回合没正文）时由 joinOrCreateRound 收尾另起。
 					round = joinOrCreateRound(this, message);
+					roundByComponent.set(this, round);
+					round.messages.set(this, message);
+					if (isUsableTimestamp(message.timestamp) && message.timestamp < round.startedAt) {
+						round.startedAt = message.timestamp;
+					}
+					renderRound(round);
+					return undefined;
 				}
-				roundByComponent.set(this, round);
-			} else if (hasOuterToolCall && !previousHadOuter && roundLive(round)) {
+				// 外层独段、又没有可并入的活动回合：不建回合，text/工具各归其位。
+				if (activeRound) finishRound(activeRound, message?.timestamp);
+				return passThroughAssistant(this, message);
+			}
+			if (hasOuterToolCall && !previousHadOuter && roundLive(round)) {
 				// 消息入段后流式增长才冒出外层调用（先 thinking 后 toolCall）：
 				// 就地封口所在段，本条消息按消息级归属留在原段，后续消息另起一段。
 				sealRound(round, message?.timestamp);

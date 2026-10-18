@@ -38,5 +38,5 @@ test("the extension entry registers its own subagent-notification renderer", () 
 		.render(120)
 		.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 		.filter((line) => line.trim());
-	assert.match(rows[0]!, /^ ✓ Subagent Completion 6dae0e11-9341-43b · 2 tool uses · /);
+	assert.match(rows[0]!, /^ ✓ Subagent Finished 6dae0e11-9341-43b · 2 tool uses · /);
 });

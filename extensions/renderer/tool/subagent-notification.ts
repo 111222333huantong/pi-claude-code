@@ -15,18 +15,19 @@ import { formatToolDuration, toolViewportWidth } from "./result.ts";
 import { TOOL_CARD_BG_SLOT } from "./tool-state.ts";
 
 /**
- * pi-subagents 的完成通知（`subagent-notification`）：只换展示，不动消息本身。
- * 单独出现时渲染为可展开的完成行；挨着工具时由分组模块经显示适配器并入工具组。
- * 一条通知可能带多个 agent（`others`），每个 agent 一行。
+ * pi-subagents 的 `subagent-notification`：只换展示，不动消息本身。
+ * agent 一停下（完成、到轮数上限收尾、被停、中止或出错）就发这条通知，所以标题
+ * 不说「完成」，结局写在行里。单独出现时渲染为可展开的一行；挨着工具时由分组
+ * 模块经显示适配器并入工具组。一条通知可能带多个 agent（`others`），每个 agent 一行。
  */
 
 export const SUBAGENT_NOTIFICATION_TYPE = "subagent-notification";
-const COMPLETION_LABEL = "Subagent Completion";
+const FINISHED_LABEL = "Subagent Finished";
 
 type Fg = (color: string, text: string) => string;
 
-/** 一个 agent 的完成记录。payload 里每个字段都可能缺失，缺的就不显示。 */
-type SubagentCompletion = {
+/** 通知里一个 agent 的结束记录。payload 里每个字段都可能缺失，缺的就不显示。 */
+type FinishedSubagent = {
 	id: string;
 	description: string;
 	status: string;
@@ -74,7 +75,7 @@ function formatCost(cost: number): string {
 	return `~$${rounded.toFixed(Math.max(2, decimals))}`;
 }
 
-function completionStats(details: Record<string, unknown>): string[] {
+function subagentStats(details: Record<string, unknown>): string[] {
 	const stats: string[] = [];
 	const turns = measured(details.turnCount);
 	if (turns) stats.push(plural(turns, "turn"));
@@ -91,7 +92,7 @@ function completionStats(details: Record<string, unknown>): string[] {
 
 const FAILED_STATUSES = new Set(["error", "stopped", "aborted"]);
 
-function toCompletion(details: Record<string, unknown>): SubagentCompletion {
+function toFinishedSubagent(details: Record<string, unknown>): FinishedSubagent {
 	const status = text(details.status);
 	const error = text(details.error);
 	return {
@@ -100,43 +101,58 @@ function toCompletion(details: Record<string, unknown>): SubagentCompletion {
 		status,
 		// 没有 status 时只能看有没有错误正文；有 status 就以它为准。
 		failed: status ? FAILED_STATUSES.has(status) : Boolean(error),
-		stats: completionStats(details),
+		stats: subagentStats(details),
 		resultPreview: text(details.resultPreview),
 		error,
 		outputFile: text(details.outputFile),
 	};
 }
 
-/** 通知里的全部 agent：首个 + `others`。details 缺失时仍是一行没有附加信息的完成行。 */
-function subagentCompletions(details: unknown): SubagentCompletion[] {
+/** 通知里的全部 agent：首个 + `others`。details 缺失时仍是一行没有附加信息的结束行。 */
+function finishedSubagents(details: unknown): FinishedSubagent[] {
 	const first = isRecord(details) ? details : {};
 	const others = Array.isArray(first.others) ? first.others.filter(isRecord) : [];
-	return [first, ...others].map(toCompletion);
+	return [first, ...others].map(toFinishedSubagent);
 }
 
 /** 通知消息不会再变：按消息对象解析一次，分组每帧拿到的是同一批记录。 */
-const completionsByMessage = new WeakMap<object, SubagentCompletion[]>();
+const subagentsByMessage = new WeakMap<object, FinishedSubagent[]>();
 
-function messageCompletions(message: any): SubagentCompletion[] {
-	if (!message || typeof message !== "object") return subagentCompletions(undefined);
-	let completions = completionsByMessage.get(message);
-	if (!completions) {
-		completions = subagentCompletions(message.details);
-		completionsByMessage.set(message, completions);
+function messageSubagents(message: any): FinishedSubagent[] {
+	if (!message || typeof message !== "object") return finishedSubagents(undefined);
+	let subagents = subagentsByMessage.get(message);
+	if (!subagents) {
+		subagents = finishedSubagents(message.details);
+		subagentsByMessage.set(message, subagents);
 	}
-	return completions;
+	return subagents;
 }
 
-function completionTitle(completion: SubagentCompletion, fg: Fg): string {
-	return completion.id
-		? `${fg("toolTitle", COMPLETION_LABEL)} ${fg("muted", completion.id)}`
-		: fg("toolTitle", COMPLETION_LABEL);
+/**
+ * 结局的叫法，与 pi-subagents 自己的渲染器一致。steered 是到了轮数软上限、被要求收尾后
+ * 按时结束（不是 steer_subagent），算完成，但输出可能不全。
+ */
+function outcomeText(status: string): string {
+	return status === "steered" ? "completed (steered)" : status;
 }
 
-/** 折叠行正文（不含状态图标）：标题 + agent id + 可用统计。单独行与分组行共用。 */
-function completionSummary(completion: SubagentCompletion, width: number, fg: Fg): string {
-	const stats = completion.stats.map((stat) => ` ${fg("dim", "·")} ${fg("dim", stat)}`).join("");
-	return truncateToWidth(`${completionTitle(completion, fg)}${stats}`, width, "…");
+function subagentTitle(subagent: FinishedSubagent, fg: Fg): string {
+	return subagent.id
+		? `${fg("toolTitle", FINISHED_LABEL)} ${fg("muted", subagent.id)}`
+		: fg("toolTitle", FINISHED_LABEL);
+}
+
+/**
+ * 折叠行正文（不含状态图标）：标题 + agent id + 结局 + 可用统计。单独行与分组行共用。
+ * 普通完成不写结局（✓ 已经说明）；没有 status 时也不写。
+ */
+function subagentSummary(subagent: FinishedSubagent, width: number, fg: Fg): string {
+	const outcome =
+		subagent.status && subagent.status !== "completed"
+			? ` ${fg("dim", "·")} ${fg(subagent.failed ? "error" : "warning", outcomeText(subagent.status))}`
+			: "";
+	const stats = subagent.stats.map((stat) => ` ${fg("dim", "·")} ${fg("dim", stat)}`).join("");
+	return truncateToWidth(`${subagentTitle(subagent, fg)}${outcome}${stats}`, width, "…");
 }
 
 const DETAIL_INDENT = "  ";
@@ -158,30 +174,30 @@ function detailSection(heading: string, value: string, width: number, color: str
  * 展开详情（标题行之后的部分）：说明、状态、统计、结果预览、错误、transcript。
  * 只展示保存下来的内容：不调用工具、不读 transcript 文件。
  */
-function completionDetailRows(completion: SubagentCompletion, width: number, fg: Fg): string[] {
+function subagentDetailRows(subagent: FinishedSubagent, width: number, fg: Fg): string[] {
 	const rows: string[] = [];
-	if (completion.description) rows.push(...detailBlock(completion.description, width, "text", fg));
-	if (completion.status) {
-		const color = completion.failed ? "error" : "dim";
-		rows.push(`${DETAIL_INDENT}${fg("dim", "Status:")} ${fg(color, completion.status)}`);
+	if (subagent.description) rows.push(...detailBlock(subagent.description, width, "text", fg));
+	if (subagent.status) {
+		const color = subagent.failed ? "error" : "dim";
+		rows.push(`${DETAIL_INDENT}${fg("dim", "Status:")} ${fg(color, outcomeText(subagent.status))}`);
 	}
-	if (completion.stats.length) {
-		rows.push(...detailBlock(completion.stats.join(" · "), width, "dim", fg));
+	if (subagent.stats.length) {
+		rows.push(...detailBlock(subagent.stats.join(" · "), width, "dim", fg));
 	}
-	if (completion.resultPreview) {
+	if (subagent.resultPreview) {
 		rows.push(
-			...detailSection("Saved result preview", completion.resultPreview, width, "toolOutput", fg),
+			...detailSection("Saved result preview", subagent.resultPreview, width, "toolOutput", fg),
 		);
 	}
-	if (completion.error) rows.push(...detailSection("Error", completion.error, width, "error", fg));
-	if (completion.outputFile) {
-		rows.push(...detailSection("Transcript", completion.outputFile, width, "dim", fg));
+	if (subagent.error) rows.push(...detailSection("Error", subagent.error, width, "error", fg));
+	if (subagent.outputFile) {
+		rows.push(...detailSection("Transcript", subagent.outputFile, width, "dim", fg));
 	}
 	return rows;
 }
 
-function statusIcon(completion: SubagentCompletion, fg: Fg): string {
-	return completion.failed ? fg("error", "✗") : fg("success", "✓");
+function statusIcon(subagent: FinishedSubagent, fg: Fg): string {
+	return subagent.failed ? fg("error", "✗") : fg("success", "✓");
 }
 
 /**
@@ -200,9 +216,9 @@ function resolveExpanded(message: object, base: boolean): boolean {
 
 type HintBox = { row: number; start: number; end: number };
 
-class SubagentCompletionView implements Component {
+class FinishedSubagentView implements Component {
 	private readonly message: object;
-	private readonly completions: SubagentCompletion[];
+	private readonly subagents: FinishedSubagent[];
 	private readonly theme: any;
 	private readonly fg: Fg;
 	private readonly pad: number;
@@ -213,7 +229,7 @@ class SubagentCompletionView implements Component {
 
 	constructor(message: object, theme: any, pad: number, base: boolean) {
 		this.message = message;
-		this.completions = messageCompletions(message);
+		this.subagents = messageSubagents(message);
 		this.theme = theme;
 		this.fg = (color, value) => theme.fg(color, value);
 		this.pad = pad;
@@ -231,12 +247,12 @@ class SubagentCompletionView implements Component {
 		const indent = " ".repeat(this.pad);
 		const hintText = showMoreHintText();
 		const hint = ` ${fg("dim", "·")} ${fg("dim", hintText)}`;
-		const last = this.completions.length - 1;
-		return this.completions.map((completion, index) => {
-			const prefix = `${indent}${statusIcon(completion, fg)} `;
+		const last = this.subagents.length - 1;
+		return this.subagents.map((subagent, index) => {
+			const prefix = `${indent}${statusIcon(subagent, fg)} `;
 			const tail = index === last ? hint : "";
 			const room = Math.max(0, rowWidth - visibleWidth(prefix) - visibleWidth(tail));
-			const line = `${prefix}${completionSummary(completion, room, fg)}${tail}`;
+			const line = `${prefix}${subagentSummary(subagent, room, fg)}${tail}`;
 			if (index === last) {
 				const end = visibleWidth(line);
 				this.hintBox = { row: index, start: end - visibleWidth(hintText), end };
@@ -248,16 +264,16 @@ class SubagentCompletionView implements Component {
 	/** 展开卡：与工具展开卡同一套底色，有一个 agent 失败就整卡用失败底色。 */
 	private renderExpanded(width: number): string[] {
 		const fg = this.fg;
-		const failed = this.completions.some((completion) => completion.failed);
+		const failed = this.subagents.some((subagent) => subagent.failed);
 		const slot = TOOL_CARD_BG_SLOT[failed ? "error" : "success"];
 		const box = new Box(this.pad, 1, (line) => this.theme.bg(slot, line));
-		const completions = this.completions;
+		const subagents = this.subagents;
 		box.addChild({
 			render: (inner: number) =>
-				completions.flatMap((completion, index) => [
+				subagents.flatMap((subagent, index) => [
 					...(index ? [""] : []),
-					`${statusIcon(completion, fg)} ${completionTitle(completion, fg)}`,
-					...completionDetailRows(completion, inner, fg),
+					`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`,
+					...subagentDetailRows(subagent, inner, fg),
 				]),
 			invalidate() {},
 		});
@@ -284,11 +300,11 @@ class SubagentCompletionView implements Component {
 	invalidate(): void {}
 }
 
-/** `subagent-notification` 的消息渲染器：单独出现时的完成行。 */
+/** `subagent-notification` 的消息渲染器：单独出现时的结束行。 */
 export const renderSubagentNotification: MessageRenderer = (message, options, theme) =>
-	new SubagentCompletionView(message, theme, Math.max(0, options.outputPad), options.expanded);
+	new FinishedSubagentView(message, theme, Math.max(0, options.outputPad), options.expanded);
 
-/** 挂在 transcript 上的完成通知（Pi 的 CustomMessageComponent）。 */
+/** 挂在 transcript 上的 subagent 通知（Pi 的 CustomMessageComponent）。 */
 export function isSubagentNotificationComponent(value: unknown): boolean {
 	return (
 		value instanceof CustomMessageComponent &&
@@ -302,20 +318,20 @@ function themeFg(theme: any): Fg {
 
 type ExpandedRowsCache = { width: number; theme: unknown; rows: string[] };
 
-function completionItem(completion: SubagentCompletion): GroupDisplayItem {
+function subagentItem(subagent: FinishedSubagent): GroupDisplayItem {
 	let cache: ExpandedRowsCache | undefined;
 	return {
 		name: SUBAGENT_NOTIFICATION_TYPE,
-		label: COMPLETION_LABEL,
-		status: completion.failed ? "error" : "success",
-		summary: (width, theme) => completionSummary(completion, width, themeFg(theme)),
+		label: FINISHED_LABEL,
+		status: subagent.failed ? "error" : "success",
+		summary: (width, theme) => subagentSummary(subagent, width, themeFg(theme)),
 		expandedRows(width, theme) {
 			if (cache?.width === width && cache.theme === theme) return cache.rows;
 			const fg = themeFg(theme);
 			// 续行前缀（`│ `）占 2 列；末尾空行把详情和下一项隔开。
 			const rows = [
-				completionTitle(completion, fg),
-				...completionDetailRows(completion, Math.max(1, width - 2), fg),
+				subagentTitle(subagent, fg),
+				...subagentDetailRows(subagent, Math.max(1, width - 2), fg),
 				"",
 			];
 			cache = { width, theme, rows };
@@ -324,19 +340,19 @@ function completionItem(completion: SubagentCompletion): GroupDisplayItem {
 	};
 }
 
-const itemsByCompletions = new WeakMap<SubagentCompletion[], GroupDisplayItem[]>();
+const itemsBySubagents = new WeakMap<FinishedSubagent[], GroupDisplayItem[]>();
 
 /**
  * 显示适配器：分组里每个 agent 是一项（计入组头计数，但不是工具执行，不重复统计用量）。
- * 不是完成通知时返回 undefined。
+ * 不是 subagent 通知时返回 undefined。
  */
 export function subagentNotificationItems(component: unknown): GroupDisplayItem[] | undefined {
 	if (!isSubagentNotificationComponent(component)) return undefined;
-	const completions = messageCompletions((component as any).message);
-	let items = itemsByCompletions.get(completions);
+	const subagents = messageSubagents((component as any).message);
+	let items = itemsBySubagents.get(subagents);
 	if (!items) {
-		items = completions.map(completionItem);
-		itemsByCompletions.set(completions, items);
+		items = subagents.map(subagentItem);
+		itemsBySubagents.set(subagents, items);
 	}
 	return items;
 }

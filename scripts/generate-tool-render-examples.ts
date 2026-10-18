@@ -669,8 +669,8 @@ return g + f`,
 			group.setExpanded(true);
 			const expanded = renderLines(group);
 
-			// 子代理完成通知：单独成行，或作为一项并入相邻工具组。
-			const completionDetails = {
+			// 子代理结束通知：单独成行，或作为一项并入相邻工具组。
+			const subagentDetails = {
 				id: "6dae0e11-9341-43b",
 				description: "Locate completion text owner",
 				status: "completed",
@@ -683,34 +683,38 @@ return g + f`,
 				resultPreview:
 					"The displayed block is owned by the installed/local pi-subagents\nextension, not by pi-cc-extensions.…",
 			};
-			const completion = () =>
+			const subagentNotification = (details: Record<string, unknown>) =>
 				new CustomMessageComponent(
 					{
 						role: "custom",
 						customType: "subagent-notification",
 						content: "<task-notification>…</task-notification>",
 						display: true,
-						details: completionDetails,
+						details,
 						timestamp: 0,
 					} as any,
 					renderSubagentNotification,
 				);
-			const standaloneCompletion = renderLines(completion(), 140);
-			const completionParent = new Container() as any;
+			// 单独出现的这条到了轮数软上限被要求收尾（steered），行里写出结局。
+			const standaloneSubagent = renderLines(
+				subagentNotification({ ...subagentDetails, status: "steered" }),
+				160,
+			);
+			const subagentParent = new Container() as any;
 			const result = tool("get_subagent_result", "g-result", { agent_id: "6dae0e11-9341-43b" });
 			result.updateResult({
 				content: [{ type: "text", text: "Agent: 6dae0e11-9341-43b" }],
 				isError: false,
 			});
-			const completionRead = tool("read", "g-completion-read", { path: "extensions/index.ts" });
-			completionRead.updateResult({ content: [{ type: "text", text: "L0" }], isError: false });
-			completionParent.addChild(completion());
-			completionParent.addChild(result);
-			completionParent.addChild(completionRead);
-			const completionGroup = completionParent.children[0];
-			const completionCollapsed = renderLines(completionGroup, 120);
-			completionGroup.setExpanded(true);
-			const completionExpanded = renderLines(completionGroup, 120);
+			const subagentRead = tool("read", "g-subagent-read", { path: "extensions/index.ts" });
+			subagentRead.updateResult({ content: [{ type: "text", text: "L0" }], isError: false });
+			subagentParent.addChild(subagentNotification(subagentDetails));
+			subagentParent.addChild(result);
+			subagentParent.addChild(subagentRead);
+			const subagentGroup = subagentParent.children[0];
+			const subagentCollapsed = renderLines(subagentGroup, 120);
+			subagentGroup.setExpanded(true);
+			const subagentExpanded = renderLines(subagentGroup, 120);
 
 			chunks.push(
 				section(
@@ -735,14 +739,15 @@ return g + f`,
 							"- 点击展开区任意行、任意列（含底部 padding）均可收起。",
 							"- 组末尾不再额外追加空白行。",
 						].join("\n"),
-						"### 子代理完成通知（subagent-notification）",
+						"### 子代理结束通知（subagent-notification）",
 						"单独出现（前后没有可并入的工具）：",
-						fence(standaloneCompletion),
+						fence(standaloneSubagent),
 						"紧挨工具时作为一项并入工具组：",
-						fence(completionCollapsed),
-						fence(completionExpanded),
+						fence(subagentCollapsed),
+						fence(subagentExpanded),
 						[
-							"- 只换 pi-subagents 完成通知的展示：消息内容、details 与用量统计都不改，也不伪造工具调用。",
+							"- 只换 pi-subagents 通知的展示：消息内容、details 与用量统计都不改，也不伪造工具调用。",
+							"- agent 一停下就发这条通知，不一定是完成：标题统一叫 `Subagent Finished`，普通完成之外的结局（`completed (steered)`、`error`、`stopped`、`aborted`）写在 id 后面。steered 指到了轮数软上限被要求收尾，与 steer_subagent 无关。",
 							"- 组头计数按显示项算（`3 done` 是三行，不是三次工具执行）；一条通知带多个 agent（`others`）时每个 agent 一行。",
 							"- 统计只报 payload 里测得的值；pi-subagents 拿不到时写 0（turns、未定价的花费），这些一律不显示。",
 							"- 展开只展示保存下来的内容：说明、状态、统计、结果预览（可能已被 pi-subagents 截断）、错误与 transcript 路径；不调用工具，也不读 transcript 文件。",

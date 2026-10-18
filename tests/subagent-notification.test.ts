@@ -17,7 +17,7 @@ function plain(lines: string[]): string[] {
 	return lines.map(stripAnsi).filter((line) => line.trim());
 }
 
-function completion(overrides: Record<string, unknown> = {}) {
+function finishedAgent(overrides: Record<string, unknown> = {}) {
 	return {
 		id: "6dae0e11-9341-43b",
 		description: "Locate completion text owner",
@@ -53,17 +53,17 @@ function standalone(details: unknown, expanded = false) {
 	return component;
 }
 
-test("a standalone completion row summarizes the agent id and usage", () => {
-	const rows = plain(standalone(completion()).render(160));
+test("a standalone finished-subagent row summarizes the agent id and usage", () => {
+	const rows = plain(standalone(finishedAgent()).render(160));
 	assert.deepEqual(rows, [
-		" ✓ Subagent Completion 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s · click to show more",
+		" ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s · click to show more",
 	]);
 });
 
 test("unavailable statistics are omitted rather than shown as zero", () => {
 	const rows = plain(
 		standalone(
-			completion({
+			finishedAgent({
 				toolUses: 0,
 				turnCount: 0,
 				totalTokens: 0,
@@ -72,12 +72,12 @@ test("unavailable statistics are omitted rather than shown as zero", () => {
 			}),
 		).render(160),
 	);
-	assert.deepEqual(rows, [" ✓ Subagent Completion 6dae0e11-9341-43b · click to show more"]);
-	const measuredTurns = plain(standalone(completion({ turnCount: 3, toolUses: 1 })).render(160));
+	assert.deepEqual(rows, [" ✓ Subagent Finished 6dae0e11-9341-43b · click to show more"]);
+	const measuredTurns = plain(standalone(finishedAgent({ turnCount: 3, toolUses: 1 })).render(160));
 	assert.match(measuredTurns[0]!, /6dae0e11-9341-43b · 3 turns · 1 tool use · 57\.1k token/);
 });
 
-test("missing, null, and malformed details still render one completion row", () => {
+test("missing, null, and malformed details still render one finished-subagent row", () => {
 	for (const details of [
 		undefined,
 		null,
@@ -86,31 +86,47 @@ test("missing, null, and malformed details still render one completion row", () 
 		{ id: 42, others: [null, 7] },
 	]) {
 		const rows = plain(standalone(details).render(160));
-		assert.deepEqual(
-			rows,
-			[" ✓ Subagent Completion · click to show more"],
-			JSON.stringify(details),
-		);
+		assert.deepEqual(rows, [" ✓ Subagent Finished · click to show more"], JSON.stringify(details));
 	}
 });
 
 test("each agent in a group notification gets its own row with its own status", () => {
 	const details = {
-		...completion({ id: "first", status: "error", error: "upstream stream failed" }),
+		...finishedAgent({ id: "first", status: "error", error: "upstream stream failed" }),
 		others: [
-			completion({ id: "second", status: "steered" }),
-			completion({ id: "third", status: "aborted" }),
-			completion({ id: "fourth", status: undefined, error: "crashed" }),
+			finishedAgent({ id: "second", status: "steered" }),
+			finishedAgent({ id: "third", status: "aborted" }),
+			finishedAgent({ id: "fourth", status: undefined, error: "crashed" }),
 		],
 	};
 	const rows = plain(standalone(details).render(200));
 	assert.equal(rows.length, 4);
-	assert.match(rows[0]!, /^ ✗ Subagent Completion first · 35 tool uses/);
-	assert.match(rows[1]!, /^ ✓ Subagent Completion second · 35 tool uses/);
-	assert.match(rows[2]!, /^ ✗ Subagent Completion third · 35 tool uses/);
-	assert.match(rows[3]!, /^ ✗ Subagent Completion fourth · 35 tool uses/);
+	assert.match(rows[0]!, /^ ✗ Subagent Finished first · error · 35 tool uses/);
+	assert.match(rows[1]!, /^ ✓ Subagent Finished second · completed \(steered\) · 35 tool uses/);
+	assert.match(rows[2]!, /^ ✗ Subagent Finished third · aborted · 35 tool uses/);
+	assert.match(rows[3]!, /^ ✗ Subagent Finished fourth · 35 tool uses/, "no status, no outcome");
 	assert.equal(rows.filter((row) => row.includes("click to show more")).length, 1);
 	assert.match(rows[3]!, /· click to show more$/);
+});
+
+test("the row names the outcome unless the agent simply completed", () => {
+	const outcome = (status: string) => plain(standalone(finishedAgent({ status })).render(200))[0]!;
+	assert.match(outcome("completed"), /^ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses/);
+	assert.match(
+		outcome("steered"),
+		/^ ✓ Subagent Finished 6dae0e11-9341-43b · completed \(steered\) · 35 tool uses/,
+	);
+	assert.match(
+		outcome("stopped"),
+		/^ ✗ Subagent Finished 6dae0e11-9341-43b · stopped · 35 tool uses/,
+	);
+	assert.match(
+		outcome("queued"),
+		/^ ✓ Subagent Finished 6dae0e11-9341-43b · queued · 35 tool uses/,
+	);
+	const expanded = card(standalone(finishedAgent({ status: "steered" }), true).render(120));
+	assert.equal(expanded[0], " ✓ Subagent Finished 6dae0e11-9341-43b");
+	assert.equal(expanded[2], "   Status: completed (steered)");
 });
 
 function card(lines: string[]): string[] {
@@ -120,10 +136,10 @@ function card(lines: string[]): string[] {
 	return rows;
 }
 
-test("expanded completion shows description, status, stats, saved preview, and transcript", () => {
-	const rows = card(standalone(completion(), true).render(120));
+test("the expanded view shows description, status, stats, saved preview, and transcript", () => {
+	const rows = card(standalone(finishedAgent(), true).render(120));
 	assert.deepEqual(rows, [
-		" ✓ Subagent Completion 6dae0e11-9341-43b",
+		" ✓ Subagent Finished 6dae0e11-9341-43b",
 		"   Locate completion text owner",
 		"   Status: completed",
 		"   35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
@@ -137,10 +153,10 @@ test("expanded completion shows description, status, stats, saved preview, and t
 	]);
 });
 
-test("expanded completion adds the error and omits whatever the payload lacks", () => {
+test("the expanded view adds the error and omits whatever the payload lacks", () => {
 	const failed = card(
 		standalone(
-			completion({
+			finishedAgent({
 				status: "error",
 				error: "Error Code null: upstream stream failed",
 				resultPreview: "No output.",
@@ -151,7 +167,7 @@ test("expanded completion adds the error and omits whatever the payload lacks", 
 		).render(120),
 	);
 	assert.deepEqual(failed, [
-		" ✗ Subagent Completion 6dae0e11-9341-43b",
+		" ✗ Subagent Finished 6dae0e11-9341-43b",
 		"   Locate completion text owner",
 		"   Status: error",
 		"   35 tool uses · 57.1k token · 34.8s",
@@ -162,21 +178,21 @@ test("expanded completion adds the error and omits whatever the payload lacks", 
 		"   Error",
 		"   Error Code null: upstream stream failed",
 	]);
-	assert.deepEqual(card(standalone(null, true).render(120)), [" ✓ Subagent Completion"]);
+	assert.deepEqual(card(standalone(null, true).render(120)), [" ✓ Subagent Finished"]);
 });
 
 test("expanded preview wraps to the card width and agents are separated", () => {
 	const long = "word ".repeat(30).trim();
 	const details = {
-		...completion({ id: "first", resultPreview: long, outputFile: undefined }),
-		others: [completion({ id: "second", description: undefined, outputFile: undefined })],
+		...finishedAgent({ id: "first", resultPreview: long, outputFile: undefined }),
+		others: [finishedAgent({ id: "second", description: undefined, outputFile: undefined })],
 	};
 	const rows = card(standalone(details, true).render(60));
 	for (const row of rows) assert.ok(row.length <= 60, row);
 	const preview = rows.slice(rows.indexOf("   Saved result preview") + 1);
 	assert.ok(preview[0]!.startsWith("   word word"));
 	assert.ok(preview[1]!.startsWith("   word word"), "long preview wraps instead of truncating");
-	const second = rows.indexOf(" ✓ Subagent Completion second");
+	const second = rows.indexOf(" ✓ Subagent Finished second");
 	assert.ok(second > 0);
 	assert.equal(rows[second - 1], "", "agents are separated by a blank row");
 	assert.equal(rows[second + 1], "   Status: completed");
@@ -195,9 +211,9 @@ test("the expanded card background follows the worst agent status", () => {
 		)
 			.render(80)
 			.join("\n");
-	assert.match(paint(completion()), /<toolSuccessBg>/);
-	assert.doesNotMatch(paint(completion()), /<toolErrorBg>/);
-	const mixed = paint({ ...completion(), others: [completion({ status: "aborted" })] });
+	assert.match(paint(finishedAgent()), /<toolSuccessBg>/);
+	assert.doesNotMatch(paint(finishedAgent()), /<toolErrorBg>/);
+	const mixed = paint({ ...finishedAgent(), others: [finishedAgent({ status: "aborted" })] });
 	assert.match(mixed, /<toolErrorBg>/);
 	assert.doesNotMatch(mixed, /<toolSuccessBg>/);
 });
@@ -228,10 +244,10 @@ function withGrouping(run: (hooks: ReturnType<typeof installToolGrouping>) => vo
 	}
 }
 
-test("a completion joins the adjacent tools as one more grouped item", () => {
+test("a finished subagent joins the adjacent tools as one more grouped item", () => {
 	withGrouping(() => {
 		const parent = new Container() as any;
-		const note = standalone(completion());
+		const note = standalone(finishedAgent());
 		parent.addChild(note);
 		parent.addChild(
 			settledTool("get_subagent_result", "result", { agent_id: "6dae0e11-9341-43b" }),
@@ -248,8 +264,8 @@ test("a completion joins the adjacent tools as one more grouped item", () => {
 		assert.ok(group instanceof ToolGroupComponent);
 		assert.equal(group.children[0], note, "the notification keeps its place in the order");
 		assert.deepEqual(plain(group.render(240)), [
-			" ● Multiple Tools: 3 done · Subagent Completion×1, Get Subagent Result×1, Read×1 · click to show more",
-			" ├ ✓ Subagent Completion 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
+			" ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Read×1 · click to show more",
+			" ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
 			" ├ ✓ Get Subagent Result 6dae0e11-9341-43b",
 			" └ ✓ Read /home/ning/github/pi-subagents/src/index.ts (offset=280, limit=92)",
 		]);
@@ -263,7 +279,7 @@ function groupOf(...members: any[]): ToolGroupComponent {
 	return parent.children[0] as ToolGroupComponent;
 }
 
-test("an expanded group nests completion details in the tree and keeps tool views", () => {
+test("an expanded group nests agent details in the tree and keeps tool views", () => {
 	withGrouping(() => {
 		const tools = () => [
 			settledTool("get_subagent_result", "result", { agent_id: "6dae0e11-9341-43b" }),
@@ -273,13 +289,13 @@ test("an expanded group nests completion details in the tree and keeps tool view
 		baseline.setExpanded(true);
 		const toolRows = card(baseline.render(120)).slice(1);
 
-		const note = standalone(completion());
+		const note = standalone(finishedAgent());
 		const group = groupOf(note, ...tools());
 		group.setExpanded(true);
 		const rows = card(group.render(120));
 		assert.match(rows[0]!, /^ ● Multiple Tools: 3 done · .* · ↑ Collapse$/);
 		assert.deepEqual(rows.slice(1, 13), [
-			" ├ ✓ Subagent Completion 6dae0e11-9341-43b",
+			" ├ ✓ Subagent Finished 6dae0e11-9341-43b",
 			" │   Locate completion text owner",
 			" │   Status: completed",
 			" │   35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
@@ -292,7 +308,7 @@ test("an expanded group nests completion details in the tree and keeps tool view
 			" │   /tmp/pi-subagents-1000/session/tasks/6dae0e11-9341-43b.output",
 			" │",
 		]);
-		assert.deepEqual(rows.slice(13), toolRows, "tool rows are unchanged by the completion");
+		assert.deepEqual(rows.slice(13), toolRows, "tool rows are unchanged by the notification");
 
 		// 展开状态转发给通知本身：拆组后它仍是展开卡。
 		assert.match(card(note.render(120)).join("\n"), /Saved result preview/);
@@ -301,10 +317,10 @@ test("an expanded group nests completion details in the tree and keeps tool view
 	});
 });
 
-test("clicks on expanded completion rows belong to the group, tool rows to the tool", () => {
+test("clicks on expanded notification rows belong to the group, tool rows to the tool", () => {
 	withGrouping(() => {
 		const result = settledTool("get_subagent_result", "result", { agent_id: "x" });
-		const group = groupOf(standalone(completion()), result);
+		const group = groupOf(standalone(finishedAgent()), result);
 		group.setExpanded(true);
 		const lines = group.render(120).map(stripAnsi);
 		const statusRow = lines.findIndex((line) => line.includes("Status: completed"));
@@ -315,15 +331,19 @@ test("clicks on expanded completion rows belong to the group, tool rows to the t
 	});
 });
 
-test("completions group only with adjacent tools and never across visible content", async () => {
+test("notifications group only with adjacent tools and never across visible content", async () => {
 	const { AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
 	withGrouping(() => {
 		const alone = new Container() as any;
-		const first = standalone(completion({ id: "first" }));
-		const second = standalone(completion({ id: "second" }));
+		const first = standalone(finishedAgent({ id: "first" }));
+		const second = standalone(finishedAgent({ id: "second" }));
 		alone.addChild(first);
 		alone.addChild(second);
-		assert.deepEqual(alone.children, [first, second], "completions without a tool stay standalone");
+		assert.deepEqual(
+			alone.children,
+			[first, second],
+			"notifications without a tool stay standalone",
+		);
 
 		// 等到工具出现，前面紧挨的完成通知按原顺序一起入组。
 		const tool = settledTool("get_subagent_result", "joined", { agent_id: "second" });
@@ -332,7 +352,7 @@ test("completions group only with adjacent tools and never across visible conten
 		assert.deepEqual(alone.children[0].children, [first, second, tool]);
 
 		const text = new Container() as any;
-		text.addChild(standalone(completion()));
+		text.addChild(standalone(finishedAgent()));
 		text.addChild(
 			new AssistantMessageComponent(
 				{ role: "assistant", content: [{ type: "text", text: "visible" }] } as any,
@@ -350,7 +370,7 @@ test("completions group only with adjacent tools and never across visible conten
 		other.addChild(settledTool("read", "before-other", { path: "a.ts" }));
 		other.addChild(
 			new CustomMessageComponent(
-				{ ...notification(completion()), customType: "other-notification" } as any,
+				{ ...notification(finishedAgent()), customType: "other-notification" } as any,
 				undefined,
 			),
 		);
@@ -363,35 +383,31 @@ test("completions group only with adjacent tools and never across visible conten
 	});
 });
 
-test("multi-agent completions count one item per agent in the group", () => {
+test("multi-agent notifications count one item per agent in the group", () => {
 	withGrouping(() => {
 		const details = {
-			...completion({ id: "a" }),
-			others: [completion({ id: "b", status: "error" }), completion({ id: "c" })],
+			...finishedAgent({ id: "a" }),
+			others: [finishedAgent({ id: "b", status: "error" }), finishedAgent({ id: "c" })],
 		};
 		const group = groupOf(standalone(details), settledTool("read", "read", { path: "a.ts" }));
 		const rows = plain(group.render(200));
 		assert.match(
 			rows[0]!,
-			/^ ● Multiple Tools: 3 done · 1 failed · Subagent Completion×3, Read×1 · /,
+			/^ ● Multiple Tools: 3 done · 1 failed · Subagent Finished×3, Read×1 · /,
 		);
-		assert.deepEqual(
-			rows.slice(1).map((row) => row.slice(0, 27)),
-			[
-				" ├ ✓ Subagent Completion a ",
-				" ├ ✗ Subagent Completion b ",
-				" ├ ✓ Subagent Completion c ",
-				" └ ✓ Read a.ts",
-			],
-		);
+		assert.equal(rows.length, 5);
+		assert.match(rows[1]!, /^ ├ ✓ Subagent Finished a · 35 tool uses/);
+		assert.match(rows[2]!, /^ ├ ✗ Subagent Finished b · error · 35 tool uses/);
+		assert.match(rows[3]!, /^ ├ ✓ Subagent Finished c · 35 tool uses/);
+		assert.equal(rows[4], " └ ✓ Read a.ts");
 	});
 });
 
-test("a group left with only completions dissolves back to standalone rows", () => {
+test("a group left with only notifications dissolves back to standalone rows", () => {
 	withGrouping((hooks) => {
 		const parent = new Container() as any;
-		const first = standalone(completion({ id: "first" }));
-		const second = standalone(completion({ id: "second" }));
+		const first = standalone(finishedAgent({ id: "first" }));
+		const second = standalone(finishedAgent({ id: "second" }));
 		const tool = settledTool("read", "read", { path: "a.ts" });
 		parent.addChild(first);
 		parent.addChild(second);
@@ -400,12 +416,12 @@ test("a group left with only completions dissolves back to standalone rows", () 
 		assert.deepEqual(parent.children, [first, second]);
 
 		const reloaded = new Container() as any;
-		const note = standalone(completion());
+		const note = standalone(finishedAgent());
 		const read = settledTool("read", "reload", { path: "a.ts" });
 		reloaded.addChild(note);
 		reloaded.addChild(read);
 		hooks.shutdown();
-		assert.deepEqual(reloaded.children, [note, read], "shutdown releases the completion");
+		assert.deepEqual(reloaded.children, [note, read], "shutdown releases the notification");
 		const again = installToolGrouping(() => true);
 		try {
 			again.refresh({ getMountedRoots: () => [reloaded] });
@@ -431,7 +447,7 @@ function click(component: any, x: number, y: number, width = 120) {
 }
 
 test("clicking the standalone hint expands it and clicking the card collapses it", () => {
-	const component = standalone(completion());
+	const component = standalone(finishedAgent());
 	const row = component
 		.render(120)
 		.findIndex((line: string) => /click to show more/.test(stripAnsi(line)));
@@ -451,4 +467,39 @@ test("clicking the standalone hint expands it and clicking the card collapses it
 	component.setExpanded(true);
 	component.setExpanded(false);
 	assert.doesNotMatch(card(component.render(120)).join("\n"), /Saved result preview/);
+});
+
+test("a steered agent keeps its outcome inside the tool group", () => {
+	withGrouping(() => {
+		const parent = new Container() as any;
+		parent.addChild(settledTool("Agent", "agent-1", { subagent_type: "general-purpose" }));
+		parent.addChild(settledTool("Agent", "agent-2", { subagent_type: "general-purpose" }));
+		parent.addChild(settledTool("steer_subagent", "steer", { agent_id: "a43b4a9d-fcf9-4b9" }));
+		parent.addChild(
+			standalone({
+				id: "a43b4a9d-fcf9-4b9",
+				description: "Complete no-op coordination test",
+				status: "steered",
+				toolUses: 0,
+				turnCount: 0,
+				totalTokens: 85,
+				totalCost: 0.008,
+				durationMs: 3_000,
+				resultPreview: "Done.",
+			}),
+		);
+		parent.addChild(
+			settledTool("bash", "bash", { command: "printf 'Bash ran after subagent completion.\\n'" }),
+		);
+		assert.equal(parent.children.length, 1);
+		const rows = plain(parent.children[0].render(240));
+		assert.match(
+			rows[0]!,
+			/^ ● Multiple Tools: 5 done · Agent×2, Steer Subagent×1, Subagent Finished×1, Bash×1 · /,
+		);
+		assert.equal(
+			rows[4],
+			" ├ ✓ Subagent Finished a43b4a9d-fcf9-4b9 · completed (steered) · 85 token · ~$0.008 · 3.0s",
+		);
+	});
 });

@@ -205,6 +205,11 @@ function subagentDetailRows(subagent: FinishedSubagent, width: number, fg: Fg): 
 	return rows;
 }
 
+/** 每行折进 width，空行原样保留；已折过的行不变。Box 不折也不截超宽行，分组面板只截不折，先在这里折好。 */
+function wrapRows(rows: string[], width: number): string[] {
+	return rows.flatMap((row) => (row ? wrapTextWithAnsi(row, Math.max(1, width)) : [""]));
+}
+
 function statusIcon(subagent: FinishedSubagent, fg: Fg): string {
 	return subagent.failed ? fg("error", "✗") : fg("success", "✓");
 }
@@ -286,15 +291,16 @@ class FinishedSubagentView implements Component {
 		const box = new Box(this.pad, 1, (line) => this.theme.bg(slot, line));
 		const subagents = this.subagents;
 		box.addChild({
+			// 标题、状态与小标题也折进内宽。
 			render: (inner: number) =>
-				subagents
-					.flatMap((subagent, index) => [
+				wrapRows(
+					subagents.flatMap((subagent, index) => [
 						...(index ? [""] : []),
 						`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`,
 						...subagentDetailRows(subagent, inner, fg),
-					])
-					// Box 不截超宽行：标题、状态与小标题也折进内宽，正文已折过的行不变。
-					.flatMap((row) => (row ? wrapTextWithAnsi(row, Math.max(1, inner)) : [""])),
+					]),
+					inner,
+				),
 			invalidate() {},
 		});
 		return box.render(width);
@@ -396,10 +402,18 @@ export function installSubagentNotificationRenderer(): () => void {
 	return patch.dispose;
 }
 
-/** 让已挂载的通知按当前 mode 重建（/ccstyle on|compact|off 切换后）。 */
+/**
+ * 让已挂载的通知按当前 mode 重建（/ccstyle on|compact|off 切换后、session_start 之后）。
+ * /reload 与 /resume 先重建 transcript 再发 session_start，那批卡存的是补丁装上前的
+ * 原查找结果：补丁在位时给它们换上按 mode 分派的渲染器，原结果留作上游。
+ */
 export function refreshSubagentNotifications(root: unknown): void {
+	const active = patchRegistry.get<RendererLookupPatch>(RENDERER_PATCH_KEY)?.active === true;
 	walkComponentTree(root, (value) => {
 		if (!isSubagentNotificationComponent(value)) return;
+		if (active && !value.customRenderer?.[RENDERER_PATCH_KEY]) {
+			value.customRenderer = modeAwareRenderer(value.customRenderer);
+		}
 		// CustomMessageComponent.invalidate 会 rebuild，重新调用渲染器。
 		value.invalidate?.();
 		return false;
@@ -422,14 +436,20 @@ function subagentItem(subagent: FinishedSubagent): GroupDisplayItem {
 		expandedRows(width, theme) {
 			if (cache?.width === width && cache.theme === theme) return cache.rows;
 			const fg = themeFg(theme);
-			// 续行前缀（`│ `）占 2 列；末尾空行把详情和下一项隔开。
+			// 首行接在 `├ ✓ ` 之后占 4 列，续行前缀（`│ `）占 2 列；分组只截不折，这里先折好。
+			// 末尾空行把详情和下一项隔开。
+			const room = Math.max(1, width - 2);
 			const rows = [
-				subagentTitle(subagent, fg),
-				...subagentDetailRows(subagent, Math.max(1, width - 2), fg),
+				...wrapRows([subagentTitle(subagent, fg)], width - 4),
+				...wrapRows(subagentDetailRows(subagent, room, fg), room),
 				"",
 			];
 			cache = { width, theme, rows };
 			return rows;
+		},
+		// 主题是稳定代理，换主题后身份不变：靠分组 invalidate 丢掉带旧颜色的行。
+		invalidate() {
+			cache = undefined;
 		},
 	};
 }

@@ -9,11 +9,23 @@ import { Container, Text } from "@earendil-works/pi-tui";
 import { config, setConfig } from "../extensions/config/config.ts";
 import extension from "../extensions/index.ts";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
+import { getToolMouseTui, setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
+import { setStickyPromptTheme } from "../extensions/renderer/mouse/sticky-prompt.ts";
+import {
+	getMessageDisplayTheme,
+	setMessageDisplayTheme,
+} from "../extensions/renderer/tool/message-display.ts";
+import { isToolTuiFullscreen, setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 import {
 	installSubagentNotificationRenderer,
 	refreshSubagentNotifications,
 } from "../extensions/renderer/tool/subagent-notification.ts";
-import { PROTOTYPE_ORIGINAL_KEY } from "../extensions/utils/patch-keys.ts";
+import {
+	patchRegistry,
+	PROTOTYPE_ORIGINAL_KEY,
+	STICKY_PROMPT_STATE_SLOT,
+} from "../extensions/utils/patch-keys.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
 initTheme("dark");
 
@@ -217,6 +229,68 @@ test("reinstalling hands existing cards to the new patch and a stale disposer ke
 	});
 });
 
+test("cards rebuilt before the patch is back (/reload, /resume) are adopted on refresh", () => {
+	const upstream = upstreamRenderer();
+	const withManager = [new Map<string, unknown>([[TYPE, upstream]]), ours];
+	const withoutManager = [ours];
+	// 上一个会话装上补丁，session_shutdown 卸下。
+	installSubagentNotificationRenderer()();
+	assert.equal(runnerPrototype.getMessageRenderer, nativeLookup);
+	// /reload 与 /resume 先按原生查找重建 transcript，之后才发 session_start。
+	const managedMessage = notification(DETAILS);
+	const managed = card(lookup(withManager), managedMessage);
+	const bare = card(lookup(withoutManager));
+	assert.equal((managed as any).customRenderer, upstream);
+	assert.equal((bare as any).customRenderer, undefined);
+	const otherRenderer = () => new Text("other view", 0, 0);
+	const other = card(
+		lookup(
+			[new Map<string, unknown>([["other-notification", otherRenderer]])],
+			"other-notification",
+		),
+		{ ...notification(DETAILS), customType: "other-notification" },
+	);
+	const root = new Container();
+	root.addChild(managed);
+	root.addChild(bare);
+	root.addChild(other);
+	const generic = rows(card(undefined));
+
+	withPatch(() => {
+		const live = card(lookup(withManager));
+		root.addChild(live);
+		const liveRenderer = (live as any).customRenderer;
+		for (const mode of ["on", "compact"] as const) {
+			withMode(mode, () => {
+				refreshSubagentNotifications(root);
+				assert.match(rows(managed)[0]!, FINISHED_ROW, `${mode}: with pi-subagents`);
+				assert.match(rows(bare)[0]!, FINISHED_ROW, `${mode}: without pi-subagents`);
+			});
+		}
+		const adopted = (managed as any).customRenderer;
+		refreshSubagentNotifications(root);
+		assert.equal((managed as any).customRenderer, adopted, "a second refresh does not rewrap");
+		assert.equal((live as any).customRenderer, liveRenderer, "cards built under the patch keep it");
+		assert.equal((other as any).customRenderer, otherRenderer, "other custom types are untouched");
+		assert.deepEqual(rows(other), ["other view"]);
+		withMode("off", () => {
+			upstream.seen.length = 0;
+			refreshSubagentNotifications(root);
+			assert.deepEqual(rows(managed), ["upstream view"]);
+			assert.ok(upstream.seen.includes(managedMessage), "upstream gets the original message");
+			assert.deepEqual(rows(bare), generic);
+		});
+	});
+
+	// 补丁卸下后回到原生：有 pi-subagents 用它的视图，没有就是 Pi 的通用卡片。
+	withMode("on", () => {
+		managed.invalidate();
+		bare.invalidate();
+		assert.deepEqual(rows(managed), ["upstream view"]);
+		assert.deepEqual(rows(bare), generic);
+	});
+});
+
 test("a third-party wrapper over our lookup is preserved, and our inactive lookup is not rewrapped", (t) => {
 	t.after(() => {
 		runnerPrototype.getMessageRenderer = nativeLookup;
@@ -306,4 +380,86 @@ test("a TUI session installs the lookup patch and shutdown removes it; other ses
 	}
 	assert.equal(runnerPrototype.getMessageRenderer, nativeLookup);
 	assert.equal((globalThis as any)[PATCH_KEY], undefined);
+});
+
+test("session_start hands mounted cards rebuilt before it to our renderer", async (t) => {
+	// session_start/鼠标层会改这些进程级状态；测完还原成原值。
+	const previous = { ...config };
+	const previousDisplayTheme = getMessageDisplayTheme();
+	const previousStickyTheme = patchRegistry.get<{ theme?: unknown }>(
+		STICKY_PROMPT_STATE_SLOT,
+	)?.theme;
+	const previousTui = getToolMouseTui();
+	const previousFullscreen = isToolTuiFullscreen();
+	t.after(() => {
+		setConfig(previous);
+		setMessageDisplayTheme(previousDisplayTheme);
+		setStickyPromptTheme(previousStickyTheme);
+		setToolMouseTui(previousTui);
+		setToolTuiFullscreen(previousFullscreen);
+	});
+
+	// /reload 与 /resume 先重建 transcript 再发 session_start：补丁已随 session_shutdown 卸下，
+	// 卡上存的是原生查找结果——pi-subagents 的渲染器，没有它时是 undefined。
+	assert.equal(runnerPrototype.getMessageRenderer, nativeLookup);
+	const managed = card(lookup([new Map<string, unknown>([[TYPE, upstreamRenderer()]]), ours]));
+	const bare = card(lookup([ours]));
+	const generic = rows(card(undefined));
+	assert.deepEqual(rows(managed), ["upstream view"]);
+	assert.deepEqual(rows(bare), generic);
+	const transcript = new Container();
+	transcript.addChild(managed);
+	transcript.addChild(bare);
+
+	// 最小的 regular 渲染器，经 Pi 的惰性 Proxy 交给扩展（与 0.84+ 的 ctx.ui 同形）。
+	const renderer = {
+		mode: "regular",
+		children: [transcript],
+		previousViewportTop: 0,
+		terminal: { columns: 120, rows: 24, write() {} },
+		requestRender() {},
+		render(width: number) {
+			return this.children.flatMap((child: any) => child.render(width));
+		},
+		doRender() {
+			this.render(120);
+		},
+		handleInput() {},
+	};
+	const tui = createLazyProxy(() => renderer);
+	const theme = { fg: (_color: string, text: string) => text };
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			theme,
+			setStatus() {},
+			requestRender() {},
+			notify() {},
+			setFooter() {},
+			setWidget(_key: string, content: any) {
+				if (typeof content === "function") content(tui, theme);
+			},
+			onTerminalInput() {
+				return () => {};
+			},
+		},
+	} as any;
+	const session = runtime();
+	claudeCodeStyleExtension(session.pi as any, { mode: "on" });
+	try {
+		await session.events.get("session_start")?.({}, ctx);
+		assert.equal(getToolMouseTui(), tui, "the mounted transcript is the one the extension sees");
+		// session_start 排的会话重绘在下一拍执行，测试不手动刷新。
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.match(rows(managed)[0]!, FINISHED_ROW, "with pi-subagents");
+		assert.match(rows(bare)[0]!, FINISHED_ROW, "without pi-subagents");
+	} finally {
+		await session.events.get("session_shutdown")?.({}, ctx);
+	}
+	assert.equal(runnerPrototype.getMessageRenderer, nativeLookup);
+	managed.invalidate();
+	bare.invalidate();
+	assert.deepEqual(rows(managed), ["upstream view"], "after shutdown cards go native");
+	assert.deepEqual(rows(bare), generic);
 });

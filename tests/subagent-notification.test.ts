@@ -6,10 +6,25 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import { config } from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
-import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
+import {
+	renderSubagentNotification,
+	subagentNotificationItems,
+} from "../extensions/renderer/tool/subagent-notification.ts";
 
 initTheme("dark");
+
+// Pi 的主题模块：ctx.ui.theme 是其中的稳定代理，换主题只换代理背后的实例。
+const hostModule = (path: string) =>
+	new URL(path, import.meta.resolve("@earendil-works/pi-coding-agent")).href;
+const {
+	loadThemeFromPath,
+	setThemeInstance,
+	theme: piTheme,
+} = await import(hostModule("./modes/interactive/theme/theme.js"));
 
 const stripAnsi = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 
@@ -352,6 +367,109 @@ test("clicks on expanded notification rows belong to the group, tool rows to the
 		assert.ok(resultRow > statusRow);
 		assert.equal(group.childAtRow(statusRow, 120), null);
 		assert.equal(group.childAtRow(resultRow, 120)?.component, result);
+	});
+});
+
+test("a theme switch repaints grouped notification details after invalidate", (t) => {
+	// 还原成测试前的主题实例本身：Pi 用这个 globalThis 槽在各加载器间共享当前主题。
+	const THEME_SLOT = Symbol.for("@earendil-works/pi-coding-agent:theme");
+	const previousTheme = (globalThis as any)[THEME_SLOT];
+	t.after(() => setThemeInstance(previousTheme));
+	const repoTheme = (name: string) =>
+		loadThemeFromPath(new URL(`../themes/${name}.json`, import.meta.url).pathname, "truecolor");
+	const dark = repoTheme("cc-dark");
+	const light = repoTheme("cc-light");
+	const errorSgr = (instance: any) => instance.fg("error", "|").split("|")[0];
+	assert.match(errorSgr(dark), /^\x1b\[38;2;\d+;\d+;\d+m$/);
+	assert.notEqual(errorSgr(dark), errorSgr(light), "the themes color errors differently");
+	setThemeInstance(dark);
+	// 真实的 default mode：它的 paint 缓存让内容不变的工具每帧交回同一数组，分组复用才看得出来。
+	const previousMode = config.mode;
+	config.mode = "on";
+	const defaultMode = installDefaultMode(new WriteExecutionMetadataStore());
+	t.after(() => {
+		defaultMode.shutdown();
+		config.mode = previousMode;
+	});
+	withGrouping((hooks) => {
+		// session_start 交给分组的就是这个代理，换主题后它还是同一个对象。
+		hooks.setTheme(piTheme);
+		const note = standalone(finishedAgent({ status: "error", error: "upstream stream failed" }));
+		const group = groupOf(note, settledTool("read", "read", { path: "a.ts" }));
+		group.setExpanded(true);
+		const errorRow = (lines: string[]) =>
+			lines.find((line) => line.includes("upstream stream failed")) ?? "";
+		assert.ok(errorRow(group.render(80)).includes(`${errorSgr(dark)}upstream stream failed`));
+
+		setThemeInstance(light);
+		// 换主题时 TUI 整树 invalidate。
+		group.invalidate();
+		const repainted = group.render(80);
+		assert.ok(
+			errorRow(repainted).includes(`${errorSgr(light)}upstream stream failed`),
+			"the error text takes the new theme's color",
+		);
+		assert.ok(!errorRow(repainted).includes(errorSgr(dark)), "no old error color survives");
+		// 内容不变的后续帧继续复用同一批行：分组展开缓存按引用比对。
+		assert.equal(group.render(80), repainted, "an unchanged frame reuses the group's lines");
+		const [item] = subagentNotificationItems(note)!;
+		assert.equal(item!.expandedRows(78, piTheme), item!.expandedRows(78, piTheme));
+	});
+});
+
+test("narrow expanded groups wrap every notification row and keep tool rows clickable", () => {
+	const details = {
+		...finishedAgent({
+			id: "6dae0e11-9341-43b-first",
+			status: "error",
+			error: "upstream stream failed",
+		}),
+		others: [
+			finishedAgent({ id: "6dae0e11-9341-43b-second", status: "steered" }),
+			finishedAgent({ id: "6dae0e11-9341-43b-third", status: "aborted" }),
+			finishedAgent({ id: "6dae0e11-9341-43b-fourth" }),
+		],
+	};
+	withGrouping(() => {
+		const tool = settledTool("read", "read", { path: "a.ts" });
+		const group = groupOf(standalone(details), tool);
+		group.setExpanded(true);
+		const toolRowOf = (lines: string[]) => lines.findIndex((line) => /^ └ [✓✗] /.test(line));
+		// 通知各行去掉树枝与状态图标前缀后的正文，空白不计（折行只换行，不增删字）。
+		const notificationText = (width: number) => {
+			const lines = group.render(width).map(stripAnsi);
+			return lines
+				.slice(2, toolRowOf(lines))
+				.map((line) => line.replace(/^ (?:[├└] [✓✗] |│ )/, ""))
+				.join("")
+				.replace(/\s+/g, "");
+		};
+		const wide = notificationText(200);
+		for (const text of [
+			"SubagentFinished6dae0e11-9341-43b-first",
+			"SubagentFinished6dae0e11-9341-43b-second",
+			"Status:completed(steered)",
+			"Status:aborted",
+			"Savedresultpreview",
+			"Errorupstreamstreamfailed",
+			"Transcript",
+		]) {
+			assert.ok(wide.includes(text), `the wide reference carries ${text}`);
+		}
+		for (const width of [20, 30, 40, 120]) {
+			const lines = group.render(width);
+			for (const line of lines) {
+				assert.ok(visibleWidth(line) <= width, `width ${width}: ${stripAnsi(line)}`);
+			}
+			assert.equal(notificationText(width), wide, `width ${width} keeps every notification word`);
+			// 点击定位与渲染同一套行数：折行后工具行仍落在工具上，上一行仍归分组。
+			const toolRow = toolRowOf(lines.map(stripAnsi));
+			assert.ok(toolRow > 2, `width ${width}: the tool row follows the notification`);
+			assert.equal(group.childAtRow(toolRow, width)?.component, tool, `width ${width}`);
+			assert.equal(group.childAtRow(toolRow, width)?.row, 0);
+			assert.equal(group.childAtRow(lines.length - 2, width)?.component, tool);
+			assert.equal(group.childAtRow(toolRow - 1, width), null, `width ${width}`);
+		}
 	});
 });
 

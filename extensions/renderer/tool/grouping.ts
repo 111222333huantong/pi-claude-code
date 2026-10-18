@@ -139,6 +139,8 @@ export type GroupDisplayItem = {
 	expandedRows(width: number, theme: any): string[];
 	/** 展开态里这些行对应的内部卡片；没有时行归分组本身（点击收起整组）。 */
 	hitTarget?: unknown;
+	/** 丢掉该项自己缓存的行（换主题后颜色要重算）；分组 invalidate 时转发。 */
+	invalidate?(): void;
 };
 
 function status(tool: any): ToolStatus {
@@ -526,6 +528,7 @@ export class ToolGroupComponent extends Container {
 	invalidate(): void {
 		this.clearPaintCache();
 		for (const tool of this.children) tool.invalidate?.();
+		for (const item of groupItems(this.children)) item.invalidate?.();
 	}
 
 	private settledCacheHit(width: number): string[] | undefined {

@@ -262,7 +262,11 @@ export default function (
 		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
 		// 否则它没有后续消息，摘要行会停在 Running。
 		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
-		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
+		scheduleSessionRender(() => {
+			hooks.toolGrouping.refresh(getToolMouseTui());
+			// /reload、/resume 在 session_start 之前就重建了 transcript：已挂载的通知卡换上本插件的渲染器。
+			refreshSubagentNotifications(getToolMouseTui());
+		});
 	});
 
 	pi.on("session_compact", async (event, ctx) => {

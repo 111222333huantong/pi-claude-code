@@ -40,7 +40,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
-import { aggregateToolCardBgSlot, TOOL_CARD_BG_SLOT, toolCardBgSlot } from "./tool/tool-state.ts";
+import { aggregateToolCardBgSlot, toolCardBgSlot } from "./tool/tool-state.ts";
 import { ASK_USER_QUESTION_TOOL_NAME } from "./tool/ask-user-question.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
@@ -388,9 +388,9 @@ function layoutExpandedToolCard(
 ): { lines: string[]; hits: Array<{ child: any; start: number; end: number }> } {
 	const slot = aggregateToolCardBgSlot(children.map((child) => child?.__ccTool).filter(Boolean));
 	const toolBgAnsi = darkenBgAnsi(theme, slot);
-	// 展开面板外卡固定中间态色（与 edit/write 成功卡同槽）：面板是"已完结段落
-	// 的容器"，子卡各自按真实状态着色；随子卡聚合变色会让面板和成功卡糊在一起。
-	const outerSlot = TOOL_CARD_BG_SLOT.pending;
+	// 展开面板外卡底色随组内工具状态聚合（与 default 模式分组卡同口径）：
+	// 有一个失败用失败底色、没有失败但有进行中用进行中底色、全成功用成功底色。
+	const outerSlot = slot;
 	/** live 每行前面的标记宽度（首行 `↳ `，其余对齐空格）。 */
 	const markerWidth = live ? 2 : 0;
 	const innerWidth = Math.max(0, width - 2 - markerWidth);
@@ -507,8 +507,10 @@ function compactRoundCard(
 		| undefined;
 	const layout = (width: number) => {
 		const theme = themeOf();
-		// 与 layoutExpandedToolCard 一致：外卡固定中间态槽位。
-		const bgSlot = TOOL_CARD_BG_SLOT.pending;
+		// 与 default 模式分组卡同口径：外卡底色随组内工具聚合，子卡状态变了要重绘。
+		const bgSlot = aggregateToolCardBgSlot(
+			children.map((child) => child?.__ccTool).filter(Boolean),
+		);
 		const innerWidth = contentWidth(width);
 		const paints = children.map((child) => {
 			const lines = child.render?.(innerWidth);
@@ -1787,22 +1789,24 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 		const thinkingKids: any[] = [];
 		for (const [component, message] of round.messages) {
-			if (component !== previewComponent) {
+			if (component === previewComponent) {
+				passThroughAssistant(component, message);
+				const kids = Array.isArray(component.contentContainer?.children)
+					? [...component.contentContainer.children]
+					: [];
 				component.contentContainer?.clear?.();
-				continue;
+				// 只摘思考预览块进槽位；已收尾的思考回收进摘要行。
+				for (const kid of kids) {
+					if (typeof kid?.setHintHovered === "function") thinkingKids.push(kid);
+				}
 			}
-			passThroughAssistant(component, message);
-			const kids = Array.isArray(component.contentContainer?.children)
-				? [...component.contentContainer.children]
-				: [];
-			component.contentContainer?.clear?.();
-			// 只摘思考预览块进槽位；已收尾的思考回收进摘要行。
-			for (const kid of kids) {
-				if (typeof kid?.setHintHovered === "function") thinkingKids.push(kid);
-			}
+			// text 在各消息自己的位置渲染，不随回合折叠态；非 anchor 成员的
+			// 中止/错误状态仍汇总在 anchor 外层，不在成员处重复成行。
+			renderAssistantWithoutThinking(
+				component,
+				component === round.anchor ? message : { ...message, stopReason: "stop" },
+			);
 		}
-		// 正文照折叠态渲染（不含 thinking）：live 与收尾后同形，收尾只剩槽位卡消失。
-		renderAssistantWithoutThinking(round.anchor, round.messages.get(round.anchor));
 
 		const toolsById = new Map<string, any>();
 		for (const tool of trackedToolComponents) {
@@ -1928,10 +1932,14 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			// 否则消息内容里的 thinking（[thinking, text, toolCall]）会盖到文本上面。
 			const anchorChildren: any[] = [];
 			let cardItems: Array<{ child?: any; tool?: any }> = [];
-			const flushPanel = () => {
+			// 纯 spacer 串拆不开面板，还给它所在消息的组件（通常是上一个
+			// text 块的前导空行）。
+			const flushPanel = (spacerOwner: any = round.anchor) => {
 				if (cardItems.length === 0) return;
 				if (cardItems.every((item) => !item.tool && isSpacerComponent(item.child))) {
-					for (const item of cardItems) anchorChildren.push(item.child);
+					for (const item of cardItems) {
+						spacerOwner?.contentContainer?.addChild?.(item.child);
+					}
 				} else {
 					// 面板上沿留 1 行卡外空行：面板底色与 userMessage 同色，
 					// 贴在一起会看成一个块；卡内顶部再加 1 行 padding 保持上下对称。
@@ -1948,13 +1956,15 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				}
 				cardItems = [];
 			};
-			const takeChild = (child: any, outside: boolean) => {
+			// outside 的块（text 及其前导空行）留在各自组件上原位渲染：展开态下
+			// 助手文本不跨消息搬家；它不切断面板——cardItems 跨消息延续，回合的
+			// thinking/工具统一汇成末尾的一张共享面板，混排 text 不再把卡撕成几段。
+			const takeChild = (component: any, child: any, outside: boolean) => {
 				if (!outside) {
 					cardItems.push({ child });
 					return;
 				}
-				flushPanel();
-				anchorChildren.push(child);
+				component.contentContainer?.addChild?.(child);
 			};
 			const placedToolIds = new Set<string>();
 			const placeTool = (id: string, fallbackName?: string) => {
@@ -2000,11 +2010,11 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					}
 				}
 				while (cursor.i < kids.length) local.push({ outside: false, child: kids[cursor.i++] });
-				for (const entry of local) if (entry.outside) takeChild(entry.child, true);
+				for (const entry of local) if (entry.outside) takeChild(component, entry.child, true);
 				for (const entry of local) {
 					if (entry.outside) continue;
 					if (entry.toolId) placeTool(entry.toolId, entry.toolName);
-					else takeChild(entry.child, false);
+					else takeChild(component, entry.child, false);
 				}
 			}
 			for (const message of round.detachedMessages) {
@@ -2029,15 +2039,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					!explicitRoundToolIds.has(String(tool.toolCallId ?? "")),
 			);
 			flushPanel();
+			// anchorChildren 只剩面板件（spacer+panelBoundSpacer 都是 childAtRow 组件）：
+			// 面板挂回摘要行原位，text 已在各自组件上。
 			if (mounted) {
-				// 正文留在各自的 assistant 消息上，面板挂回摘要行原位。
-				const outside: any[] = [];
-				const panel: any[] = [];
-				for (const child of anchorChildren) {
-					(typeof child?.childAtRow === "function" ? panel : outside).push(child);
-				}
-				for (const child of outside) round.anchor.contentContainer.addChild(child);
-				if (panel.length > 0) mountRoundTail(round, () => panel);
+				if (anchorChildren.length > 0) mountRoundTail(round, () => anchorChildren);
 				else unmountRoundTail(round);
 			} else {
 				unmountRoundTail(round);
@@ -2069,7 +2074,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				// 折叠时工具行被隐藏：abort/error/length 必须挂在摘要外层。
 				appendStopStatus(component, stopStatus);
 			} else {
-				component.contentContainer?.clear?.();
+				// 成员的 text 同样留在自己组件上；中止状态只在 anchor 外层报一次。
+				renderAssistantWithoutThinking(component, { ...message, stopReason: "stop" });
 			}
 		}
 	};

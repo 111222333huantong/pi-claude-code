@@ -532,8 +532,8 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			cardLines.every((line: string) => line === "" || visibleWidth(line) === 80),
 			"expanded round is wrapped by one width-safe tool card",
 		);
-		// 回合展开外卡固定中间态底色（与 edit/write 成功卡同槽），子卡仍按各自状态着色。
-		assert.deepEqual([...new Set(backgroundSlots)], ["toolPendingBg"]);
+		// 回合里的工具都已成功：整张展开卡用成功底色（与 default 分组卡同口径）。
+		assert.deepEqual([...new Set(backgroundSlots)], ["toolSuccessBg"]);
 		setMessageDisplayTheme(previousTheme);
 		assert.deepEqual(renderText(bash), [], "round tools render only inside the summary card");
 		assistant1.setExpanded(false);
@@ -585,7 +585,7 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 	}
 });
 
-test("expanded round panel keeps the pending background regardless of child state", () => {
+test("expanded round panel repaints when the card background slot changes", () => {
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
 	config.mode = "compact";
@@ -633,21 +633,21 @@ test("expanded round panel keeps the pending background regardless of child stat
 		);
 		anchor.render(120);
 		assert.ok(
-			backgroundSlots.includes("toolPendingBg"),
-			"settled round panel uses the pending background",
+			backgroundSlots.includes("toolSuccessBg"),
+			"settled round panel uses the success background",
 		);
 
 		backgroundSlots.length = 0;
 		anchor.render(120);
 		assert.deepEqual(backgroundSlots, [], "identical frame reuses the cached panel rows");
 
-		// 其中一个工具失败：外卡仍固定中间态底色（子卡自己带失败底色，会重绘一次）。
+		// 其中一个工具失败：整张回合卡改用失败底色，不能命中旧底色的缓存。
 		second.updateResult({ content: [{ type: "text", text: "failed" }], isError: true });
 		anchor.render(120);
 		assert.deepEqual(
 			[...new Set(backgroundSlots)],
-			["toolPendingBg"],
-			"failed child does not change the outer card background",
+			["toolErrorBg"],
+			"one failed tool paints the whole round card",
 		);
 	} finally {
 		setMessageDisplayTheme(previousTheme);
@@ -1079,8 +1079,9 @@ test("compact live: a superseding round folds the previous one immediately", () 
 			/^Running\.\.\..*bash×1.*grep×1/,
 			`并入同一回合后摘要累计: ${mergedA}`,
 		);
-		// roundB 并入 roundA 后不是 anchor：updateContent 走成员分支，自身渲染为空。
-		assert.deepEqual(renderText(roundB), [], "并入回合的成员不再独立渲染");
+		// roundB 并入 roundA 后不是 anchor：text 仍在自己组件上渲染，
+		// thinking/工具计进 roundA 摘要，成员不再被整体清空。
+		assert.deepEqual(renderText(roundB), ["second-round"], "并入成员的 text 留在自己组件上");
 	} finally {
 		hooks.shutdown();
 		config.mode = previousMode;

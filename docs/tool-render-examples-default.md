@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.0.7 · mode=`on`。
+> 当前版本：ccstyle 1.0.8 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -363,6 +363,57 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - Input/Output 之间各有一个空白 rail 行。
 - 点击展开区任意行、任意列（含底部 padding）均可收起。
 - 组末尾不再额外追加空白行。
+
+### 子代理完成通知（subagent-notification）
+
+单独出现（前后没有可并入的工具）：
+
+```text
+ ✓ Subagent Completion 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s · click to show more
+```
+
+紧挨工具时作为一项并入工具组：
+
+```text
+ ● Multiple Tools: 3 done · Subagent Completion×1, Get Subagent Result×1, … · click to show more
+ ├ ✓ Subagent Completion 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s
+ ├ ✓ Get Subagent Result 6dae0e11-9341-43b
+ └ ✓ Read extensions/index.ts
+```
+
+```text
+ ● Multiple Tools: 3 done · Subagent Completion×1, Get Subagent Result×1, Read×1 · ↑ Collapse
+ ├ ✓ Subagent Completion 6dae0e11-9341-43b
+ │   Locate completion text owner
+ │   Status: completed
+ │   35 tool uses · 57.1k token · ~$0.8207 · 34.8s
+ │
+ │   Saved result preview
+ │   The displayed block is owned by the installed/local pi-subagents
+ │   extension, not by pi-cc-extensions.…
+ │
+ │   Transcript
+ │   /tmp/pi-subagents-1000/…/tasks/6dae0e11-9341-43b.output
+ │
+ ├ ✓ Get Subagent Result 6dae0e11-9341-43b
+ │ ├ Input
+ │ │ agent_id: 6dae0e11-9341-43b
+ │ │
+ │ └ Output
+ │   Agent: 6dae0e11-9341-43b
+ └ ✓ Read extensions/index.ts
+   ├ Input
+   │ path: extensions/index.ts
+   │
+   └ Output
+     L0
+```
+
+- 只换 pi-subagents 完成通知的展示：消息内容、details 与用量统计都不改，也不伪造工具调用。
+- 组头计数按显示项算（`3 done` 是三行，不是三次工具执行）；一条通知带多个 agent（`others`）时每个 agent 一行。
+- 统计只报 payload 里测得的值；pi-subagents 拿不到时写 0（turns、未定价的花费），这些一律不显示。
+- 展开只展示保存下来的内容：说明、状态、统计、结果预览（可能已被 pi-subagents 截断）、错误与 transcript 路径；不调用工具，也不读 transcript 文件。
+- 中间隔着可见的 assistant/user 文本时不并组；只有通知、没有工具时各自单独成行。
 
 ## 12. Working footer
 

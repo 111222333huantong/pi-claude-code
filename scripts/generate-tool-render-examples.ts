@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	AssistantMessageComponent,
+	CustomMessageComponent,
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -28,6 +29,7 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
+import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
 import { setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -667,6 +669,49 @@ return g + f`,
 			group.setExpanded(true);
 			const expanded = renderLines(group);
 
+			// 子代理完成通知：单独成行，或作为一项并入相邻工具组。
+			const completionDetails = {
+				id: "6dae0e11-9341-43b",
+				description: "Locate completion text owner",
+				status: "completed",
+				toolUses: 35,
+				turnCount: 0,
+				totalTokens: 57_100,
+				totalCost: 0.8207,
+				durationMs: 34_800,
+				outputFile: "/tmp/pi-subagents-1000/…/tasks/6dae0e11-9341-43b.output",
+				resultPreview:
+					"The displayed block is owned by the installed/local pi-subagents\nextension, not by pi-cc-extensions.…",
+			};
+			const completion = () =>
+				new CustomMessageComponent(
+					{
+						role: "custom",
+						customType: "subagent-notification",
+						content: "<task-notification>…</task-notification>",
+						display: true,
+						details: completionDetails,
+						timestamp: 0,
+					} as any,
+					renderSubagentNotification,
+				);
+			const standaloneCompletion = renderLines(completion(), 140);
+			const completionParent = new Container() as any;
+			const result = tool("get_subagent_result", "g-result", { agent_id: "6dae0e11-9341-43b" });
+			result.updateResult({
+				content: [{ type: "text", text: "Agent: 6dae0e11-9341-43b" }],
+				isError: false,
+			});
+			const completionRead = tool("read", "g-completion-read", { path: "extensions/index.ts" });
+			completionRead.updateResult({ content: [{ type: "text", text: "L0" }], isError: false });
+			completionParent.addChild(completion());
+			completionParent.addChild(result);
+			completionParent.addChild(completionRead);
+			const completionGroup = completionParent.children[0];
+			const completionCollapsed = renderLines(completionGroup, 120);
+			completionGroup.setExpanded(true);
+			const completionExpanded = renderLines(completionGroup, 120);
+
 			chunks.push(
 				section(
 					"11. 工具组（tool-grouping）",
@@ -689,6 +734,19 @@ return g + f`,
 							"- Input/Output 之间各有一个空白 rail 行。",
 							"- 点击展开区任意行、任意列（含底部 padding）均可收起。",
 							"- 组末尾不再额外追加空白行。",
+						].join("\n"),
+						"### 子代理完成通知（subagent-notification）",
+						"单独出现（前后没有可并入的工具）：",
+						fence(standaloneCompletion),
+						"紧挨工具时作为一项并入工具组：",
+						fence(completionCollapsed),
+						fence(completionExpanded),
+						[
+							"- 只换 pi-subagents 完成通知的展示：消息内容、details 与用量统计都不改，也不伪造工具调用。",
+							"- 组头计数按显示项算（`3 done` 是三行，不是三次工具执行）；一条通知带多个 agent（`others`）时每个 agent 一行。",
+							"- 统计只报 payload 里测得的值；pi-subagents 拿不到时写 0（turns、未定价的花费），这些一律不显示。",
+							"- 展开只展示保存下来的内容：说明、状态、统计、结果预览（可能已被 pi-subagents 截断）、错误与 transcript 路径；不调用工具，也不读 transcript 文件。",
+							"- 中间隔着可见的 assistant/user 文本时不并组；只有通知、没有工具时各自单独成行。",
 						].join("\n"),
 					].join("\n\n"),
 				),

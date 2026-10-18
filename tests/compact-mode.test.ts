@@ -6,6 +6,7 @@ import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
+	CustomMessageComponent,
 	ToolExecutionComponent,
 	UserMessageComponent,
 	createBashToolDefinition,
@@ -531,8 +532,8 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 			cardLines.every((line: string) => line === "" || visibleWidth(line) === 80),
 			"expanded round is wrapped by one width-safe tool card",
 		);
-		// 回合里的工具都已成功：整张展开卡用成功底色。
-		assert.deepEqual([...new Set(backgroundSlots)], ["toolSuccessBg"]);
+		// 回合展开外卡固定中间态底色（与 edit/write 成功卡同槽），子卡仍按各自状态着色。
+		assert.deepEqual([...new Set(backgroundSlots)], ["toolPendingBg"]);
 		setMessageDisplayTheme(previousTheme);
 		assert.deepEqual(renderText(bash), [], "round tools render only inside the summary card");
 		assistant1.setExpanded(false);
@@ -584,7 +585,7 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 	}
 });
 
-test("expanded round panel repaints when the card background slot changes", () => {
+test("expanded round panel keeps the pending background regardless of child state", () => {
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
 	config.mode = "compact";
@@ -632,21 +633,21 @@ test("expanded round panel repaints when the card background slot changes", () =
 		);
 		anchor.render(120);
 		assert.ok(
-			backgroundSlots.includes("toolSuccessBg"),
-			"settled round panel uses the success background",
+			backgroundSlots.includes("toolPendingBg"),
+			"settled round panel uses the pending background",
 		);
 
 		backgroundSlots.length = 0;
 		anchor.render(120);
 		assert.deepEqual(backgroundSlots, [], "identical frame reuses the cached panel rows");
 
-		// 其中一个工具失败：整张回合卡改用失败底色，不能命中旧底色的缓存。
+		// 其中一个工具失败：外卡仍固定中间态底色（子卡自己带失败底色，会重绘一次）。
 		second.updateResult({ content: [{ type: "text", text: "failed" }], isError: true });
 		anchor.render(120);
 		assert.deepEqual(
 			[...new Set(backgroundSlots)],
-			["toolErrorBg"],
-			"one failed tool paints the whole round card",
+			["toolPendingBg"],
+			"failed child does not change the outer card background",
 		);
 	} finally {
 		setMessageDisplayTheme(previousTheme);
@@ -3044,5 +3045,137 @@ test("isStreaming survives the compact + compact-thinking patch chain (mermaid f
 		config.mode = previousMode;
 		await emit("session_shutdown", {}, ctx);
 		assistantPrototype.updateContent = originalUpdateContent;
+	}
+});
+
+test("compact：外层工具打断摘要段，前后各一条摘要行", () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		// 段一：inner 工具。
+		const m1 = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }],
+		};
+		const a1 = new AssistantMessageComponent(m1 as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(a1);
+		chat.addChild(bash);
+		a1.updateContent(m1);
+
+		// 段二：edit 外层行（新消息、新回合）。
+		const m2 = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "e1", name: "edit", arguments: { path: "a.ts" } }],
+		};
+		const a2 = new AssistantMessageComponent(m2 as any, true) as any;
+		const edit = tool("edit", "e1", { path: "a.ts" });
+		chat.addChild(a2);
+		chat.addChild(edit);
+		a2.updateContent(m2);
+
+		// 段三：inner 工具再续。
+		const m3 = {
+			role: "assistant",
+			timestamp: 3,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } }],
+		};
+		const a3 = new AssistantMessageComponent(m3 as any, true) as any;
+		const read = tool("read", "r1", { path: "a.ts" });
+		chat.addChild(a3);
+		chat.addChild(read);
+		a3.updateContent(m3);
+
+		const tails = chat.children.filter(
+			(c: any) =>
+				isCompactAssistantComponent(c) &&
+				/(?:Running\.\.\.|Ran for)/.test(renderText(c).join("\n")),
+		);
+		assert.equal(tails.length, 2, `应有两条摘要行: ${chat.children.length}`);
+
+		// 段一已完结（edit 到来即 seal），段二 edit 独段无摘要，段三仍在跑。
+		const text = renderText(chat).join("\n");
+		assert.match(text, /Ran for .*bash×1/);
+		assert.match(text, /Running\.\.\..*read×1/);
+
+		// 顺序：a1, bash, tail1, a2, edit, a3, read, tail2。
+		const labels = chat.children.map((c: any) =>
+			c === tails[0]
+				? "tail1"
+				: c === tails[1]
+					? "tail2"
+					: c === a1
+						? "a1"
+						: c === a2
+							? "a2"
+							: c === a3
+								? "a3"
+								: "tool",
+		);
+		assert.deepEqual(labels, ["a1", "tool", "tail1", "a2", "tool", "a3", "tool", "tail2"]);
+	} finally {
+		setToolMouseTui(null);
+		restore();
+	}
+});
+
+test("compact：custom 通知不打断摘要段，原地留在成员之间", () => {
+	const { restore } = installHooks();
+	const chat = new Container() as any;
+	setToolMouseTui({ children: [chat] });
+	try {
+		const m1 = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "one" } }],
+		};
+		const a1 = new AssistantMessageComponent(m1 as any, true) as any;
+		const bash = tool("bash", "b1", { command: "one" });
+		chat.addChild(a1);
+		chat.addChild(bash);
+		a1.updateContent(m1);
+
+		// custom 通知插在回合中间：透明成员，不分段、不挪位。
+		const notice = new CustomMessageComponent(
+			{ role: "custom", customType: "test-notice", content: [], display: true } as any,
+			undefined,
+		) as any;
+		chat.addChild(notice);
+
+		const m2 = {
+			role: "assistant",
+			timestamp: 2,
+			stopReason: "toolUse",
+			content: [{ type: "toolCall", id: "b2", name: "bash", arguments: { command: "two" } }],
+		};
+		const a2 = new AssistantMessageComponent(m2 as any, true) as any;
+		const bash2 = tool("bash", "b2", { command: "two" });
+		chat.addChild(a2);
+		chat.addChild(bash2);
+		a2.updateContent(m2);
+
+		// 仍是一条摘要行，bash 计数合并。
+		const tails = chat.children.filter(
+			(c: any) =>
+				isCompactAssistantComponent(c) &&
+				/(?:Running\.\.\.|Ran for)/.test(renderText(c).join("\n")),
+		);
+		assert.equal(tails.length, 1, `通知不应拆段: ${chat.children.length}`);
+		assert.match(renderText(tails[0]).join("\n"), /bash×2/);
+		// 通知保持在 a1/bash 与 a2/bash2 之间，不被搬到摘要行之下。
+		const noticeIdx = chat.children.indexOf(notice);
+		const bashIdx = chat.children.indexOf(bash);
+		const a2Idx = chat.children.indexOf(a2);
+		assert.ok(noticeIdx > bashIdx && noticeIdx < a2Idx, `通知原地保留 (idx=${noticeIdx})`);
+	} finally {
+		setToolMouseTui(null);
+		restore();
 	}
 });

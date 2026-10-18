@@ -269,7 +269,12 @@ class FinishedSubagentView implements Component {
 			const prefix = `${indent}${statusIcon(subagent, fg)} `;
 			const tail = index === last ? hint : "";
 			const room = Math.max(0, rowWidth - visibleWidth(prefix) - visibleWidth(tail));
-			return `${prefix}${subagentSummary(subagent, room, fg)}${tail}`;
+			// 窄到放不下提示时连提示一起截（与分组卡一致），Ctrl+O 仍能展开。
+			return truncateToWidth(
+				`${prefix}${subagentSummary(subagent, room, fg)}${tail}`,
+				rowWidth,
+				"",
+			);
 		});
 	}
 
@@ -282,11 +287,14 @@ class FinishedSubagentView implements Component {
 		const subagents = this.subagents;
 		box.addChild({
 			render: (inner: number) =>
-				subagents.flatMap((subagent, index) => [
-					...(index ? [""] : []),
-					`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`,
-					...subagentDetailRows(subagent, inner, fg),
-				]),
+				subagents
+					.flatMap((subagent, index) => [
+						...(index ? [""] : []),
+						`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`,
+						...subagentDetailRows(subagent, inner, fg),
+					])
+					// Box 不截超宽行：标题、状态与小标题也折进内宽，正文已折过的行不变。
+					.flatMap((row) => (row ? wrapTextWithAnsi(row, Math.max(1, inner)) : [""])),
 			invalidate() {},
 		});
 		return box.render(width);

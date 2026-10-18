@@ -5,7 +5,7 @@ import {
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
 
@@ -196,6 +196,30 @@ test("expanded preview wraps to the card width and agents are separated", () => 
 	assert.ok(second > 0);
 	assert.equal(rows[second - 1], "", "agents are separated by a blank row");
 	assert.equal(rows[second + 1], "   Status: completed");
+});
+
+test("narrow standalone rows stay within the width and expanded text survives wrapping", () => {
+	const details = {
+		...finishedAgent({ id: "first", status: "error", error: "upstream stream failed" }),
+		others: [
+			finishedAgent({ id: "second", status: "steered" }),
+			finishedAgent({ id: "third", status: "aborted" }),
+			finishedAgent({ id: "fourth" }),
+		],
+	};
+	const squash = (rows: string[]) => rows.join("").replace(/\s+/g, "");
+	const wide = squash(card(standalone(details, true).render(200)));
+	for (const width of [20, 30, 40, 120]) {
+		for (const expanded of [false, true]) {
+			for (const line of standalone(details, expanded).render(width)) {
+				assert.ok(
+					visibleWidth(line) <= width,
+					`width ${width}, expanded ${expanded}: ${stripAnsi(line)}`,
+				);
+			}
+		}
+		assert.equal(squash(card(standalone(details, true).render(width))), wide, `width ${width}`);
+	}
 });
 
 test("the expanded card background follows the worst agent status", () => {

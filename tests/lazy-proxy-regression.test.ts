@@ -1361,6 +1361,80 @@ test("lazy-proxy tui: fullscreen standalone subagent hint highlights on hover", 
 	}
 });
 
+test("lazy-proxy tui: fullscreen standalone subagent rows click like other message cards", async () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const notification = (id: string) =>
+		new CustomMessageComponent(
+			{
+				role: "custom",
+				customType: "subagent-notification",
+				content: "<task-notification>…</task-notification>",
+				display: true,
+				details: { id, status: "completed", toolUses: 2, resultPreview: "Done." },
+				timestamp: 1,
+			} as any,
+			(message, options) =>
+				renderSubagentNotification(message, options, {
+					fg: (_color: string, text: string) => text,
+					bg: (_slot: string, text: string) => text,
+				} as any),
+		);
+	const first = notification("first-agent");
+	const second = notification("second-agent");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(first, null, terminal);
+	const relayout = () => {
+		renderer.currentLayout = fullscreenLayout([first, second], null);
+	};
+	relayout();
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	const expanded = (component: any) =>
+		component.render(80).join("\n").includes("Saved result preview");
+	const hintAt = (component: any, offset: number) => {
+		const lines = component.render(80);
+		const row = lines.findIndex((line: string) => line.includes("click to show more"));
+		return { row: offset + row + 1, col: lines[row].indexOf("click to show more") + 3 };
+	};
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const firstHint = hintAt(first, 0);
+		tui.handleViewportInput(`\x1b[<0;3;${firstHint.row}M`);
+		assert.equal(expanded(first), false, "clicking the row text is not a toggle");
+		tui.handleViewportInput(`\x1b[<0;${firstHint.col};${firstHint.row}M`);
+		assert.equal(expanded(first), true, "clicking the hint expands it");
+
+		first.invalidate();
+		assert.equal(expanded(first), true, "a rebuild keeps the clicked state");
+
+		relayout();
+		const secondHint = hintAt(second, first.render(80).length);
+		tui.handleViewportInput(`\x1b[<0;${secondHint.col};${secondHint.row}M`);
+		assert.equal(expanded(second), true);
+		assert.equal(expanded(first), false, "expanding one card collapses the others");
+
+		relayout();
+		const cardRow = first.render(80).length + 3;
+		tui.handleViewportInput(`\x1b[<0;5;${cardRow}M`);
+		assert.equal(expanded(second), true, "press alone does not collapse");
+		tui.handleViewportInput(`\x1b[<0;5;${cardRow}m`);
+		assert.equal(expanded(second), false, "a full click on the expanded card collapses it");
+
+		// 全局切换（Ctrl+O 经 setExpanded 下发）之后以全局为准。
+		relayout();
+		const again = hintAt(first, 0);
+		tui.handleViewportInput(`\x1b[<0;${again.col};${again.row}M`);
+		assert.equal(expanded(first), true);
+		first.setExpanded(true);
+		first.setExpanded(false);
+		assert.equal(expanded(first), false);
+	} finally {
+		installToolMouseInteraction({});
+		config.mode = previousMode;
+	}
+});
+
 test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights the header", async () => {
 	const patch = {
 		groups: new Set(),

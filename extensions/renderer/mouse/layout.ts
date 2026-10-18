@@ -3,6 +3,7 @@ import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
+import { isSubagentNotificationView } from "../tool/subagent-notification.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
 import { getScrollButtonWidget } from "./scroll.ts";
 
@@ -14,6 +15,14 @@ export type ComponentRowHit = {
 	/** compact 展开面板内的命中：外层面板，单击非提示区时收起它。 */
 	owner?: any;
 };
+
+/**
+ * 消息类卡片：skill/压缩/分支摘要三种消息组件，以及单独出现的 subagent 通知行。
+ * 点击、悬停与 single-expand 规则相同。
+ */
+export function isMessageCard(component: any): boolean {
+	return isMessageDisplayComponent(component) || isSubagentNotificationView(component);
+}
 
 /** 行内 [click to show more] / [↑ Collapse] 提示的命中列区间（1-based，含两端）。 */
 export function collapsedHintHitbox(line: string): { startCol: number; endCol: number } | null {
@@ -140,7 +149,7 @@ export function componentAtLocalRow(
 	if (component instanceof ThinkingPreviewBlock) {
 		return { component, row: localRow };
 	}
-	if (isMessageDisplayComponent(component)) {
+	if (isMessageCard(component)) {
 		return { component, row: localRow };
 	}
 	if (component === getScrollButtonWidget()) {
@@ -182,7 +191,7 @@ export function collectFullscreenToolCards(
 		component instanceof ToolGroupComponent ||
 		isCompactAssistantComponent(component) ||
 		component instanceof ThinkingPreviewBlock ||
-		isMessageDisplayComponent(component)
+		isMessageCard(component)
 	) {
 		out.push(component);
 		return;

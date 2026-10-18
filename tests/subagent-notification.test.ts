@@ -432,43 +432,6 @@ test("a group left with only notifications dissolves back to standalone rows", (
 	});
 });
 
-function click(component: any, x: number, y: number, width = 120) {
-	const height = component.render(width).length;
-	return component.handleMouse({
-		type: "click",
-		button: "left",
-		x,
-		y,
-		screenX: x,
-		screenY: y,
-		width,
-		height,
-	});
-}
-
-test("clicking the standalone hint expands it and clicking the card collapses it", () => {
-	const component = standalone(finishedAgent());
-	const row = component
-		.render(120)
-		.findIndex((line: string) => /click to show more/.test(stripAnsi(line)));
-	const hintColumn = stripAnsi(component.render(120)[row]!).indexOf("click to show more");
-	assert.equal(click(component, 3, row), undefined, "clicking the summary text is not a toggle");
-	assert.ok(click(component, hintColumn + 2, row)?.handled);
-	assert.match(card(component.render(120)).join("\n"), /Saved result preview/);
-
-	component.invalidate();
-	assert.match(card(component.render(120)).join("\n"), /Saved result preview/, "rebuild keeps it");
-
-	assert.ok(click(component, 5, 4)?.handled, "a click anywhere on the expanded card collapses");
-	assert.doesNotMatch(card(component.render(120)).join("\n"), /Saved result preview/);
-
-	// 全局切换（Ctrl+O）之后以全局状态为准。
-	assert.ok(click(component, hintColumn + 2, row)?.handled);
-	component.setExpanded(true);
-	component.setExpanded(false);
-	assert.doesNotMatch(card(component.render(120)).join("\n"), /Saved result preview/);
-});
-
 test("a steered agent keeps its outcome inside the tool group", () => {
 	withGrouping(() => {
 		const parent = new Container() as any;

@@ -5,8 +5,6 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 	type Component,
-	type TuiMouseEvent,
-	type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 import type { GroupDisplayItem } from "./grouping.ts";
@@ -201,20 +199,19 @@ function statusIcon(subagent: FinishedSubagent, fg: Fg): string {
 }
 
 /**
- * 单击切换的展开状态，按消息记：CustomMessageComponent 每次重建（invalidate、换主题）都会
- * 重新调用渲染器，状态不能只放在视图实例上。记下单击时的全局状态（Ctrl+O 等经
- * setExpanded 传进来的 options.expanded），全局状态一变就作废，以最后一次操作为准。
+ * 鼠标层单独展开/收起这一行的状态，按消息记：CustomMessageComponent 每次重建（invalidate、
+ * 换主题）都会重新调用渲染器，状态不能只放在视图实例上。记下当时的全局状态（Ctrl+O 等经
+ * CustomMessageComponent.setExpanded 传进来的 options.expanded），全局状态一变就作废，
+ * 以最后一次操作为准。
  */
-const clickExpansion = new WeakMap<object, { base: boolean; expanded: boolean }>();
+const localExpansion = new WeakMap<object, { base: boolean; expanded: boolean }>();
 
 function resolveExpanded(message: object, base: boolean): boolean {
-	const local = clickExpansion.get(message);
+	const local = localExpansion.get(message);
 	if (local?.base === base) return local.expanded;
-	clickExpansion.delete(message);
+	localExpansion.delete(message);
 	return base;
 }
-
-type HintBox = { row: number; start: number; end: number };
 
 class FinishedSubagentView implements Component {
 	private readonly message: object;
@@ -223,9 +220,7 @@ class FinishedSubagentView implements Component {
 	private readonly fg: Fg;
 	private readonly pad: number;
 	private readonly base: boolean;
-	private expanded: boolean;
-	/** 折叠行里展开提示的列区间（0-based，左闭右开）：fullscreen 单击只认这一段。 */
-	private hintBox: HintBox | undefined;
+	private _expanded: boolean;
 	/** fullscreen 悬停在展开提示上（鼠标层经 setHintHovered 设置），提示文字提亮。 */
 	private hintHovered = false;
 
@@ -236,30 +231,34 @@ class FinishedSubagentView implements Component {
 		this.fg = (color, value) => theme.fg(color, value);
 		this.pad = pad;
 		this.base = base;
-		this.expanded = resolveExpanded(message, base);
+		this._expanded = resolveExpanded(message, base);
+	}
+
+	get expanded(): boolean {
+		return this._expanded;
+	}
+
+	/** 鼠标层的单击展开/收起（与消息卡同一条路径）。 */
+	setExpanded(expanded: boolean): void {
+		this._expanded = expanded;
+		localExpansion.set(this.message, { base: this.base, expanded });
 	}
 
 	render(width: number): string[] {
-		return this.expanded ? this.renderExpanded(width) : this.renderCollapsed(width);
+		return this._expanded ? this.renderExpanded(width) : this.renderCollapsed(width);
 	}
 
 	private renderCollapsed(width: number): string[] {
 		const fg = this.fg;
 		const rowWidth = toolViewportWidth(width);
 		const indent = " ".repeat(this.pad);
-		const hintText = showMoreHintText();
-		const hint = ` ${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
+		const hint = ` ${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
 		const last = this.subagents.length - 1;
 		return this.subagents.map((subagent, index) => {
 			const prefix = `${indent}${statusIcon(subagent, fg)} `;
 			const tail = index === last ? hint : "";
 			const room = Math.max(0, rowWidth - visibleWidth(prefix) - visibleWidth(tail));
-			const line = `${prefix}${subagentSummary(subagent, room, fg)}${tail}`;
-			if (index === last) {
-				const end = visibleWidth(line);
-				this.hintBox = { row: index, start: end - visibleWidth(hintText), end };
-			}
-			return line;
+			return `${prefix}${subagentSummary(subagent, room, fg)}${tail}`;
 		});
 	}
 
@@ -282,23 +281,6 @@ class FinishedSubagentView implements Component {
 		return box.render(width);
 	}
 
-	/**
-	 * fullscreen 单击：折叠时只有展开提示可点（同一行正文留给选区），展开卡整卡单击收起。
-	 * 只认 click：拖动选择不会合成 click，不会误收起。
-	 */
-	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "click" || event.button !== "left") return undefined;
-		if (!this.expanded) {
-			const box = this.hintBox;
-			if (!box || event.y !== box.row || event.x < box.start || event.x >= box.end) {
-				return undefined;
-			}
-		}
-		this.expanded = !this.expanded;
-		clickExpansion.set(this.message, { base: this.base, expanded: this.expanded });
-		return { handled: true };
-	}
-
 	setHintHovered(hovered: boolean): void {
 		this.hintHovered = hovered;
 	}
@@ -306,7 +288,10 @@ class FinishedSubagentView implements Component {
 	invalidate(): void {}
 }
 
-/** 单独出现的 subagent 通知行：fullscreen 鼠标层据此做提示悬停高亮。 */
+/**
+ * 单独出现的 subagent 通知行。鼠标层把它当消息卡：悬停提示提亮、单击提示展开、
+ * 单击展开卡收起，都经 expanded / setExpanded / setHintHovered 这几个钩子。
+ */
 export function isSubagentNotificationView(value: unknown): boolean {
 	return value instanceof FinishedSubagentView;
 }

@@ -34,6 +34,10 @@ export const WRITE_OWNERSHIP_SLOT = Symbol.for("pi.ccstyle.write-ownership");
 
 // ── 消息组件补丁 ──
 export const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
+// 槽位存当前补丁；同一 symbol 也标在补丁装上的查找方法与它发出的渲染器上。
+export const SUBAGENT_NOTIFICATION_RENDERER_PATCH = Symbol.for(
+	"pi.ccstyle.subagent-notification-renderer-patch",
+);
 
 // ── 工具分组 ──
 export const TOOL_GROUPING_PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");

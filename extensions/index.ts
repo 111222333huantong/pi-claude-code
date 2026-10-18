@@ -19,10 +19,6 @@ import { installCompactThinking } from "./feature/compact-thinking.ts";
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
 import markdownEnhance from "./renderer/markdown-enhance.ts";
-import {
-	renderSubagentNotification,
-	SUBAGENT_NOTIFICATION_TYPE,
-} from "./renderer/tool/subagent-notification.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
@@ -42,8 +38,6 @@ export default function (pi: ExtensionAPI): void {
 	// markdownEnhance 单独开关：其他扩展也注册 transformer 时会互相改写输出。
 	if (config.enableMarkdownEnhance) markdownEnhance(pi);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
-	// pi-subagents 的完成通知换成本插件的完成行（单独成行，或并入相邻的工具组）。
-	pi.registerMessageRenderer(SUBAGENT_NOTIFICATION_TYPE, renderSubagentNotification);
 
 	// features
 	if (config.enableContextCommand) context(pi);

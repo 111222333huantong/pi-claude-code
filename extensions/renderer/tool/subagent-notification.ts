@@ -1,4 +1,8 @@
-import { CustomMessageComponent, type MessageRenderer } from "@earendil-works/pi-coding-agent";
+import {
+	CustomMessageComponent,
+	ExtensionRunner,
+	type MessageRenderer,
+} from "@earendil-works/pi-coding-agent";
 import {
 	Box,
 	truncateToWidth,
@@ -6,6 +10,13 @@ import {
 	wrapTextWithAnsi,
 	type Component,
 } from "@earendil-works/pi-tui";
+import { config } from "../../config/config.ts";
+import { walkComponentTree } from "../../utils/component-tree.ts";
+import {
+	patchRegistry,
+	PROTOTYPE_ORIGINAL_KEY,
+	SUBAGENT_NOTIFICATION_RENDERER_PATCH as RENDERER_PATCH_KEY,
+} from "../../utils/patch-keys.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 import type { GroupDisplayItem } from "./grouping.ts";
 import { showMoreHintText } from "./names.ts";
@@ -306,6 +317,85 @@ export function isSubagentNotificationComponent(value: unknown): boolean {
 		value instanceof CustomMessageComponent &&
 		(value as any).message?.customType === SUBAGENT_NOTIFICATION_TYPE
 	);
+}
+
+type RendererLookup = (this: unknown, customType: string) => MessageRenderer | undefined;
+
+type RendererLookupPatch = {
+	active: boolean;
+	/** 按当前 mode 画一条通知；upstream 是原查找结果。 */
+	render(
+		upstream: MessageRenderer | undefined,
+		...args: Parameters<MessageRenderer>
+	): Component | undefined;
+	dispose(): void;
+};
+
+/**
+ * CustomMessageComponent 存下查找结果，每次 rebuild 都重新调它：mode 在调用时才看，
+ * 也不绑死发出它的补丁——/reload 后转给当前补丁（新模块的配置与渲染），补丁撤掉后回到原生。
+ */
+function modeAwareRenderer(upstream: MessageRenderer | undefined): MessageRenderer {
+	const renderer: MessageRenderer = (message, options, theme) => {
+		const patch = patchRegistry.get<RendererLookupPatch>(RENDERER_PATCH_KEY);
+		return patch?.active
+			? patch.render(upstream, message, options, theme)
+			: upstream?.(message, options, theme);
+	};
+	(renderer as any)[RENDERER_PATCH_KEY] = true;
+	return renderer;
+}
+
+/**
+ * Pi 每种 customType 只用最先加载的扩展注册的渲染器（ExtensionRunner.getMessageRenderer）：
+ * 注册争不过先加载的 pi-subagents，先加载时又会遮住它，off 就还原不了它的原生视图。
+ * 所以不注册，改在查找处给 subagent-notification 换上按 mode 分派的渲染器：on/compact
+ * 画本插件的结束行，off 交回原查找结果（pi-subagents 的渲染器；没有就返回 undefined，
+ * 由 Pi 画通用卡片）。其他 customType 原样返回。返回 dispose（/reload 链安全）。
+ */
+export function installSubagentNotificationRenderer(): () => void {
+	patchRegistry.get<RendererLookupPatch>(RENDERER_PATCH_KEY)?.dispose();
+	const prototype = ExtensionRunner.prototype as any;
+	let original: RendererLookup = prototype.getMessageRenderer;
+	// 最外层还是失效的旧补丁（所有权槽已丢）就拆开，不在它外面再套一层；被别人包着的不动。
+	while ((original as any)[RENDERER_PATCH_KEY] && (original as any)[PROTOTYPE_ORIGINAL_KEY]) {
+		original = (original as any)[PROTOTYPE_ORIGINAL_KEY];
+	}
+	const installed: RendererLookup = function (this: unknown, customType) {
+		const upstream = original.call(this, customType);
+		if (!patch.active || customType !== SUBAGENT_NOTIFICATION_TYPE) return upstream;
+		// 内层还有一个本插件补丁时它已经分派过了。
+		return (upstream as any)?.[RENDERER_PATCH_KEY] ? upstream : modeAwareRenderer(upstream);
+	};
+	(installed as any)[RENDERER_PATCH_KEY] = true;
+	(installed as any)[PROTOTYPE_ORIGINAL_KEY] = original;
+	const patch: RendererLookupPatch = {
+		active: true,
+		render: (upstream, message, options, theme) =>
+			config.mode === "off"
+				? upstream?.(message, options, theme)
+				: renderSubagentNotification(message, options, theme),
+		dispose() {
+			if (!patch.active) return;
+			patch.active = false;
+			// 被别人包在里面时撤不下来：留着失效直通，不动对方的包装。
+			if (prototype.getMessageRenderer === installed) prototype.getMessageRenderer = original;
+			patchRegistry.dispose(RENDERER_PATCH_KEY, patch);
+		},
+	};
+	prototype.getMessageRenderer = installed;
+	patchRegistry.install(RENDERER_PATCH_KEY, patch);
+	return patch.dispose;
+}
+
+/** 让已挂载的通知按当前 mode 重建（/ccstyle on|compact|off 切换后）。 */
+export function refreshSubagentNotifications(root: unknown): void {
+	walkComponentTree(root, (value) => {
+		if (!isSubagentNotificationComponent(value)) return;
+		// CustomMessageComponent.invalidate 会 rebuild，重新调用渲染器。
+		value.invalidate?.();
+		return false;
+	});
 }
 
 function themeFg(theme: any): Fg {

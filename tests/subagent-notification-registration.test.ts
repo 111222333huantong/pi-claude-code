@@ -6,7 +6,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
-import { config } from "../extensions/config/config.ts";
+import { config, setConfig } from "../extensions/config/config.ts";
 import extension from "../extensions/index.ts";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
 import {
@@ -277,7 +277,9 @@ function runtime() {
 	};
 }
 
-test("a TUI session installs the lookup patch and shutdown removes it; other sessions do not", async () => {
+test("a TUI session installs the lookup patch and shutdown removes it; other sessions do not", async (t) => {
+	const previous = { ...config };
+	t.after(() => setConfig(previous));
 	const headless = runtime();
 	claudeCodeStyleExtension(headless.pi as any, { mode: "on" });
 	await headless.events.get("session_start")?.({}, { mode: "print", hasUI: false });

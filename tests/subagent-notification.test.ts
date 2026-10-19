@@ -608,6 +608,68 @@ test("notification-only groups preserve visible boundaries and separator limits"
 	});
 });
 
+test("separators left behind a notification group count like those behind a tool group", () => {
+	withGrouping(() => {
+		const runs = [
+			[standalone(finishedAgent()), standalone(finishedAgent()), settledTool("read", "last")],
+			[settledTool("read", "first"), settledTool("grep", "second"), settledTool("read", "last")],
+		];
+		for (const [first, second, last] of runs) {
+			const parent = new Container() as any;
+			const spacers = [new Spacer(1), new Spacer(1), new Spacer(1), new Spacer(1)];
+			for (const child of [first, spacers[0], spacers[1], second, spacers[2], spacers[3], last]) {
+				parent.addChild(child);
+			}
+			// 组只取代第一个成员的位置：成员间的空行留在组后，与后来的空行一起计入三个的上限。
+			const group = parent.children[0];
+			assert.ok(group instanceof ToolGroupComponent);
+			assert.equal(group.children.length, 2);
+			assert.equal(group.children[0], first);
+			assert.equal(group.children[1], second);
+			assert.equal(parent.children.length, 6);
+			spacers.forEach((spacer, index) => assert.equal(parent.children[index + 1], spacer));
+			assert.equal(parent.children[5], last, "four trailing separators keep the tool standalone");
+		}
+	});
+});
+
+test("mounted-root rescans fold an ungrouped notification run into the following tool's group", () => {
+	for (const batched of [false, true]) {
+		let enabled = false;
+		const hooks = installToolGrouping(() => enabled);
+		try {
+			const first = finishedAgent({ id: "first" });
+			const second = finishedAgent({ id: "second" });
+			const members = [
+				...(batched
+					? [standalone({ ...first, others: [second] })]
+					: [standalone(first), standalone(second)]),
+				settledTool("get_subagent_result", "result", { agent_id: "second" }),
+			];
+			const parent = new Container() as any;
+			for (const member of members) parent.addChild(member);
+			assert.deepEqual(parent.children, members, "disabled grouping leaves the run ungrouped");
+			enabled = true;
+			const mounted = { getMountedRoots: () => [parent] };
+			hooks.refresh(mounted);
+			const group = parent.children[0];
+			assert.equal(parent.children.length, 1);
+			assert.ok(group instanceof ToolGroupComponent);
+			assert.equal(group.children.length, members.length);
+			members.forEach((member, index) => assert.equal(group.children[index], member));
+			const rows = plain(group.render(240));
+			assert.match(rows[0]!, /^ ● Multiple Tools: 3 done · /);
+			assert.equal(rows.length, 4, "one row per agent plus the tool");
+			hooks.refresh(mounted);
+			assert.equal(parent.children.length, 1);
+			assert.equal(parent.children[0], group, "refresh does not nest or duplicate groups");
+			members.forEach((member, index) => assert.equal(group.children[index], member));
+		} finally {
+			hooks.shutdown();
+		}
+	}
+});
+
 test("notification-only groups survive mode toggles and reload without splitting messages", () => {
 	for (const batched of [false, true]) {
 		let mode = "compact";

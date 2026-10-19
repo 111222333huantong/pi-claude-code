@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+	AssistantMessageComponent,
 	CustomMessageComponent,
 	ToolExecutionComponent,
+	UserMessageComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
-import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Spacer, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
@@ -473,25 +475,25 @@ test("narrow expanded groups wrap every notification row and keep tool rows clic
 	});
 });
 
-test("notifications group only with adjacent tools and never across visible content", async () => {
-	const { AssistantMessageComponent } = await import("@earendil-works/pi-coding-agent");
+test("adjacent notifications form a named group and join later tools without reordering", () => {
 	withGrouping(() => {
 		const alone = new Container() as any;
 		const first = standalone(finishedAgent({ id: "first" }));
 		const second = standalone(finishedAgent({ id: "second" }));
 		alone.addChild(first);
 		alone.addChild(second);
-		assert.deepEqual(
-			alone.children,
-			[first, second],
-			"notifications without a tool stay standalone",
-		);
+		assert.equal(alone.children.length, 1);
+		const group = alone.children[0];
+		assert.ok(group instanceof ToolGroupComponent);
+		assert.deepEqual(group.children, [first, second]);
+		assert.match(plain(group.render(200))[0]!, /^ ● Subagent Finished: 2 done · /);
 
-		// 等到工具出现，前面紧挨的完成通知按原顺序一起入组。
+		// 后来的真实工具并入同一个组，只把同类组标题变成混合组标题。
 		const tool = settledTool("get_subagent_result", "joined", { agent_id: "second" });
 		alone.addChild(tool);
-		assert.equal(alone.children.length, 1);
-		assert.deepEqual(alone.children[0].children, [first, second, tool]);
+		assert.deepEqual(alone.children, [group]);
+		assert.deepEqual(group.children, [first, second, tool]);
+		assert.match(plain(group.render(200))[0]!, /^ ● Multiple Tools: 3 done · /);
 
 		const text = new Container() as any;
 		text.addChild(standalone(finishedAgent()));
@@ -525,6 +527,131 @@ test("notifications group only with adjacent tools and never across visible cont
 	});
 });
 
+test("notification-only grouping is identical for separate messages and one batched message", () => {
+	const first = finishedAgent({ id: "agent-a" });
+	const second = finishedAgent({ id: "agent-b", status: "error", error: "upstream failed" });
+	const batchDetails = { ...first, others: [second] };
+	const snapshot = structuredClone(batchDetails);
+	withGrouping(() => {
+		const separate = groupOf(standalone(first), standalone(second));
+		const batch = standalone(batchDetails);
+		const batched = groupOf(batch);
+		assert.ok(batched instanceof ToolGroupComponent);
+		assert.deepEqual(batched.children, [batch], "one saved message remains one component");
+		const expected = plain(separate.render(200));
+		assert.equal(expected[0], " ● Subagent Finished: 1 done · 1 failed · click to show more");
+		assert.match(expected[1]!, /^ ├ ✓ Subagent Finished agent-a · /);
+		assert.match(expected[2]!, /^ └ ✗ Subagent Finished agent-b · error · /);
+		assert.deepEqual(plain(batched.render(200)), expected);
+		for (const group of [separate, batched]) {
+			group.setExpanded(true);
+			const text = (width: number) =>
+				group
+					.render(width)
+					.slice(2)
+					.map(stripAnsi)
+					.join("")
+					.replace(/[\s│├└]/g, "");
+			const wide = text(200);
+			for (const width of [20, 30, 40, 120]) {
+				assert.equal(text(width), wide, `width ${width} preserves every agent's details`);
+				for (const [row, line] of group.render(width).entries()) {
+					assert.ok(visibleWidth(line) <= width);
+					assert.equal(group.childAtRow(row, width), null, "all rows belong to the group");
+				}
+			}
+			const paint = group.render(120);
+			assert.equal(group.render(120), paint, "unchanged notification-only groups reuse paint");
+			group.setExpanded(false);
+		}
+		assert.doesNotMatch(card(batch.render(120)).join("\n"), /Saved result preview/);
+		assert.deepEqual(batchDetails, snapshot, "grouping never rewrites saved details");
+	});
+});
+
+test("notification-only groups preserve visible boundaries and separator limits", () => {
+	withGrouping(() => {
+		const boundaries = [
+			new UserMessageComponent("visible user text"),
+			new AssistantMessageComponent(
+				{ role: "assistant", content: [{ type: "text", text: "visible assistant text" }] } as any,
+				true,
+			),
+			new CustomMessageComponent({ ...notification(null), customType: "other" } as any, undefined),
+			...["edit", "write", "apply_patch"].map((name) => settledTool(name, name)),
+		];
+		for (const boundary of boundaries) {
+			const parent = new Container();
+			const first = standalone(finishedAgent());
+			const second = standalone(finishedAgent());
+			parent.addChild(first);
+			parent.addChild(boundary);
+			parent.addChild(second);
+			assert.deepEqual(parent.children, [first, boundary, second]);
+		}
+		for (const count of [3, 4]) {
+			const parent = new Container();
+			parent.addChild(standalone(finishedAgent()));
+			for (let i = 0; i < count; i++) parent.addChild(new Spacer(1));
+			parent.addChild(standalone(finishedAgent()));
+			assert.equal(parent.children[0] instanceof ToolGroupComponent, count === 3);
+		}
+		const parent = new Container();
+		const boundary = new UserMessageComponent("between batches");
+		parent.addChild(standalone({ ...finishedAgent(), others: [finishedAgent()] }));
+		parent.addChild(boundary);
+		parent.addChild(standalone({ ...finishedAgent(), others: [finishedAgent()] }));
+		assert.equal(parent.children.length, 3);
+		assert.ok(parent.children[0] instanceof ToolGroupComponent);
+		assert.equal(parent.children[1], boundary);
+		assert.ok(parent.children[2] instanceof ToolGroupComponent);
+	});
+});
+
+test("notification-only groups survive mode toggles and reload without splitting messages", () => {
+	for (const batched of [false, true]) {
+		let mode = "compact";
+		const enabled = () => mode === "on";
+		const hooks = installToolGrouping(enabled);
+		let replacement: ReturnType<typeof installToolGrouping> | undefined;
+		try {
+			const first = finishedAgent({ id: "first" });
+			const second = finishedAgent({ id: "second" });
+			const notes = batched
+				? [standalone({ ...first, others: [second] })]
+				: [standalone(first), standalone(second)];
+			const parent = new Container() as any;
+			for (const note of notes) parent.addChild(note);
+			const mounted = { getMountedRoots: () => [parent] };
+			assert.deepEqual(parent.children, notes, "compact keeps standalone notification components");
+			for (const next of ["on", "off", "on", "compact", "on"]) {
+				mode = next;
+				hooks.refresh(mounted);
+				if (next !== "on") {
+					assert.deepEqual(parent.children, notes, `${next} ungroups the original messages`);
+					continue;
+				}
+				const group = parent.children[0];
+				assert.ok(group instanceof ToolGroupComponent);
+				assert.deepEqual(group.children, notes);
+				hooks.refresh(mounted);
+				assert.deepEqual(parent.children, [group], "refresh does not nest or duplicate groups");
+			}
+			replacement = installToolGrouping(enabled);
+			assert.deepEqual(parent.children, notes, "reload releases the original message components");
+			replacement.refresh(mounted);
+			const group = parent.children[0];
+			assert.ok(group instanceof ToolGroupComponent);
+			assert.deepEqual(group.children, notes);
+			hooks.shutdown();
+			assert.deepEqual(parent.children, [group], "stale shutdown leaves the replacement alone");
+		} finally {
+			replacement?.shutdown();
+			hooks.shutdown();
+		}
+	}
+});
+
 test("multi-agent notifications count one item per agent in the group", () => {
 	withGrouping(() => {
 		const details = {
@@ -545,7 +672,7 @@ test("multi-agent notifications count one item per agent in the group", () => {
 	});
 });
 
-test("a group left with only notifications dissolves back to standalone rows", () => {
+test("removal keeps notification-only groups until only one display item remains", () => {
 	withGrouping((hooks) => {
 		const parent = new Container() as any;
 		const first = standalone(finishedAgent({ id: "first" }));
@@ -554,8 +681,27 @@ test("a group left with only notifications dissolves back to standalone rows", (
 		parent.addChild(first);
 		parent.addChild(second);
 		parent.addChild(tool);
+		const group = parent.children[0] as ToolGroupComponent;
+		group.setExpanded(true);
 		parent.removeChild(tool);
-		assert.deepEqual(parent.children, [first, second]);
+		assert.deepEqual(parent.children, [group]);
+		assert.deepEqual(group.children, [first, second]);
+		assert.match(plain(group.render(200))[0]!, /^ ● Subagent Finished: 2 done · /);
+		parent.removeChild(second);
+		assert.deepEqual(parent.children, [first]);
+		assert.match(card(first.render(120)).join("\n"), /Saved result preview/);
+
+		const batch = standalone({ ...finishedAgent(), others: [finishedAgent({ id: "other" })] });
+		const batchParent = new Container() as any;
+		batchParent.addChild(batch);
+		batchParent.addChild(tool);
+		const batchGroup = batchParent.children[0];
+		batchParent.removeChild(tool);
+		assert.ok(batchGroup instanceof ToolGroupComponent);
+		assert.deepEqual(batchParent.children, [batchGroup], "one message still has two display items");
+		assert.deepEqual(batchGroup.children, [batch]);
+		batchParent.removeChild(batch);
+		assert.deepEqual(batchParent.children, [], "removing the entire batch removes its empty group");
 
 		const reloaded = new Container() as any;
 		const note = standalone(finishedAgent());

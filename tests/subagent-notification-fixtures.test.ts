@@ -380,6 +380,41 @@ function groupWithRead(fixture: Fixture): ToolGroupComponent {
 	return group;
 }
 
+test("saved multi-agent formats form notification-only groups without splitting the message", () => {
+	withGrouping(() => {
+		for (const fixture of fixtures) {
+			const snapshot = structuredClone(fixture.entry);
+			const agents = agentsOf(fixture.entry.details);
+			const note = standalone(fixture);
+			const parent = new Container();
+			parent.addChild(note);
+			if (agents.length === 1) {
+				assert.deepEqual(parent.children, [note], fixture.name);
+				continue;
+			}
+			const group = parent.children[0];
+			assert.ok(group instanceof ToolGroupComponent, fixture.name);
+			assert.deepEqual(group.children, [note], fixture.name);
+			const failed = agents.filter((agent) => FAILED.includes(agent.status)).length;
+			const counts = [
+				...(agents.length > failed ? [`${agents.length - failed} done`] : []),
+				...(failed ? [`${failed} failed`] : []),
+			];
+			const rows = plainRows(group.render(240));
+			assert.equal(
+				rows[0],
+				` ● Subagent Finished: ${counts.join(" · ")} · click to show more`,
+				fixture.name,
+			);
+			assert.equal(rows.length, agents.length + 1, fixture.name);
+			assertWithin(group, fixture.name);
+			group.setExpanded(true);
+			assertWithin(group, fixture.name);
+			assert.deepEqual(fixture.entry, snapshot, fixture.name);
+		}
+	});
+});
+
 test("every format joins a synthetic neighbour tool with one grouped row per agent", () => {
 	withGrouping(() => {
 		for (const fixture of fixtures) {

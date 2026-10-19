@@ -27,7 +27,7 @@ import {
 	installMessageDisplayRendering,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
-import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
 	installCompactThinking,
 	ThinkingPreviewBlock,
@@ -1102,6 +1102,60 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", async 
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2m`);
 	assert.equal((group as any).expanded, false, "single click collapses all children");
 	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: notification-only groups share hover, click and selection handling", () => {
+	for (const batched of [false, true]) {
+		const hooks = installToolGrouping(() => true);
+		try {
+			const details = (id: string) => ({ id, status: "completed", resultPreview: "saved preview" });
+			const note = (data: object) =>
+				new CustomMessageComponent(
+					{
+						role: "custom",
+						customType: "subagent-notification",
+						content: "saved notification",
+						display: true,
+						timestamp: 1,
+						details: data,
+					} as any,
+					renderSubagentNotification,
+				);
+			const notes = batched
+				? [note({ ...details("first"), others: [details("second")] })]
+				: [note(details("first")), note(details("second"))];
+			const parent = new Container();
+			for (const notification of notes) parent.addChild(notification);
+			const group = parent.children[0];
+			assert.ok(group instanceof ToolGroupComponent);
+			const { terminal } = createTerminalFixture();
+			const renderer = new FullscreenRenderer(group, null, terminal);
+			const tui = createLazyProxy(() => renderer);
+			const ui = createUi(tui);
+			installToolMouseInteraction(ui.ctx);
+			renderer.currentLayout = fullscreenLayout(group, ui.widget);
+			const hintCol = group.render(80)[1]!.indexOf("click to show more") + 1;
+			assert.ok(hintCol > 0);
+			tui.handleViewportInput(`\x1b[<35;${hintCol};2M`);
+			assert.equal((group as any).hintHovered, true);
+			tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+			assert.equal(group.expanded, true);
+			for (const notification of notes) assert.equal((notification as any)._expanded, true);
+			renderer.currentLayout = fullscreenLayout(group, ui.widget);
+			tui.handleViewportInput("\x1b[<0;4;4M");
+			tui.handleViewportInput("\x1b[<32;10;5M");
+			tui.handleViewportInput("\x1b[<0;10;5m");
+			assert.equal(group.expanded, true, "selection drags do not collapse the group");
+			tui.handleViewportInput("\x1b[<0;1;2M");
+			assert.equal(group.expanded, true, "collapse waits for release");
+			tui.handleViewportInput("\x1b[<0;1;2m");
+			assert.equal(group.expanded, false);
+			for (const notification of notes) assert.equal((notification as any)._expanded, false);
+		} finally {
+			installToolMouseInteraction({});
+			hooks.shutdown();
+		}
+	}
 });
 
 test("lazy-proxy tui: official tool cards collapse on release", () => {

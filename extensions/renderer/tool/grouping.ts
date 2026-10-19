@@ -672,9 +672,9 @@ function ungroup(patch: Patch): void {
 	}
 }
 
-/** 分组至少两项且含一个真实工具；不满足就拆回原位（只剩完成通知时各自单独显示）。 */
+/** 至少两项展示内容就保留分组：一个通知组件也可能包含多个 agent。 */
 function normalizeGroup(patch: Patch, group: ToolGroupComponent): void {
-	if (group.children.length > 1 && group.children.some(isGroupableTool)) return;
+	if (groupItems(group.children).length > 1) return;
 	const parent = (group as any)[PARENT_KEY];
 	const index = parent?.children?.indexOf(group) ?? -1;
 	const tools = group.releaseTools();
@@ -700,33 +700,25 @@ function maybeGroup(patch: Patch, parent: any, component: any): void {
 	if (!Array.isArray(children)) return;
 	const index = children.indexOf(component);
 	const prior = previousSibling(children, index - 1);
-	if (!prior) return;
-	if (prior.child instanceof ToolGroupComponent && (prior.child as any).patch === patch) {
+	if (prior?.child instanceof ToolGroupComponent && (prior.child as any).patch === patch) {
 		children.splice(index, 1);
 		prior.child.addTool(component);
 		return;
 	}
-	const eligible = (value: any) => isGroupable(value) && value[GENERATION_KEY] === patch.generation;
-	if (!eligible(prior.child)) return;
-	// 前面紧挨着的完成通知一起收进来：只有通知时不成组，它们停在原位等下一个工具。
-	const members = [prior];
-	for (
-		let earlier = previousSibling(children, prior.index - 1);
-		earlier && eligible(earlier.child);
-		earlier = previousSibling(children, earlier.index - 1)
-	) {
-		members.unshift(earlier);
+	const members = [component];
+	let firstIndex = index;
+	if (prior && isGroupable(prior.child) && prior.child[GENERATION_KEY] === patch.generation) {
+		members.unshift(prior.child);
+		firstIndex = prior.index;
 	}
-	if (!isGroupableTool(component) && !members.some((member) => isGroupableTool(member.child)))
-		return;
+	// 按展示项而非消息数决定：单条批量通知也成组，原消息仍完整地留在组内。
+	if (groupItems(members).length < 2) return;
 	const group = new ToolGroupComponent(patch);
-	for (const member of members) group.addTool(member.child);
-	group.addTool(component);
+	for (const member of members) group.addTool(member);
 	(group as any)[PARENT_KEY] = parent;
-	// 从后往前摘，前面的下标不受影响；夹在中间的空行留在分组之后。
-	children.splice(index, 1);
-	for (const member of members.slice(1).reverse()) children.splice(member.index, 1);
-	children[members[0].index] = group;
+	// 两个相邻组件合并时移走后者；夹在中间的空行留在分组之后。
+	if (firstIndex !== index) children.splice(index, 1);
+	children[firstIndex] = group;
 }
 
 /** /reload 不会重新 addChild；扫描当前 mounted roots，把已有工具重新送入同一分组规则。 */

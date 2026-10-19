@@ -366,13 +366,21 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 
 ### 子代理结束通知（subagent-notification）
 
-单独出现（前后没有可并入的工具）：
+单个 agent，前后没有可并入的展示项：
 
 ```text
  ✓ Subagent Finished 6dae0e11-9341-43b · completed (steered) · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s · click to show more
 ```
 
-紧挨工具时作为一项并入工具组：
+多条相邻通知，或一条通知含多个 agent（`others`），都复用同类分组标题：
+
+```text
+ ● Subagent Finished: 2 done · click to show more
+ ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s
+ └ ✓ Subagent Finished second-agent · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s
+```
+
+紧挨工具时作为展示项并入混合工具组：
 
 ```text
  ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Re… · click to show more
@@ -414,7 +422,9 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - 组头计数按显示项算（`3 done` 是三行，不是三次工具执行）；一条通知带多个 agent（`others`）时每个 agent 一行。
 - 统计只报 payload 里测得的值；pi-subagents 拿不到时写 0（turns、未定价的花费），这些一律不显示。
 - 展开只展示保存下来的内容：说明、状态、统计、结果预览（可能已被 pi-subagents 截断）、错误与 transcript 路径；不调用工具，也不读 transcript 文件。
-- 中间隔着可见的 assistant/user 文本时不并组；只有通知、没有工具时各自单独成行。
+- on 按展示项分组：两项及以上即成组，不要求有真实工具；只有通知时标题为 `Subagent Finished`。一条批量通知仍是原来的消息，不拆成新消息或伪造工具。
+- 中间隔着可见的 assistant/user 文本时不并组；移除成员后仍有两项展示内容就保留组，只有一项时拆回单独行。
+- compact 保留原来的单独通知视图，不并组、不纳入工具执行计数；off 交回原生渲染。
 
 ## 12. Working footer
 

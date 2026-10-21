@@ -4,7 +4,7 @@
 
 # pi-cc-extensions
 
-> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
+> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能（无额外内置工具）。
 
 ## 界面预览
 
@@ -55,7 +55,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
-  "enableMarkdownEnhance": true,             // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
+  "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
   "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui
@@ -97,12 +97,10 @@ pi install git:github.com/minuque/pi-cc-extensions
 ```
 
 > [!TIP]
-> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起。
->
-> `scrollButtonMode` 两种模式文案相同（`Back to bottom` / `N new message(s)`）：`dock` 画在独占行，`native` 画在 Pi 原生浮层。
+> **全屏模式**：展开态 diff 全量显示。Input/Output 超行时末行给 `… +N more lines`，单击看全量，再击收起。
 
 > [!NOTE]
-> **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
+> **Mermaid 渲染**：`markdown.mermaid` 建议设为 `final`（`~/.pi/agent/settings.json` 或 `/settings`）。默认 `streaming` 逐帧重绘，`final` 只渲染最终版。
 
 ## 本地开发
 

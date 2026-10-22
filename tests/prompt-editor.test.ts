@@ -48,6 +48,28 @@ test("restores the editor it replaced", (t) => {
 	assert.equal(slot.factory, other);
 });
 
+test("wraps the existing editor instead of replacing it", (t) => {
+	useEditorPrefix(t, true);
+	const fakeEditor = {
+		embedWorkingStatus: false,
+		render: (_width: number) => ["╭────────╮", "  hello", "╰────────╯"],
+		getPaddingX: () => 2,
+	};
+	const previous: EditorFactory = () => fakeEditor;
+	const slot = fakeEditorSlot();
+	slot.factory = previous;
+	const ctx = { hasUI: true, ui: slot.ui } as unknown as ExtensionContext;
+
+	applyPromptEditor(ctx);
+	const wrapped = slot.factory!(null, null, null) as typeof fakeEditor;
+	// image-paster / working-row 包出来的 editor 必须原样保留，只包 render。
+	assert.equal(wrapped, fakeEditor);
+	assert.equal(wrapped.render(20)[1], "❯ hello");
+
+	clearPromptEditor(ctx);
+	assert.equal(slot.factory, previous);
+});
+
 test("disabled prefix leaves another extension's editor alone", (t) => {
 	useEditorPrefix(t, false);
 	const other: EditorFactory = () => ({});

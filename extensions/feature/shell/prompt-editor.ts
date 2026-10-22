@@ -1,26 +1,21 @@
 /**
  * 输入框 `❯` 提示符（issue #68）。
  *
- * `PromptEditor` 继承 `CustomEditor`：pi 的 setCustomEditorComponent 会自动接线
- * onSubmit/onChange/actionHandlers/autocomplete/工作状态指示器，本扩展只管渲染。
+ * 实现为 editor factory 的渲染包装层：保留 pi-paster 的自定义编辑器、
+ * working-row 的内嵌状态开关等已有包装，只在渲染出的首内容行前加前缀。
+ * 这样 image-paster / working-row / 本扩展的 factory 链不会互相覆盖。
  *
- * `❯ ` 恒占左侧 2 列：渲染前把 paddingX 抬到「用户值 + 2」（直接改字段绕过
- * setter，避免每帧 requestRender 自激），渲染后恢复。首内容行前两列换成
- * `❯ `，其后仍保留用户 editorPaddingX 的空格。
- * `❯` 颜色直接用 `borderColor`，随 thinking 等级 / bash mode 自动联动。
- *
- * `userPaddingX` 记录渲染时读到的用户 editorPaddingX（pi 通过 setPaddingX
- * 同步进本编辑器），footer 用 `inputTextIndent()` 对齐输入文本起始列：
- * 前缀开 = userPaddingX + 2，关 = userPaddingX。
+ * `inputTextIndent()` 返回输入文本起始列，footer 用它对齐左侧基线：
+ * 前缀开 = editorPaddingX + 2，关 = editorPaddingX。
  */
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
+import { prefixEditorPromptLine } from "../../renderer/user-message.ts";
 
 /** `❯ ` 固定 2 列：glyph + 尾随空格。 */
-const PROMPT_GLYPH = "❯";
 const PROMPT_COLS = 2;
 
-/** 最近一次 render 读到的用户 editorPaddingX；未启用过提示符时为 0。 */
+/** 最近一次 render 读到的用户 editorPaddingX；未渲染过时为 0。 */
 let userPaddingX = 0;
 
 /** 输入文本起始列：footer 按它对齐。 */
@@ -28,36 +23,49 @@ export function inputTextIndent(): number {
 	return config.enableEditorPrefix ? userPaddingX + PROMPT_COLS : userPaddingX;
 }
 
-export class PromptEditor extends CustomEditor {
-	render(width: number): string[] {
-		// ❯ + 用户 padding：文本从 userPaddingX+2 列开始。
-		const self = this as unknown as { paddingX: number };
-		const saved = self.paddingX;
-		userPaddingX = saved;
-		self.paddingX = saved + PROMPT_COLS;
-		try {
-			const lines = super.render(width);
-			// 布局：lines[0] 顶边框，lines[1..n-2] 内容，lines[n-1] 底边框（autocomplete 在底边框后追加，
-			// 首内容行恒为 index 1）。开头是 paddingX 个纯空格，前两列换成 ❯+空格，剩余 padding 保留；
-			// 续行不动——Claude Code 行为。
-			if (lines.length > 2 && lines[1].startsWith("  ")) {
-				lines[1] = `${this.borderColor(PROMPT_GLYPH)} ${lines[1].slice(2)}`;
-			}
-			return lines;
-		} finally {
-			self.paddingX = saved;
-		}
-	}
-}
-
 type EditorFactory = Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0];
 
-const promptEditorFactory: EditorFactory = (tui, theme, keybindings) =>
-	new PromptEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+type DecoratedEditor = {
+	render: (width: number) => string[];
+	getPaddingX?: () => number;
+};
+
+/** 给单个 editor 实例的渲染加前缀，不改变编辑器本身的输入/粘贴能力。 */
+function decorateEditor<T>(editor: T): T {
+	if (
+		!editor ||
+		typeof editor !== "object" ||
+		typeof (editor as unknown as DecoratedEditor).render !== "function"
+	) {
+		return editor;
+	}
+	const target = editor as unknown as DecoratedEditor;
+	const originalRender = target.render.bind(target);
+	target.render = (width: number): string[] => {
+		const lines = originalRender(width);
+		if (!Array.isArray(lines) || lines.length < 3 || width < 2) return lines;
+		try {
+			const paddingX = target.getPaddingX?.() ?? 0;
+			userPaddingX = paddingX;
+			lines[1] = prefixEditorPromptLine(lines[1] ?? "", paddingX, width);
+		} catch {
+			// 装饰失败保留原生行
+		}
+		return lines;
+	};
+	return editor;
+}
 
 /** 是否正占着插槽；占据前的工厂用于原样还回去。 */
 let active = false;
 let previousEditorFactory: EditorFactory | undefined;
+
+const promptEditorFactory: EditorFactory = (tui, theme, keybindings) => {
+	const editor = previousEditorFactory
+		? previousEditorFactory(tui, theme, keybindings)
+		: new CustomEditor(tui, theme, keybindings, { embedWorkingStatus: false });
+	return decorateEditor(editor);
+};
 
 /** 撤销本扩展占据的插槽；从未占用就不碰插槽。 */
 function releasePromptEditor(ctx: ExtensionContext): void {

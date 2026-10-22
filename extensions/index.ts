@@ -26,7 +26,6 @@ import registerStatusline from "./feature/statusline/index.ts";
 // renderer
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
 import markdownEnhance from "./renderer/markdown-enhance.ts";
-import { registerPromptGlyph } from "./renderer/user-message.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
@@ -47,12 +46,10 @@ export default function (pi: ExtensionAPI): void {
 		// 0.85+ 把 spinner 塞进 editor 边框；关掉内嵌回到 0.84 独立行。
 		workingRow(pi);
 	}
-	// Esc 双件套：链式包裹 handleInput，注册在 working-row 之后、
-	// promptGlyph（纯 render）之前；两者按草稿空/非空互斥，顺序无关。
+	// Esc 双件套：链式包裹 handleInput，注册在 working-row 之后；
+	// 两者按草稿空/非空互斥，顺序无关。
 	if (config.enableEscSteer) registerEscSteer(pi);
 	if (config.enableDoubleEscClear) registerDoubleEscClear(pi);
-	// 输入框 ❯ 包最外层：working-row 等链式包裹先注册，本 handler 后执行。
-	registerPromptGlyph(pi);
 	// 上游 footer 与本 fork 状态栏互斥：状态栏开则用状态栏（默认），
 	// 关了才回退到上游 footer（再关则 Pi 原生 footer）。
 	if (!readStatuslineConfig().enabled && config.enableCustomFooter) customFooter(pi);

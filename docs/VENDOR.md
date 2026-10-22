@@ -156,6 +156,9 @@
   ccstyle 标题宽度计算改用实际路径宽度，避免 detail 被行尾硬截断成半截；
   working-message 合并重复的 `tool_execution_start` handler（token 暂停与
   activeTools 计数同处）；主题测试允许 `export` 直接写 hex。
+- **合并后修复**：上游 prompt-editor 直接替换编辑器插槽，覆盖 pi-paster 与
+  working-row；spinner 被重新嵌回输入框边框，粘贴编辑器也会被顶掉。改为
+  editor factory 渲染包装层后，spinner 回到输入框上方，两者共存。
 - **版本**：`pi-claude-code` 1.2.0 → 1.3.0（上游 1.0.8+ 基线 + 本 fork 功能）。
 - **环境注记**：git-stats 系用例仍需 git 提交身份；`statusline-git-config`
   轮询用例在慢机上放宽了变更等待窗口。

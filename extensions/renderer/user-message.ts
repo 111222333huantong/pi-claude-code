@@ -6,13 +6,12 @@
  * B. 输入框：提示行加 `❯ `；bash `!` 开头与已装饰行放过，续行不动。
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../config/config.ts";
 import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
-import { PROMPT_GLYPH_FACTORY, patchRegistry, USER_MESSAGE_PATCH } from "../utils/patch-keys.ts";
+import { patchRegistry, USER_MESSAGE_PATCH } from "../utils/patch-keys.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 
 /** 箭头前缀 `❯ `。 */
@@ -153,42 +152,5 @@ export function refreshUserMessages(root: any): void {
 			return false;
 		}
 		return true;
-	});
-}
-
-type EditorFactory = (tui: any, theme: any, keybindings: unknown) => any;
-
-/**
- * 输入框实例级 factory 包裹：只给提示行加 `❯ `，其余行不动。
- * 跨 CustomEditor 副本生效；与 image-paster/working-row 链式共存，
- * session_start 重复触发幂等。挂载顺序：后注册包外层（见 index.ts）。
- */
-export function registerPromptGlyph(pi: ExtensionAPI): void {
-	pi.on("session_start", async (_event, ctx) => {
-		const ui = (ctx as any)?.ui;
-		if (!ctx?.hasUI || !ui || typeof ui.setEditorComponent !== "function") return;
-		if (typeof ui.getEditorComponent !== "function") return;
-		const current = ui.getEditorComponent();
-		if (current && (current as any)[PROMPT_GLYPH_FACTORY]) return;
-		const previous: EditorFactory | undefined = current ?? undefined;
-		const factory = ((tui: any, theme: any, keybindings: unknown) => {
-			const editor = previous ? previous(tui, theme, keybindings) : undefined;
-			if (!editor || typeof editor.render !== "function") return editor;
-			const originalRender = editor.render.bind(editor);
-			editor.render = (width: number): string[] => {
-				const lines = originalRender(width);
-				if (!Array.isArray(lines) || lines.length < 3 || width < 2) return lines;
-				try {
-					const paddingX = editor.getPaddingX?.() ?? 0;
-					lines[1] = prefixEditorPromptLine(lines[1] ?? "", paddingX, width);
-				} catch {
-					// 装饰失败保留原生行
-				}
-				return lines;
-			};
-			return editor;
-		}) as EditorFactory;
-		(factory as any)[PROMPT_GLYPH_FACTORY] = true;
-		ui.setEditorComponent(factory);
 	});
 }

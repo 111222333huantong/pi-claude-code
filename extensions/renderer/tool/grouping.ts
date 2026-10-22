@@ -317,9 +317,21 @@ function shellResultTail(
 function toolSummaryText(tool: any, toolStatus: ToolStatus, width: number, fg: Fg): string {
 	const summary = askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
 	const detail = fg("dim", summary.detail);
-	const result = shellResultTail(tool, fg, toolStatus);
+	const result = agentResultTail(tool, fg) + shellResultTail(tool, fg, toolStatus);
 	const mainWidth = Math.max(0, width - visibleWidth(detail) - visibleWidth(result));
 	return `${renderToolSummary(summary, mainWidth, fg)}${detail}${result}`;
+}
+
+/**
+ * Agent 的折叠行尾巴：`-> Running in background · ID: xxx`。参考 ask_user_question 的
+ * 问题 -> 回答写法：跑后台的结果状态放在 payload 后，比单独的 ↳ 行省一行。
+ */
+function agentResultTail(tool: any, fg: Fg): string {
+	if (toolName(tool) !== "Agent" || !tool?.result) return "";
+	const details = tool.result.details;
+	if (details?.status !== "background") return "";
+	const agentId = details.agentId ? ` ID: ${details.agentId}` : "";
+	return ` ${fg("dim", "\u2192")} ${fg("dim", `Running in background${agentId}`)}`;
 }
 
 /** 原始 paint → 去掉状态图标与外层缩进后的展开行；paint 引用不变就复用。 */

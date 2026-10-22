@@ -21,7 +21,10 @@ import type { WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 export { shouldRenderRichDiff } from "./tool/ccstyle-tool.ts";
 
 // pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
-const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
+// 本地实验：Agent 也由 ccstyle 接管（renderCall/renderResult 在 ccstyle-tool.ts 里特判）。
+// 原原因：pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
+// 若上游修复 background 缩进后可恢复：const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
+const DEDICATED_RENDERER_TOOLS = new Set<string>();
 
 /** 排除名单内且自带 renderer 的工具保留原渲染。 */
 export function preservesOriginalRenderer(

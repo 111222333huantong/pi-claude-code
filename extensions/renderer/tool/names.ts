@@ -23,6 +23,9 @@ const TOOL_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
 	// MCP 入口两个没有具体工具名，跟普通工具一样人性化；缩写固定大写
 	mcp: "MCP",
 	mcpscript: "MCP Script",
+	// pi-subagents 的 Agent 工具标题写 Subagent，与结束通知的 Subagent Finished 叫法一致。
+	agent: "Subagent",
+	agents: "Subagents",
 };
 
 /**
@@ -264,18 +267,22 @@ export function toolCallSummary(
 	if (variant === "default" && AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
 		return { main: title, detail: "", payload: clip(args.agent_id) };
 	}
-	if (variant === "grouping" && (name === "agent" || name === "agents")) {
+	if (name === "agent" || name === "agents") {
 		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
+		const description =
+			typeof args.description === "string" ? oneLine(args.description, clipLimit()) : "";
 		if (typeof displayName === "string" && displayName) {
-			return { main: title, detail: "", payload: displayName };
+			// 类型进标题，`·` 分隔后描述作灰色载荷：单卡与组内行同一写法。
+			return {
+				main: `${title} ${displayName}`,
+				detail: "",
+				payload: description ? `\u00b7 ${description}` : undefined,
+			};
 		}
 		return value(name === "agent" ? "launch agent" : "launch agents", "description", "prompt");
 	}
 	if (variant === "grouping" && (name === "get_subagent_result" || name === "steer_subagent")) {
 		return value(name === "get_subagent_result" ? "agent result" : "steer agent", "agent_id");
-	}
-	if (variant === "default" && name === "agents") {
-		return value("launch agents", "description", "prompt");
 	}
 	if (name === "skill") return value("run skill", "name");
 	if (name === "enterplanmode" || name === "enter_plan_mode") {

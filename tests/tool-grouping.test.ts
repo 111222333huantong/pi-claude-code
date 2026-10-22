@@ -281,9 +281,9 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 			.filter((line: string) => line.trim());
 		assert.match(
 			agentLines[0],
-			/^ ● Multiple Tools: 2 done · Agent×1, Get Subagent Result×1 · click to show more$/,
+			/^ ● Multiple Tools: 2 done · Subagent×1, Get Subagent Result×1 · click to show more$/,
 		);
-		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
+		assert.equal(agentLines[1], " ├ ✓ Subagent 再次测试 tool 调用");
 		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462-95d0-40b");
 	} finally {
 		hooks.shutdown();
@@ -517,7 +517,7 @@ test("default 与 grouping 共用同一份摘要取值链", () => {
 		["web_search", { queries: ["a"] }, "Web Search a"],
 		["fetch_content", { urls: ["https://a", "https://b"] }, "Fetch Content https://a (+1)"],
 		["get_search_content", { responseId: "rid-1" }, "Get Search Content rid-1"],
-		["Agent", { description: "review code" }, "Agent review code"],
+		["Agent", { description: "review code" }, "Subagent review code"],
 	];
 	for (const [name, args, expected] of cases) {
 		for (const variant of ["default", "grouping"] as const) {

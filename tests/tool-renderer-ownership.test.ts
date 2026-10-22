@@ -439,7 +439,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		);
 
 		for (const [name, args, expected] of [
-			["Agents", { description: "review changes" }, "Agents review changes"],
+			["Agents", { description: "review changes" }, "Subagents review changes"],
 			["Skill", { name: "deploy" }, "Skill deploy"],
 			["EnterPlanMode", {}, "Enter Plan Mode enable read-only planning"],
 			["ExitPlanMode", {}, "Exit Plan Mode present plan"],
@@ -565,7 +565,7 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 	assert.equal(preservesOriginalRenderer(undefined, "Agent"), false);
 });
 
-test("Agent keeps its dedicated renderer under ccstyle", async () => {
+test("Agent uses the ccstyle renderer under ccstyle", async () => {
 	const events = new Map<string, Function>();
 	const pi = {
 		registerCommand() {},
@@ -592,18 +592,18 @@ test("Agent keeps its dedicated renderer under ccstyle", async () => {
 	const component = new ToolExecutionComponent(
 		"Agent",
 		"agent-renderer",
-		{ description: "review changes" },
+		{ description: "review changes", subagent_type: "explorer" },
 		{},
 		definition,
 		ui as any,
 		process.cwd(),
 	) as any;
 	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
-	assert.equal(component.children.includes(component.contentBox), true);
-	assert.equal(component.children.includes(component.selfRenderContainer), false);
 	const output = component.render(100).join("\n");
-	assert.match(output, /agent dedicated/);
-	assert.doesNotMatch(output, /Agent review changes/);
+	// ccstyle 接管后：标题写 `Subagent explorer`，描述进 payload；原渲染器的文本不出现。
+	assert.doesNotMatch(output, /agent dedicated/);
+	assert.match(output, /Subagent explorer/);
+	assert.match(output, /review changes/);
 	await events.get("session_shutdown")?.({}, ctx);
 });
 

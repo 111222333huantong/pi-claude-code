@@ -812,7 +812,7 @@ test("a steered agent keeps its outcome inside the tool group", () => {
 		const rows = plain(parent.children[0].render(240));
 		assert.match(
 			rows[0]!,
-			/^ ● Multiple Tools: 5 done · Agent×2, Steer Subagent×1, Subagent Finished×1, Bash×1 · /,
+			/^ ● Multiple Tools: 5 done · Subagent×2, Steer Subagent×1, Subagent Finished×1, Bash×1 · /,
 		);
 		assert.equal(
 			rows[4],

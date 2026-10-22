@@ -18,6 +18,18 @@ import {
 
 export const SHIMMER_BAND_WIDTH = 6;
 
+/**
+ * Ping-pong sweep position. The peak bounces between 0 and total-1 with a
+ * continuous triangle wave; using `total` as the turnaround point makes the
+ * band overshoot past the last character and snap backward every cycle.
+ */
+export function shimmerPosition(frame: number, total: number): number {
+	if (total <= 1) return 0;
+	const cycle = Math.max(1, (total - 1) * 2);
+	const c = ((frame % cycle) + cycle) % cycle;
+	return c <= total - 1 ? c : cycle - c;
+}
+
 /** Parse a `#rrggbb` literal into a 24-bit ANSI foreground escape, or null. */
 export function hexToAnsiFg(value: string): string | null {
 	const ansi = hexToFgAnsi(value.trim());
@@ -43,9 +55,7 @@ export function colorSweep(
 	const total = text.length;
 	if (total === 0) return "";
 	if (total === 1) return `${rgbToFgAnsi(shimmerRgb)}${text}${RESET}`;
-	const cycle = Math.max(1, (total - 1) * 2);
-	const c = ((frame % cycle) + cycle) % cycle;
-	const pos = c < total ? c : cycle - c;
+	const pos = shimmerPosition(frame, total);
 	const sigma = bandWidth / 2.2;
 	let out = "";
 	for (let i = 0; i < text.length; i++) {

@@ -6,6 +6,7 @@ import {
 	colorSweep,
 	hexToAnsiFg,
 	resolveShimmerColors,
+	shimmerPosition,
 } from "../extensions/feature/shell/spinner-shimmer.ts";
 import { _resetTicker } from "../extensions/feature/shell/spinner-ticker.ts";
 import workingMessageExtension from "../extensions/feature/shell/working-message.ts";
@@ -208,6 +209,41 @@ test("spinner shimmer helpers behave", () => {
 	const swept = colorSweep("Cooking…", 3, baseRgb, { r: 255, g: 255, b: 255 });
 	assert.ok(swept.length > "Cooking…".length);
 	assert.ok(visible(swept).endsWith("Cooking…"));
+});
+
+test("shimmer ping-pong turns around without snapping past the last char", () => {
+	// 旧公式把 total 当折返点，峰值会冲到 total 再跳回 total-1-ε；新公式在
+	// total-1 折返，扫光到词尾后平滑返回。
+	assert.ok(Math.abs(shimmerPosition(9.9, 10) - 8.1) < 1e-9);
+	assert.ok(Math.abs(shimmerPosition(10.1, 10) - 7.9) < 1e-9);
+	assert.ok(Math.abs(shimmerPosition(0.5, 10) - 0.5) < 1e-9);
+	// 相邻 16ms 帧（最长动词 interval=90ms，约 0.18 帧）位置连续。
+	for (const total of [2, 3, 10, 21]) {
+		for (let frame = 0; frame < 3 * (total - 1); frame += 0.18) {
+			const delta = Math.abs(shimmerPosition(frame + 0.18, total) - shimmerPosition(frame, total));
+			assert.ok(delta <= 0.19, `total=${total} frame=${frame} jump=${delta}`);
+		}
+	}
+});
+
+test("shimmer survives a transient stale ctx", async () => {
+	const { events, messages } = install();
+	let stale = false;
+	const ctx = {
+		get hasUI() {
+			if (stale) throw new Error("stale");
+			return true;
+		},
+		ui: { setWorkingMessage: (message?: string) => messages.push(message) },
+	};
+	await events.get("turn_start")?.({}, ctx);
+	// 单次 stale 探测不应永久停掉扫光；下一拍恢复即可继续。
+	stale = true;
+	await new Promise((resolve) => setTimeout(resolve, 40));
+	stale = false;
+	const before = messages.length;
+	await new Promise((resolve) => setTimeout(resolve, 80));
+	assert.ok(messages.length > before + 1, "stale 恢复后扫光继续推进");
 });
 
 test("stalled hint appears after 30s idle without tools, suppressed while tools run", async () => {

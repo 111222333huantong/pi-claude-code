@@ -427,9 +427,18 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	let shimmerUnsub: (() => void) | null = null;
+	let refreshFailures = 0;
+
+	/**
+	 * 单帧异常不等于这一回合的动画结束。会话替换/reload 的瞬间 ctx getter 可能
+	 * 抛一次错，后续事件会把 activeCtx 换成新 ctx；这里先跳过并继续滴答，
+	 * 连续失败 2s 才停，避免一次抖动把扫光永久冻住。
+	 */
+	const MAX_REFRESH_FAILURES = 120;
 
 	function scheduleRefreshTick(): void {
 		if (!turnActive || shimmerUnsub) return;
+		refreshFailures = 0;
 		shimmerUnsub = subscribeShimmer(() => {
 			if (isStaleTickerGeneration(tickerGeneration)) {
 				// reload 后旧实例残留：退订自己，不再碰失效 ctx。
@@ -439,13 +448,19 @@ export default function (pi: ExtensionAPI): void {
 			if (!turnActive) return;
 			try {
 				syncWorkingMessage();
+				refreshFailures = 0;
 			} catch {
-				// 会话替换/reload 后捕获的 ctx 失效，getter 抛错；定时器内的异常会成为
-				// uncaughtException 终止 Pi，装饰性刷新直接停止。
-				turnActive = false;
-				stopRefreshLoop();
+				// 定时器内的异常会成为 uncaughtException 终止 Pi；装饰性刷新不能逃逸。
+				// 连续失败才停，给事件换新 ctx 留出恢复窗口。
+				refreshFailures++;
+				if (refreshFailures >= MAX_REFRESH_FAILURES) stopRefreshLoop();
 			}
 		});
+	}
+
+	/** 若本回合仍在进行但动画订阅丢了（异常/重建），立刻补回来。 */
+	function ensureRefreshLoop(): void {
+		if (turnActive && !shimmerUnsub) scheduleRefreshTick();
 	}
 
 	function startRefreshLoop(): void {
@@ -561,6 +576,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("tool_execution_start", async (event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
+		ensureRefreshLoop();
 		const id = String((event as any)?.toolCallId ?? `${Date.now()}-${activeTools.size}`);
 		activeTools.set(id, toolLabel((event as any)?.toolName));
 		startupProgress = false;
@@ -570,6 +586,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("tool_execution_end", async (event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
+		ensureRefreshLoop();
 		const id = String((event as any)?.toolCallId ?? "");
 		if (id) activeTools.delete(id);
 		resumeTokenRate();
@@ -620,6 +637,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("message_update", async (event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
+		ensureRefreshLoop();
 		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
 		const evt = (event as any)?.assistantMessageEvent;
 		if (!evt) return;
@@ -701,6 +719,7 @@ export default function (pi: ExtensionAPI): void {
 		const message = event?.message;
 		if (message?.role !== "assistant") return;
 		activeCtx = ctx;
+		ensureRefreshLoop();
 		// 出错/中断时 usage 可能还是 message_start 的占位值，只接受变大的值。
 		const failed = message.stopReason === "error" || message.stopReason === "aborted";
 		updateProviderUsage(message, !failed);

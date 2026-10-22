@@ -252,7 +252,7 @@ function renderAgentResult(
 			const label = status === "steered" ? "Wrapped up (turn limit)" : "Done";
 			const duration =
 				typeof details.durationMs === "number" ? formatToolDuration(details.durationMs) : "";
-			const body = tail([label, stats, duration].filter(Boolean).join(" · "));
+			const body = [label, stats, duration].filter(Boolean).join(" · ");
 			return new Text(theme.fg("muted", renderCollapsedToolResult(body, "")), 0, 0);
 		}
 		const view = renderExpandedToolResult(

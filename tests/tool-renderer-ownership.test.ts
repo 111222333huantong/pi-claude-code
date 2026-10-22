@@ -10,6 +10,8 @@ import {
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 type AnyToolDefinition = ToolDefinition<any, any, any>;
 import { config } from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	isMcpToolDefinition,
@@ -606,6 +608,51 @@ test("Agent uses the ccstyle renderer under ccstyle", async () => {
 	assert.match(output, /review changes/);
 	await events.get("session_shutdown")?.({}, ctx);
 });
+
+for (const [status, label] of [
+	["completed", "Done"],
+	["steered", "Wrapped up (turn limit)"],
+] as const) {
+	test(`Agent ${status} collapsed results show statistics once`, () => {
+		const previousMode = config.mode;
+		config.mode = "on";
+		const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+		try {
+			const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} };
+			const component = new ToolExecutionComponent(
+				"Agent",
+				`agent-stats-${status}`,
+				{ description: "review changes", subagent_type: "explorer" },
+				{},
+				undefined,
+				ui as any,
+				process.cwd(),
+			);
+			component.updateResult({
+				content: [{ type: "text", text: "Reviewed the changes." }],
+				isError: false,
+				details: {
+					status,
+					modelName: "sonnet",
+					turnCount: 3,
+					toolUses: 8,
+					tokens: "12.4k tokens",
+					durationMs: 12300,
+				},
+			});
+			const rows = component
+				.render(240)
+				.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trimEnd());
+			assert.deepEqual(
+				rows.filter((line) => line.includes("↳")),
+				[`   ↳ ${label} · sonnet · 3 turns · 8 tool uses · 12.4k tokens · 12.3s`],
+			);
+		} finally {
+			hooks.shutdown();
+			config.mode = previousMode;
+		}
+	});
+}
 
 test("global renderer reload chains external wrappers and shutdown restores them", async () => {
 	const prototype = ToolExecutionComponent.prototype as any;

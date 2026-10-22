@@ -73,13 +73,12 @@ export function subscribeShimmer(fn: () => void): () => void {
 }
 
 /**
- * 跨 `/reload` 的代际防抖（抄 cc-my-pi `LOADER_GENERATION` 思想）。
+ * 跨 `/reload` 的代际防抖。
  *
- * reload 会重跑扩展入口（新闭包重新订阅），但旧模块实例的 interval
- * 可能仍在跑、旧订阅仍指向已失效的 ctx。每次安装时调
- * `claimTickerGeneration()` 领新代际，tick 回调里用
- * `isStaleTickerGeneration(captured)` 自检：过期即自退订并停调，
- * 避免旧实例每 16ms 往失效 UI 写。
+ * 注意：只在 `session_start` 时领代际，绝不能在扩展工厂执行时领。
+ * Pi 在 project-trust 预检阶段会先跑一遍扩展工厂，再跑最终实例；
+ * 安装期领代际会让先加载的实例一启动就变成“过期”，shimmer 每帧
+ * 自退订、只能靠事件重订阅，表现为扫光卡住。
  */
 const TICKER_GENERATION_KEY = Symbol.for("pi-claude-code.ticker-generation");
 
@@ -110,4 +109,5 @@ export function _resetTicker(): void {
 	}
 	subs.clear();
 	shimmerSubs.clear();
+	(globalThis as Record<symbol, unknown>)[TICKER_GENERATION_KEY] = 0;
 }

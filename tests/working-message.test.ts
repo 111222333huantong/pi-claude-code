@@ -226,6 +226,25 @@ test("shimmer ping-pong turns around without snapping past the last char", () =>
 	}
 });
 
+test("a second factory instance (project-trust preload) must not freeze the live shimmer", async () => {
+	// Pi 在 project-trust 预检时会先跑一遍全部扩展工厂，再跑最终实例。
+	// 若代际在工厂执行时领取，先加载的实例会立刻“过期”，shimmer 每帧
+	// 自退订、只能靠 message_update 重订阅 —— 表现为扫光卡住。
+	const live = install();
+	const pretrust = install();
+	// 只有真正绑定会话的实例才会收到 session_start。
+	await live.events.get("session_start")?.({}, live.ctx);
+	await live.events.get("turn_start")?.({}, live.ctx);
+	// 未绑定会话的实例不应影响 live 实例。
+	assert.equal(pretrust.messages.length, 0);
+
+	const before = live.messages.length;
+	await new Promise((resolve) => setTimeout(resolve, 80));
+	assert.ok(live.messages.length > before + 1, "live instance keeps shimmering");
+
+	await live.events.get("session_shutdown")?.({}, live.ctx);
+});
+
 test("shimmer survives a transient stale ctx", async () => {
 	const { events, messages } = install();
 	let stale = false;

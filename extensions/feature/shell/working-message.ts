@@ -309,8 +309,9 @@ export default function (pi: ExtensionAPI): void {
 	const spinnerEnabled = spinnerModuleEnabled();
 	logSpinnerInstall({ spinnerEnabled });
 	if (!spinnerEnabled) return;
-	// 代际令牌：reload 后旧实例的 shimmer 回调自检过期并自退订。
-	const tickerGeneration = claimTickerGeneration();
+	// 0 = 尚未绑定会话（例如 project-trust 预检阶段的工厂实例）。
+	// 只有在 session_start 时才领代际，见 spinner-ticker.ts 的说明。
+	let tickerGeneration = 0;
 	let agentStartTime = 0;
 	let turnStartTime = 0;
 	let completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -368,6 +369,7 @@ export default function (pi: ExtensionAPI): void {
 	function debugState(extra: Record<string, unknown> = {}): Record<string, unknown> {
 		const now = Date.now();
 		return {
+			generation: tickerGeneration,
 			turnActive,
 			loop: Boolean(shimmerUnsub),
 			turnAgeMs: turnStartedAt ? now - turnStartedAt : null,
@@ -401,8 +403,9 @@ export default function (pi: ExtensionAPI): void {
 		spinnerLog(name, { ...debugState(), ...extra });
 	}
 
+	const installedAt = Date.now();
 	const heartbeatTimer = setInterval(() => {
-		if (isStaleTickerGeneration(tickerGeneration)) {
+		if (tickerGeneration !== 0 && isStaleTickerGeneration(tickerGeneration)) {
 			clearInterval(heartbeatTimer);
 			return;
 		}
@@ -420,8 +423,9 @@ export default function (pi: ExtensionAPI): void {
 			});
 		}
 		// 空闲时不刷心跳；只保留工作态和完成提示的几秒窗口。
-		if (!turnActive && !completionTimer && now - (lastChangeAt || now) > 10_000) return;
+		if (!turnActive && !completionTimer && now - (lastChangeAt || installedAt) > 10_000) return;
 		spinnerLog("heartbeat", {
+			generation: tickerGeneration,
 			turnActive,
 			loop: Boolean(shimmerUnsub),
 			turnAgeMs: turnStartedAt ? now - turnStartedAt : null,
@@ -472,7 +476,7 @@ export default function (pi: ExtensionAPI): void {
 
 	// 独立 watchdog：即使 shimmer 订阅已经死掉，也能记下停摆时的工作态。
 	const stallTimer = setInterval(() => {
-		if (isStaleTickerGeneration(tickerGeneration)) {
+		if (tickerGeneration !== 0 && isStaleTickerGeneration(tickerGeneration)) {
 			clearInterval(stallTimer);
 			return;
 		}
@@ -652,7 +656,7 @@ export default function (pi: ExtensionAPI): void {
 		refreshFailures = 0;
 		spinnerLog("loop_subscribe", { refreshFailures, ...debugState() });
 		shimmerUnsub = subscribeShimmer(() => {
-			if (isStaleTickerGeneration(tickerGeneration)) {
+			if (tickerGeneration !== 0 && isStaleTickerGeneration(tickerGeneration)) {
 				// reload 后旧实例残留：退订自己，不再碰失效 ctx。
 				stopRefreshLoop("stale-generation");
 				return;
@@ -795,9 +799,10 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		tickerGeneration = claimTickerGeneration();
 		activeCtx = ctx as typeof activeCtx;
 		startupProgress = true;
-		debugEvent("session_start", { hasUI: ctx.hasUI });
+		debugEvent("session_start", { hasUI: ctx.hasUI, tickerGeneration });
 		if (ctx.hasUI) {
 			try {
 				ctx.ui.setWorkingMessage(

@@ -136,6 +136,30 @@
 - **环境注记**：git-stats 系 9 个用例需 git 提交身份（CI/本地无 identity 时红，
   上游同样；`GIT_AUTHOR_*`/`GIT_COMMITTER_*` 置位即绿）。
 
+## 9. 1.3.0 合并记录（2026-10-22，`upstream/main 3c60b72`，v1.0.8+）
+
+- **基线**：`184fa85`（v1.0.4）→ 上游 42 个提交（v1.0.5–v1.0.8 及之后修复）；
+  本地 1.2.0 分支一次 merge 合入，无 rebase。
+- **以上游为准**：主题 token 重构（`fg/canvas/blueBright/...`，`cc-dark`/`cc-light`
+  重写）、`expandedCardBackground` 与 `dimThinkingText` 配置删除（展开卡改按工具
+  状态取 `TOOL_CARD_BG_SLOT`）、工具输入统一走 `muted` payload、footer 芯片布局
+  默认值（`model/context/cache/rate/cost/pi-usage` + `cwd/git`）、
+  `scrollButtonMode`、`enableMarkdownEnhance`、`enableEditorPrefix`、
+  compact 成员外置/展开面板跨消息合一、codemode 折叠摘要、mouse/scroll 修复、
+  `recordProviderUsage(final)` 与 `message_end` 定格、toolcall_delta 计数。
+- **本地保留并适配**：statusline（仍走独立 `statusline.json`，与上游 footer 互斥）、
+  启动头/mascot/`/loaded`、working-message verb shimmer + stalled + 响铃、
+  compact-thinking tail-window、Esc 双件套、图片/剪贴板粘贴、`/context`、
+  `diffPalette=claude`、路径 OSC8（标题路径不着色）、P3 三段式标题、
+  bash live 预览、Catppuccin 两套主题（已迁移到上游新 token 结构）。
+- **合并适配**：`pathSummary.main` 改为只留标题（路径值交给渲染层截断）；
+  ccstyle 标题宽度计算改用实际路径宽度，避免 detail 被行尾硬截断成半截；
+  working-message 合并重复的 `tool_execution_start` handler（token 暂停与
+  activeTools 计数同处）；主题测试允许 `export` 直接写 hex。
+- **版本**：`pi-claude-code` 1.2.0 → 1.3.0（上游 1.0.8+ 基线 + 本 fork 功能）。
+- **环境注记**：git-stats 系用例仍需 git 提交身份；`statusline-git-config`
+  轮询用例在慢机上放宽了变更等待窗口。
+
 ## 待办
 
 - [ ] §2 pin 一个 cc-my-pi 版本（git tag/commit）

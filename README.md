@@ -14,7 +14,7 @@
 
 # pi-cc-extensions
 
-> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
+> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能（无额外内置工具）。
 
 ## 界面预览
 
@@ -38,7 +38,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 | 功能                  | 说明                                                                            | 入口                                            |
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
-| Markdown 增强         | Mermaid 图、提示框、URL 链接化等                                                        | 自动生效                                        |
+| Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
@@ -72,15 +72,17 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
   "enableAliases": true,                   // /clear、/exit 别名
+  "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
+  "enableEditorPrefix": true,              // 输入框 ❯ 前缀
 
   // ui
   "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
   "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
-  "expandedCardBackground": "userMessageBg", // 展开卡背景槽位；userMessageBg 与用户消息同色，toolPendingBg 为中性灰
   "toolLabelClip": 0,                      // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
+  "scrollButtonMode": "dock",              // fullscreen：dock 独占行 / native Pi 原生浮层
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
@@ -96,7 +98,6 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "previewLines": 3,                       // 预览内容行数（空行不占窗口），0 隐藏
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
   "thinkingExpandedMaxLines": 200,         // 展开先给尾部行数，再推进一次看全文
-  "dimThinkingText": false,                // thinking 正文用 dim 色
 
   // ui（本 fork 增补）
   "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
@@ -123,10 +124,10 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
-  "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
-  "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
-  "footerLine2Keys": [],                   // line2 插件芯片顺序（接在 cwd/git 后）
-  "footerLine3Keys": []                    // line3 备用槽，有可见芯片才占行
+  "footerHiddenKeys": [],                  // 隐藏的芯片 key
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
+  "footerLine2Keys": ["cwd", "git"],        // cwd：目录和会话名；git：分支和改动。可换到任意行
+  "footerLine3Keys": []                    // 有可见芯片才占行
 }
 ```
 
@@ -140,10 +141,10 @@ pi install git:github.com/111222333huantong/pi-claude-code
 ```
 
 > [!TIP]
-> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines · click to show more` 打开全量预览，单击收起。
+> **全屏模式**：展开态 diff 全量显示。Input/Output 超行时末行给 `… +N more lines`，单击看全量，再击收起。
 
 > [!NOTE]
-> **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
+> **Mermaid 渲染**：`markdown.mermaid` 建议设为 `final`（`~/.pi/agent/settings.json` 或 `/settings`）。默认 `streaming` 逐帧重绘，`final` 只渲染最终版。
 
 ## 本地开发
 
@@ -166,6 +167,7 @@ pi -e .              # 只跑一次，不改 settings.json
 | `npm:pi-mcp-adapter`                     | 按需发现 MCP 工具，减少上下文占用                |
 | `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
 | `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
+| `npm:@juicesharp/rpiv-ask-user-question` | 模型拿不准时向你提问的选择题面板                 |
 
 > **与 `@arhen/pi-core-subagent` 同屏**：`subagent` 派生调用保留对方自带的计划图渲染（人名标题，无 UUID）；`subagent_status/result/await/reply/steer/cancel` 走本包工具卡（`runId` 短 ID + 人名 taskId）。对方的 live widget 在编辑器上方、`/subagents peek` 按需查看，无底部常驻面板。注意：`@tintinweb/pi-tasks` 的 `TaskExecute` 只认 tintinweb 私有 RPC，换 arhen 后降级（任务跟踪照常，派发改口头指令）。用户中断（esc）的工具等待会收敛为 dim 色 `Operation aborted`，不再复读原文。
 

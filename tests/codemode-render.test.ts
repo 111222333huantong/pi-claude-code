@@ -6,12 +6,14 @@ import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import {
 	codemodeCalls,
+	codemodeCodeSummary,
 	codemodeCollapsedLines,
 	codemodeExpandedBody,
 	codemodeOutputLineCount,
 	codemodeOutputText,
 	codemodeSummaryParts,
 	createCodemodeResultComponent,
+	highlightCodeSummary,
 } from "../extensions/renderer/tool/codemode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
@@ -153,7 +155,24 @@ test("折叠态：子调用过多时只列最近 8 条", () => {
 	assert.equal(lines[9], " └ 11 calls · 2 lines output · click to show more");
 });
 
-test("折叠态：没有子调用时不画衔接符", () => {
+test("折叠态：没有子调用时补一行代码摘要，汇总用 └ 收尾", () => {
+	const lines = codemodeCollapsedLines({
+		result: result({}, []),
+		theme,
+		running: false,
+		isError: true,
+		width: 160,
+		code: "const rows = scan()\nconst hits = grep(rows)\nreturn write(hits)",
+	});
+	const plain = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	// 语句逐行用 │ 列出，3 行脚本不超过 expandedInputMaxLines（默认 5）。
+	assert.equal(plain(lines[0]!), " │ const rows = scan()");
+	assert.equal(plain(lines[1]!), " │ const hits = grep(rows)");
+	assert.equal(plain(lines[2]!), " │ return write(hits)");
+	assert.equal(lines[3], " └ 2 lines output · click to show more");
+});
+
+test("折叠态：没有子调用也没有脚本时不画衔接符", () => {
 	const lines = codemodeCollapsedLines({
 		result: result({}, []),
 		theme,
@@ -162,6 +181,29 @@ test("折叠态：没有子调用时不画衔接符", () => {
 		width: 100,
 	});
 	assert.deepEqual(lines, [" 2 lines output · click to show more"]);
+});
+
+test("代码摘要：取信息量最大的一行语句，跳过注释与选项行", () => {
+	assert.equal(
+		codemodeCodeSummary(
+			'// @options: {}\n/* block\n * comment */\nconst rows = scan()\nreturn rows.filter((row) => row.includes("a"))',
+		),
+		'return rows.filter((row) => row.includes("a"))',
+	);
+	// 同样是调用时，带字符串的那行分更高
+	assert.equal(
+		codemodeCodeSummary('const n = count()\nconst label = name("x")'),
+		'const label = name("x")',
+	);
+	assert.equal(codemodeCodeSummary("// only a comment\n"), undefined);
+	assert.equal(codemodeCodeSummary(42), undefined);
+});
+
+test("代码摘要着色：关键字与字符串上色，剥掉 ANSI 后与原文一致", () => {
+	const summary = 'return rows.filter((row) => row.includes("a"))';
+	const colored = highlightCodeSummary(summary);
+	assert.match(colored, /\x1b\[/, "应带 ANSI 着色");
+	assert.equal(colored.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""), summary);
 });
 
 /** 与 pi 的 previewArgs 同口径：超 200 字符的紧凑 JSON 从尾部切掉，补 "..."。 */
@@ -372,12 +414,12 @@ test("调用行：codemode 只报工具名，代码不进标题（其他工具�
 		assert.deepEqual(toolCallSummary("codemode", args), { main: "Codemode", detail: "" });
 	}
 
-	// 同类工具不受影响：mcpscript 仍把代码当载荷，bash/read 仍走字段链
+	// 同类工具不受影响：mcpscript 仍把代码当载荷，bash/read 的入参也是载荷（渲染时用 dim 接在标题后）
 	assert.equal(toolCallSummary("mcpscript", { code: "return 1" }).payload, "return 1");
-	assert.equal(toolCallSummary("bash", { command: "ls -a" }).main, "Bash ls -a");
-	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, undefined);
-	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read a.ts");
-	assert.equal(toolCallSummary("read", { path: "a.ts" }).payload, undefined);
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).main, "Bash");
+	assert.equal(toolCallSummary("bash", { command: "ls -a" }).payload, "ls -a");
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).main, "Read");
+	assert.equal(toolCallSummary("read", { path: "a.ts" }).path?.value, "a.ts");
 });
 
 test("单工具卡：子调用树线与标题勾对齐", () => {

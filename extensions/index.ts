@@ -16,6 +16,7 @@ import piAliases from "./feature/shell/aliases.ts";
 import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
 import customFooter from "./feature/shell/footer.ts";
 import { registerLoadedCommand } from "./feature/shell/loaded-stats.ts";
+import { applyPromptEditor } from "./feature/shell/prompt-editor.ts";
 import piStartupHeader, { installEarlyStartupHeader } from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 import workingRow from "./feature/shell/working-row.ts";
@@ -56,8 +57,14 @@ export default function (pi: ExtensionAPI): void {
 	// 关了才回退到上游 footer（再关则 Pi 原生 footer）。
 	if (!readStatuslineConfig().enabled && config.enableCustomFooter) customFooter(pi);
 
+	// 输入框 ❯ 提示符：session_start 时按配置应用；setEditorComponent 是一次性替换。
+	pi.on("session_start", (_event, ctx) => {
+		applyPromptEditor(ctx);
+	});
+
 	// render stack：thinking controller 直接交给 style 作 query
-	markdownEnhance(pi);
+	// markdownEnhance 单独开关：其他扩展也注册 transformer 时会互相改写输出。
+	if (config.enableMarkdownEnhance) markdownEnhance(pi);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
 
 	// features

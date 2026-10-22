@@ -140,6 +140,29 @@ test("token count accumulates across deltas and resets on the next turn", async 
 	assert.match(visible(messages.at(-1)), /… \(esc to interrupt\)$/);
 });
 
+test("tool call argument deltas count toward the token total", async () => {
+	const { events, messages, ctx } = install();
+	await events.get("turn_start")?.({}, ctx);
+	await events.get("message_update")?.(
+		{ assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: {} } },
+		ctx,
+	);
+	// 写文件这类工具的参数走 toolcall_delta。
+	await events.get("message_update")?.(
+		{
+			assistantMessageEvent: {
+				type: "toolcall_delta",
+				contentIndex: 0,
+				delta: '{"path":"a.txt"}',
+				partial: {},
+			},
+		},
+		ctx,
+	);
+	assert.match(messages.at(-1) ?? "", /↓ 4 tokens/);
+	await events.get("turn_end")?.({}, ctx);
+});
+
 test("elapsed never appears in the working status（计时已迁到统计行）", async () => {
 	const { events, messages, ctx } = install();
 	await events.get("turn_start")?.({}, ctx);

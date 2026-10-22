@@ -8,9 +8,12 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { config } from "../extensions/config/config.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
-import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
+import {
+	humanizeToolLabel,
+	renderToolSummary,
+	toolCallSummary,
+} from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
@@ -189,13 +192,12 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 	}
 });
 
-test("expanded group rows repaint when the card background slot changes", () => {
+test("expanded group rows follow the worst tool status", () => {
 	const hooks = installToolGrouping(() => true);
-	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走
 	const ANSI_BY_SLOT: Record<string, string> = {
-		userMessageBg: "\x1b[48;2;10;20;30m",
 		toolPendingBg: "\x1b[48;2;40;40;40m",
-		customMessageBg: "\x1b[48;2;50;60;70m",
+		toolSuccessBg: "\x1b[48;2;15;42;36m",
+		toolErrorBg: "\x1b[48;2;38;20;24m",
 	};
 	const bgAnsiOf = (slot: string) => ANSI_BY_SLOT[slot] ?? "\x1b[48;2;90;90;90m";
 	hooks.setTheme({
@@ -203,8 +205,6 @@ test("expanded group rows repaint when the card background slot changes", () => 
 		bg: (slot: string, text: string) => `${bgAnsiOf(slot)}${text}\x1b[49m`,
 		getBgAnsi: bgAnsiOf,
 	});
-	const previousSlot = config.expandedCardBackground;
-	const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
 	try {
 		const parent = new Container() as any;
 		const read = started("read", "bg-read");
@@ -219,31 +219,37 @@ test("expanded group rows repaint when the card background slot changes", () => 
 		bash.render = () => (bashPaints ??= [" ✓ Bash ls", " done"]);
 		group.setExpanded(true);
 
-		const first = group.render(80);
+		const running = group.render(80);
 		assert.ok(
-			first.some((line: string) => line.includes(bgAnsiOf(previousSlot))),
-			"expanded panel rows use the configured slot",
+			running.some((line: string) => line.includes(bgAnsiOf("toolPendingBg"))),
+			"a running tool paints the pending background",
 		);
-		assert.ok(
-			first.every((line: string) => !line.includes(bgAnsiOf(targetSlot))),
-			"configured slot leaves no other background behind",
-		);
-		assert.strictEqual(group.render(80), first, "identical frame reuses the cached expanded rows");
 
-		// issue 46：改槽位后已展开的分组必须重画，不能命中旧底色的缓存行。
-		config.expandedCardBackground = targetSlot;
-		const repainted = group.render(80);
-		assert.notStrictEqual(repainted, first, "slot switch drops the stale expanded rows");
+		read.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		const settled = group.render(80);
+		assert.notStrictEqual(settled, running, "status change drops the stale expanded rows");
 		assert.ok(
-			repainted.some((line: string) => line.includes(bgAnsiOf(targetSlot))),
-			"expanded panel rows use the configured slot",
+			settled.some((line: string) => line.includes(bgAnsiOf("toolSuccessBg"))),
+			"all settled tools paint the success background",
+		);
+		assert.strictEqual(
+			group.render(80),
+			settled,
+			"identical frame reuses the cached expanded rows",
+		);
+
+		bash.updateResult({ content: [{ type: "text", text: "failed" }], isError: true });
+		const failed = group.render(80);
+		assert.ok(
+			failed.some((line: string) => line.includes(bgAnsiOf("toolErrorBg"))),
+			"one failed tool paints the error background",
 		);
 		assert.ok(
-			repainted.every((line: string) => !line.includes(bgAnsiOf(previousSlot))),
-			"slot switch repaints every panel row",
+			failed.every((line: string) => !line.includes(bgAnsiOf("toolSuccessBg"))),
+			"the success background leaves no row behind",
 		);
 	} finally {
-		config.expandedCardBackground = previousSlot;
 		hooks.shutdown();
 	}
 });
@@ -300,8 +306,8 @@ test("group status and tool labels use the injected active theme", () => {
 		assert.match(rendered, /<success>●<\/success>/, "group header stays a status dot");
 		assert.match(rendered, /<dim>[├└]<\/dim> <success>✓<\/success>/, "children use checks");
 		assert.match(rendered, /<success>2<\/success> done/);
-		assert.match(rendered, /<toolTitle>Read /);
-		assert.match(rendered, /<toolTitle>Bash /);
+		assert.match(rendered, /<toolTitle>Read<\/toolTitle>/);
+		assert.match(rendered, /<toolTitle>Bash<\/toolTitle>/);
 
 		const group = parent.children[0] as ToolGroupComponent;
 		group.setHintHovered(true);
@@ -500,7 +506,7 @@ test("powershell 分组行显示具体命令（issue 26）", () => {
 	}
 });
 
-test("queued group header dot stays accent", () => {
+test("queued group header dot stays dim", () => {
 	const hooks = installToolGrouping(() => true);
 	hooks.setTheme({ fg: (color: string, text: string) => `<${color}>${text}` });
 	const realNow = Date.now;
@@ -513,9 +519,9 @@ test("queued group header dot stays accent", () => {
 		const first = group.render(100).find((line: string) => line.trim())!;
 		Date.now = () => 900;
 		const second = group.render(100).find((line: string) => line.trim())!;
-		assert.match(first, /<accent>●/);
-		assert.match(second, /<accent>●/);
-		assert.doesNotMatch(second, /<dim>●/);
+		assert.match(first, /<dim>●/);
+		assert.match(second, /<dim>●/);
+		assert.doesNotMatch(second, /<accent>●/);
 	} finally {
 		Date.now = realNow;
 		hooks.shutdown();
@@ -523,6 +529,7 @@ test("queued group header dot stays accent", () => {
 });
 
 test("default 与 grouping 共用同一份摘要取值链", () => {
+	const plain = (_color: string, text: string) => text;
 	const cases: Array<[string, any, string]> = [
 		["powershell", { command: "npm test" }, "PowerShell npm test"],
 		["bash", { command: "npm test" }, "Bash npm test"],
@@ -537,11 +544,8 @@ test("default 与 grouping 共用同一份摘要取值链", () => {
 	];
 	for (const [name, args, expected] of cases) {
 		for (const variant of ["default", "grouping"] as const) {
-			assert.equal(
-				toolCallSummary(name, args, { variant, cwd: process.cwd() }).main,
-				expected,
-				`${name} / ${variant}`,
-			);
+			const summary = toolCallSummary(name, args, { variant, cwd: process.cwd() });
+			assert.equal(renderToolSummary(summary, 400, plain), expected, `${name} / ${variant}`);
 		}
 	}
 });

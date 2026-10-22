@@ -127,15 +127,17 @@ test("isLikelyQuietCommand matches setup-like commands", () => {
 	}
 });
 
-test("toolCallSummary uses headlines for bash in both variants", () => {
+test("toolCallSummary keeps bash command as payload in both variants", () => {
 	const command = "# comment\ncd /tmp\nnpm run build";
 	const single = toolCallSummary("bash", { command }, { variant: "default" });
-	assert.match(single.main, /Bash npm run build/);
-	assert.doesNotMatch(single.main, /comment/);
+	assert.equal(single.main, "Bash");
+	assert.match(single.payload ?? "", /npm run build/);
 	const grouped = toolCallSummary("bash", { command }, { variant: "grouping" });
-	assert.match(grouped.main, /Bash npm run build/);
+	assert.equal(grouped.main, "Bash");
+	assert.match(grouped.payload ?? "", /npm run build/);
 	const empty = toolCallSummary("bash", {}, { variant: "grouping" });
-	assert.equal(empty.main, "Bash ...");
+	assert.equal(empty.main, "Bash");
+	assert.equal(empty.payload, "...");
 });
 
 test("quiet bash with no output converges to completed-without-output", () => {

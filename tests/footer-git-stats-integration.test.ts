@@ -30,6 +30,7 @@ test("active footer switches working → branch → working without recreation o
 		sessionManager: {
 			getBranch: () => [],
 			getEntries: () => [],
+			getLeafId: () => null,
 			getSessionName: () => undefined,
 		},
 		ui: {

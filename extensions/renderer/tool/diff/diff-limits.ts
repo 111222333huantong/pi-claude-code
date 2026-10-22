@@ -135,10 +135,11 @@ export function applyLineLimit(
 	const clickLabel = showMoreHintText();
 	const clickIndex = hintText.lastIndexOf(clickLabel);
 	// 展开态不会再截断，剩下的分支必是折叠态提示。
+	// 提示文本与其余折叠卡一致用 dim，hover 时 clickLabel 提到 text。
 	const styledHint =
-		hovered && clickIndex >= 0
+		clickIndex >= 0
 			? theme.fg("muted", hintText.slice(0, clickIndex)) +
-				theme.fg("text", clickLabel) +
+				theme.fg(hovered ? "text" : "dim", clickLabel) +
 				theme.fg("muted", hintText.slice(clickIndex + clickLabel.length))
 			: theme.fg("muted", hintText);
 	return {

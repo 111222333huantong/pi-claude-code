@@ -40,6 +40,7 @@ import {
 import {
 	classifyToolFailure,
 	collapsedResultSummary,
+	expandedBodyComponent,
 	failureSummaryText,
 	formatToolDuration,
 	insetComponent,
@@ -192,6 +193,23 @@ function renderExpandedTaskResult(
 }
 
 /**
+ * 工具耗时（毫秒）。结束时优先用 pi 记在结果上的 durationMs（单调，restore 出来的行也带得到）；
+ * 运行中 pi 不给（partial 期间渲染上下文里恒为 undefined），退回 renderCall 记下的时钟。
+ * 拿不到返回 undefined。时钟回拨时钳到 0。
+ */
+function toolElapsedMs(context: any, isPartial: boolean): number | undefined {
+	const recorded = context?.durationMs;
+	if (!isPartial && typeof recorded === "number" && Number.isFinite(recorded) && recorded >= 0) {
+		return recorded;
+	}
+	const startedAt = context?.state?.ccstyleShellStartedAt;
+	if (typeof startedAt !== "number") return undefined;
+	const endedAt = context?.state?.ccstyleShellEndedAt;
+	const end = typeof endedAt === "number" ? endedAt : Date.now();
+	return Math.max(0, end - startedAt);
+}
+
+/**
  * shell 的耗时文本。Pi 原生 shell 渲染器会在结果底部报一行，ccstyle 的通用折叠行把它盖掉了。
  *
  * 两条路都要：新 Pi 在渲染上下文里给 `durationMs`（单调，restore 出来的行也带得到），优先用它；
@@ -200,16 +218,8 @@ function renderExpandedTaskResult(
  */
 function shellDurationText(toolName: string, context: any, isPartial: boolean): string {
 	if (!SHELL_TOOL_NAMES.has(toolName)) return "";
-	const recorded = context?.durationMs;
-	if (!isPartial && typeof recorded === "number" && Number.isFinite(recorded) && recorded >= 0) {
-		return formatToolDuration(recorded);
-	}
-	const startedAt = context?.state?.ccstyleShellStartedAt;
-	if (typeof startedAt !== "number") return "";
-	const endedAt = context?.state?.ccstyleShellEndedAt;
-	const end = typeof endedAt === "number" ? endedAt : Date.now();
-	// 时钟回拨时别吐负数；快照固定时钟也会走到这。
-	return formatToolDuration(Math.max(0, end - startedAt));
+	const elapsed = toolElapsedMs(context, isPartial);
+	return elapsed === undefined ? "" : formatToolDuration(elapsed);
 }
 
 /** 用 ccstyle call/result 包装任意工具定义。 */
@@ -359,10 +369,13 @@ export function createCcstyleTool(
 					// 宽屏能装下时与旧逻辑逐字一致。
 					const fullExtraText = extraText + liveCount.text;
 					const fullExtraStyled = extraStyled + liveCount.styled;
+					// 带路径的摘要 main 只是前缀，宽度要按实际渲染出的路径算，
+					// 否则 detail 会误判为放得下，最后被行尾硬截断成半截 `(offset=…`。
+					const mainText = fitToolCallSummary(summary, Number.MAX_SAFE_INTEGER);
 					const fitted = fitSegmentsByPriority(
 						[
 							{
-								text: summary.main,
+								text: mainText,
 								priority: 2,
 								truncate: (text, budget) => fitToolCallSummary({ ...summary, main: text }, budget),
 							},
@@ -452,6 +465,7 @@ export function createCcstyleTool(
 					running: Boolean(options?.isPartial),
 					isError,
 					isHovered: () => isToolCallHovered(toolCallId),
+					code: context?.args?.code,
 				});
 			}
 			// ask_user_question：折叠态摊成问答树，展开态按问题逐条列出选择。
@@ -587,8 +601,9 @@ export function createCcstyleTool(
 					writeExecutionMetadata,
 					getToolDisplayConfig,
 				);
-				// 展开态由 Box(1,1) 提供内边距；折叠态 inset 一级缩进
-				if (richResult) return expanded ? richResult : insetComponent(richResult);
+				// 展开态由 Box(1,1) 提供内边距，首行再缩 2 格与标题文字列对齐；折叠态 inset 一级缩进
+				if (richResult)
+					return expanded ? expandedBodyComponent(richResult) : insetComponent(richResult);
 			}
 
 			const text = textFromResult(result, expanded);

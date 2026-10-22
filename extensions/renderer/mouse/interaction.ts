@@ -59,14 +59,15 @@ import {
 	toolFrameMarker,
 } from "./packets.ts";
 import {
+	dockScrollButtonActive,
 	fullscreenLazyTui,
 	getScrollButtonVisible,
 	getScrollButtonWidget,
 	getToolMouseTui,
 	hideScrollButton,
-	isScrollBottomInput,
 	renderScrollButton,
 	resetScrollButtonState,
+	restoreNativeScrollIndicatorText,
 	restoreOfficialScrollToEnd,
 	scheduleScrollButtonSync,
 	setScrollButtonHovered,
@@ -80,6 +81,7 @@ import {
 import {
 	handleStickyPromptClick,
 	resetStickyPromptState,
+	stickyBarHit,
 	updateStickyPromptHover,
 } from "./sticky-prompt.ts";
 
@@ -506,8 +508,8 @@ function keepViewportOnExpand(tui: any): void {
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo !== "function" || typeof view.scrollTop !== "number") return;
 	view.scrollTo(view.scrollTop, { disableFollow: true });
-	// 已脱离底部跟随：亮出回到底部按钮，新输出到来时仍有入口。
-	if (view.isFollowingEnd === false) setScrollButtonVisible(true);
+	// 已脱离底部跟随：dock 模式亮出回到底部按钮，新输出到来时仍有入口。
+	if (view.isFollowingEnd === false && dockScrollButtonActive()) setScrollButtonVisible(true);
 }
 
 /**
@@ -595,6 +597,18 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	applyFullscreenHover(tui, target);
 }
 
+/** 布局缺失，或焦点 overlay 还不在上一帧列表里：这份矩形不能拿来判点击。 */
+function overlayLayoutsCurrent(tui: any): boolean {
+	const layouts = tui?.renderedOverlayLayouts;
+	if (!Array.isArray(layouts) || layouts.length === 0) return false;
+	if (typeof tui.isOverlayFocused === "function" && tui.isOverlayFocused()) {
+		const focused = tui.focusedComponent;
+		if (focused && !layouts.some((layout: any) => layout?.entry?.component === focused))
+			return false;
+	}
+	return true;
+}
+
 /**
  * 鼠标包（1-based 屏幕坐标）是否落在某个已渲染 overlay 的矩形内。
  * renderedOverlayLayouts 与官方 dispatchMouseToOverlay 同源：只含上一帧画出的可见 overlay。
@@ -614,6 +628,18 @@ function packetInsideOverlay(tui: any, packet: SgrMousePacket): boolean {
 			return true;
 	}
 	return false;
+}
+
+/** 原生指示器优先于工具卡；覆盖它的粘性行仍保留原有点击优先级。 */
+function packetOnNativeIndicator(tui: any, packet: SgrMousePacket): boolean {
+	const rect = tui.scrollToEndIndicatorRect;
+	return Boolean(
+		rect &&
+			packet.row - 1 === rect.row &&
+			packet.col - 1 >= rect.column &&
+			packet.col - 1 < rect.column + rect.width &&
+			!stickyBarHit(tui, packet),
+	);
 }
 
 /**
@@ -639,8 +665,16 @@ function patchFullscreenViewportInput(tui: any): void {
 			// dispatchMouseToOverlay → overlay.handleMouse；overlay 外的包仍
 			// 走扩展收起/展开/hover。两条路径各管各的。
 			if (packets) {
-				// overlay 可见时：落在 overlay 矩形内的包全部放行官方（文本预览的
-				// [esc] 点击/滚轮、官方搜索框等），扩展不展开/收起/hover。
+				const nativePacket = packets.find((packet) => packetOnNativeIndicator(tui, packet));
+				if (nativePacket) {
+					clearPendingCollapsePress();
+					applyFullscreenHover(tui, null);
+					updateStickyPromptHover(tui, nativePacket);
+					return Reflect.apply(original, this, [data]);
+				}
+				// 布局还没出来或仍是上一帧：不要把点击收成工具展开。返回 undefined
+				// 让焦点 overlay 的 handleInput 拿到原始 SGR；官方链也靠这份布局，调它会消费且打到 transcript。
+				if (tui.hasOverlay?.() && !overlayLayoutsCurrent(tui)) return undefined;
 				const overlayPackets = tui.hasOverlay?.()
 					? packets.filter((packet) => packetInsideOverlay(tui, packet))
 					: undefined;
@@ -992,13 +1026,9 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!getToolMouseTui()) return undefined;
 	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
 	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。
+	// 回底键归 Pi viewport（tui.altScreen.bottom，overlay 聚焦时让给 overlay），不在此重复处理。
 	if (fullscreenLazyTui(getToolMouseTui())) {
 		scheduleScrollButtonSync(getToolMouseTui(), data);
-		if (isScrollBottomInput(data)) {
-			getToolMouseTui().scrollToBottom?.();
-			hideScrollButton(getToolMouseTui());
-			return { consume: true };
-		}
 		return undefined;
 	}
 	updateScrollButtonFromInput(getToolMouseTui(), data);
@@ -1088,6 +1118,7 @@ export function resetToolHoverState(): void {
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);
 	resetStickyPromptState();
+	restoreNativeScrollIndicatorText();
 	restoreOfficialScrollToEnd(getToolMouseTui());
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
@@ -1180,6 +1211,7 @@ export function installToolMouseInteraction(
 					return renderScrollButton(width, theme);
 				},
 				invalidate() {},
+				dispose: restoreNativeScrollIndicatorText,
 			});
 			return getScrollButtonWidget();
 		}

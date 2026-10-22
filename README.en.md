@@ -14,7 +14,7 @@
 
 # pi-cc-extensions
 
-> Claude Code-style TUI output with some personal touches and handy utilities.
+> Claude Code-style TUI output with some personal touches and handy utilities (no extra built-in tools).
 
 ## Preview
 
@@ -37,10 +37,10 @@ Run `/reload` after installation.
 
 | Feature                     | Description                                                                               | Entry point                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Claude Code Output          | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes | `/ccstyle`                                      |
-| Markdown enhancements      | Mermaid art, admonitions, URL linking, and more                                           | Automatic                                        |
-| Fullscreen mode             | Tool card/group click to expand, double-click to collapse, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
-| Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                            | `/ccstyle`                                      |
+| Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes | `/ccstyle`                                      |
+| Markdown enhancements       | Mermaid dialects and circled-number conversion                                            | Automatic; turn off with `enableMarkdownEnhance: false` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                   | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
 | Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
@@ -49,6 +49,8 @@ Run `/reload` after installation.
 | Path hyperlinks             | File paths in tool titles become clickable OSC8 links (zero width change)                 | `/ccstyle` Features tab, off by default         |
 | Statusline (this fork)      | Two-line footer: model/ctx/cost/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
 | Status bar (upstream)       | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
+| Theme                       | Bundled CC Dark / CC Light / Catppuccin Mocha / Catppuccin Latte themes                   | `/settings` → Theme                             |
+
 > Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
 
 Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)
@@ -70,15 +72,17 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
   "enableAliases": true,                   // /clear, /exit aliases
+  "enableMarkdownEnhance": true,           // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
+  "enableEditorPrefix": true,              // editor ❯ prefix
 
   // ui
   "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
   "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
   "expandedPreviewMaxLines": 40,           // max lines for expanded TaskList bodies (expanded diffs always show all)
-  "expandedCardBackground": "userMessageBg", // expanded card background slot: userMessageBg (same as user prompts) / toolPendingBg (neutral) etc.
   "toolLabelClip": 0,                      // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
+  "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified
@@ -94,7 +98,6 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "previewLines": 3,                       // preview content lines (blanks skipped); 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
   "thinkingExpandedMaxLines": 200,         // expanded tail lines first; expand again for full body
-  "dimThinkingText": false,                // dim thinking body text
 
   // ui (this fork)
   "showStartupHeader": true,               // startup header (mascot + tips + Loaded) toggle
@@ -123,10 +126,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
-  "footerHiddenKeys": [],                  // hidden plugin chip keys
-  "footerLine1Keys": ["pi-usage"],         // line1 plugin chip order; pi-usage is shown by default, data from @narumitw/pi-usage
-  "footerLine2Keys": [],                   // line2 plugin chip order (after cwd/git)
-  "footerLine3Keys": []                    // line3 overflow slot; painted only when a chip is visible
+  "footerHiddenKeys": [],                  // hidden chip keys
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // chip order per line; builtins and plugins share one layout
+  "footerLine2Keys": ["cwd", "git"],        // cwd: directory and session; git: branch and changes. Either can move to any line
+  "footerLine3Keys": [],                   // painted only when a chip is visible
 }
 ```
 
@@ -140,10 +143,10 @@ This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle 
 ```
 
 > [!TIP]
-> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse.
+> **Fullscreen**: expanded diffs always show every line. When expanded Input/Output exceeds the line cap, the footer shows `… +N more lines`; click for the full preview, click again to collapse.
 
 > [!NOTE]
-> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
+> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or `/settings`. Default `streaming` redraws every frame; `final` renders once.
 
 ## Local development
 
@@ -166,6 +169,7 @@ pi -e .              # one run, does not edit settings.json
 | `npm:pi-mcp-adapter`                     | On-demand MCP tool discovery with lower context usage        |
 | `npm:pi-web-access`                      | Web search, URL fetching, GitHub cloning, PDF/video parsing  |
 | `npm:@narumitw/pi-usage`                 | Current-account usage for Codex / Copilot / OpenRouter       |
+| `npm:@juicesharp/rpiv-ask-user-question` | Multiple-choice questionnaire the model can ask you          |
 | `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution       |
 
 > **Sharing the screen with `@arhen/pi-core-subagent`**: `subagent` spawns keep their built-in plan-graph rendering (human names, no UUIDs); `subagent_status/result/await/reply/steer/cancel` use this package's tool cards (short `runId` + human `taskId`). Its live widget sits above the editor and `/subagents peek` is on demand — no bottom-docked panel. Note: `@tintinweb/pi-tasks`' `TaskExecute` only speaks tintinweb's private RPC and degrades with arhen (tracking works, dispatch verbally). User-aborted tool waits collapse into a dim `Operation aborted` instead of echoing the raw message.

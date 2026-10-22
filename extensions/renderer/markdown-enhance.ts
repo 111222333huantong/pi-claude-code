@@ -43,99 +43,6 @@ function collectFence(lines: string[], i: number): { diagram: string; next: numb
 }
 
 // ============================================================================
-// GitHub 风格提示框（admonition）
-// ============================================================================
-
-const ADMONITION = /^>\s*\[\s*!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\s*\]\s*(.*)$/i;
-const ADMONITION_STYLE: Record<string, { icon: string; label: string }> = {
-	NOTE: { icon: "💡", label: "NOTE" },
-	TIP: { icon: "✅", label: "TIP" },
-	IMPORTANT: { icon: "❗", label: "IMPORTANT" },
-	WARNING: { icon: "⚠️", label: "WARNING" },
-	CAUTION: { icon: "⚠️", label: "CAUTION" },
-};
-
-/**
- * 把 > [!TYPE] 及其后续 > 行转成带加粗标签的引用块，视觉上成提示框。
- * 多行内容用空格合并为一行。返回 null 表示该行不是提示框。
- */
-function renderAdmonition(lines: string[], i: number): { output: string[]; next: number } | null {
-	const m = lines[i].match(ADMONITION);
-	if (!m) return null;
-	const style = ADMONITION_STYLE[m[1].toUpperCase()];
-	const body: string[] = [m[2]];
-	let j = i + 1;
-	while (j < lines.length && /^>\s?/.test(lines[j]) && !ADMONITION.test(lines[j])) {
-		body.push(lines[j].replace(/^>\s?/, ""));
-		j++;
-	}
-	while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
-	// 内容合并为一行，作为引用块正文
-	const content = body.join(" ").trim();
-	// 保留引用块形态（pi 渲染为左侧竖线），标签加粗
-	return {
-		output: [`> **${style.icon} ${style.label}**${content ? ` ${content}` : ""}`, ""],
-		next: j,
-	};
-}
-
-// ============================================================================
-// 裸 URL 转可点击超链接
-// ============================================================================
-
-const URL_RE = /(?<!<)(?<!\]\()https?:\/\/[^\s<>'"|，。；：！？、」』】（）【】《》『』「」]+/g;
-const TRIM_URL_RE = /[.,;:!?】」』"'》）}]+$/;
-
-/**
- * 去掉 URL 尾部标点；括号按平衡保留（如 Wikipedia 链接含括号、
- * IPv6 地址含 [::1]），尾部不成对的 ] 与 ) 会截掉。
- */
-function trimUrl(url: string): string {
-	let t = url.replace(TRIM_URL_RE, "");
-	for (;;) {
-		if (t.endsWith(")") && (t.match(/\(/g)?.length ?? 0) < (t.match(/\)/g)?.length ?? 0)) {
-			t = t.slice(0, -1);
-		} else if (t.endsWith("]") && (t.match(/\[/g)?.length ?? 0) < (t.match(/\]/g)?.length ?? 0)) {
-			t = t.slice(0, -1);
-		} else {
-			break;
-		}
-	}
-	return t;
-}
-
-/**
- * 把代码块和行内代码外的裸 URL 转成 markdown 链接。
- * 已有的 [text](url) / ![alt](url) / <url> 自动链接用 lookbehind 排除。
- */
-function linkifyUrls(markdown: string): string {
-	const lines = markdown.split("\n");
-	const out: string[] = [];
-	let fence: MarkdownFence | undefined;
-	for (const line of lines) {
-		const scanned = scanMarkdownFence(line, fence);
-		fence = scanned.fence;
-		if (scanned.protected) {
-			out.push(line);
-			continue;
-		}
-		// 行内代码（`...`）按反引号分片，只处理偶数片（代码外）
-		const parts = line.split("`");
-		for (let p = 0; p < parts.length; p++) {
-			if (p % 2 === 0) {
-				parts[p] = parts[p].replace(URL_RE, (url) => {
-					const trimmed = trimUrl(url);
-					if (trimmed.length === 0) return url;
-					return `[${trimmed}](${trimmed})`;
-				});
-			}
-		}
-		out.push(parts.join("`"));
-	}
-	return out.join("\n");
-}
-
-// ============================================================================
 // 圈数字 → 半角括号
 // ============================================================================
 
@@ -561,7 +468,9 @@ export default function (pi: ExtensionAPI): void {
 	// 代码块套框（Markdown.render 后处理，与 transformer 槽位无关）。
 	installCodeBlockBox();
 	// 注意：pi 每个扩展只有一个 markdownTransformer 槽位，多次注册会互相覆盖，
-	// 所以三个转换合并为一次注册，内部按序链式执行。
+	// 所以剩下的转换合并为一次注册，内部按序链式执行。
+	// 提示框和裸 URL 不接管：pi 的 marked 已自带裸 URL 链接化（带尾标点回退，
+	// 且在链接文本内不再嵌套），提示框交给默认引用块风格。
 	pi.registerMarkdownTransformer((markdown, context) => {
 		const { messageType, isStreaming = false } = context ?? {};
 		// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
@@ -578,11 +487,7 @@ export default function (pi: ExtensionAPI): void {
 		markdown = rewriteDisplayEnvironments(markdown);
 		if (messageType === "user") markdown = renderUserMath(markdown);
 		// 1. Mermaid 方言渲染
-		markdown = renderDiagrams(markdown, context);
-		// 2. GitHub 风格提示框
-		markdown = renderAdmonitions(markdown);
-		// 3. 裸 URL 转超链接
-		return linkifyUrls(markdown);
+		return renderDiagrams(markdown, context);
 	});
 }
 
@@ -647,35 +552,6 @@ function renderDiagrams(
 				continue;
 			}
 			// 未闭合：保持原文
-		}
-		out.push(line);
-		i++;
-	}
-	return out.join("\n");
-}
-
-/** GitHub 风格提示框 → 加粗标签引用块（跳过代码块）。 */
-function renderAdmonitions(markdown: string): string {
-	const lines = markdown.split("\n");
-	const out: string[] = [];
-	let fence: MarkdownFence | undefined;
-	let i = 0;
-	while (i < lines.length) {
-		const line = lines[i];
-		const scanned = scanMarkdownFence(line, fence);
-		fence = scanned.fence;
-		if (scanned.protected) {
-			out.push(line);
-			i++;
-			continue;
-		}
-		if (/^>\s*\[\s*!/i.test(line)) {
-			const result = renderAdmonition(lines, i);
-			if (result) {
-				out.push(...result.output);
-				i = result.next;
-				continue;
-			}
 		}
 		out.push(line);
 		i++;

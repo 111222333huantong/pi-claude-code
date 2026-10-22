@@ -46,7 +46,7 @@ import {
 	outputLineCount,
 	toolViewportWidth,
 } from "./result.ts";
-import { isLiveToolCall } from "./tool-state.ts";
+import { aggregateToolCardBgSlot, isLiveToolCall, toolCardStatus } from "./tool-state.ts";
 
 const NON_GROUPABLE = new Set(["edit", "write", "apply_patch"]);
 
@@ -111,9 +111,7 @@ function previousSibling(
 type ToolStatus = "pending" | "success" | "error";
 
 function status(tool: any): ToolStatus {
-	if (tool?.result?.isError) return "error";
-	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result)) return "pending";
-	return tool?.result ? "success" : "pending";
+	return toolCardStatus(tool);
 }
 
 function statusIcon(value: ToolStatus): string {
@@ -241,14 +239,15 @@ function askUserResultSummary(tool: any): ToolCallSummary | undefined {
 		.map((entry) => entry.answer);
 	if (answers.length === 0) {
 		const label = tool.result?.details?.cancelled === true ? "Declined" : "Done";
-		return { main: `${toolTitle(tool)} ${label}`, detail: "" };
+		return { main: toolTitle(tool), detail: "", payload: label };
 	}
 	const first = answers[0]!;
 	const question = String(first.question ?? "").trim() || "Question";
 	const more = answers.length > 1 ? ` (+${answers.length - 1})` : "";
 	return {
-		main: `${toolTitle(tool)} ${question} -> ${askUserAnswerText(first)}${more}`,
+		main: toolTitle(tool),
 		detail: "",
+		payload: `${question} -> ${askUserAnswerText(first)}${more}`,
 	};
 }
 
@@ -259,7 +258,7 @@ function codemodeResultSummary(tool: any): ToolCallSummary | undefined {
 		codemodeOutputLineCount(tool.result),
 		tool?.isPartial === true,
 	);
-	return { main: `${toolTitle(tool)} ${parts.join(" · ")}`, detail: "" };
+	return { main: toolTitle(tool), detail: "", payload: parts.join(" · ") };
 }
 
 /**
@@ -300,7 +299,7 @@ function collapsedGroupToolLine(
 	width: number,
 ): string {
 	const toolStatus = status(tool);
-	const color = toolStatus === "pending" ? "accent" : toolStatus;
+	const color = toolStatus === "pending" ? "dim" : toolStatus;
 	const summary = askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
 	const prefix = ` ${fg("dim", last ? "└" : "├")} ${fg(color, statusIcon(toolStatus))} `;
 	const detail = fg("dim", summary.detail);
@@ -328,7 +327,7 @@ function groupCountText(
 		.filter((key) => counts[key])
 		.map((key) => {
 			const label = key === "pending" ? "running" : key === "success" ? "done" : "failed";
-			const color = key === "pending" ? "accent" : key;
+			const color = key === "pending" ? "dim" : key;
 			return `${fg(color, String(counts[key]))} ${label}`;
 		})
 		.join(` ${fg("dim", "·")} `);
@@ -516,7 +515,7 @@ export class ToolGroupComponent extends Container {
 		const label = names.size === 1 ? toolTitle(this.children[0]) : "Multiple Tools";
 		const overall = groupOverallStatus(counts);
 		if ((this.children as any[]).some(isAnimatingTool)) scheduleGroupAnimation(this.patch);
-		const overallColor = overall === "pending" ? "accent" : overall;
+		const overallColor = overall === "pending" ? "dim" : overall;
 		// 圆点保持 dim；hover 只高亮可点击文字。
 		const hintText = this._expanded ? collapseHintText() : showMoreHintText();
 		const hint = `${fg("dim", "·")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
@@ -544,7 +543,7 @@ export class ToolGroupComponent extends Container {
 				expandedHit.hover === this.hintHovered &&
 				expandedHit.theme === this.patch.theme &&
 				expandedHit.fullscreen === isToolTuiFullscreen() &&
-				expandedHit.bgSlot === config.expandedCardBackground &&
+				expandedHit.bgSlot === aggregateToolCardBgSlot(this.children) &&
 				expandedHit.paints.length === childPaints.length &&
 				expandedHit.paints.every((paint, index) => paint === childPaints[index])
 			) {
@@ -555,7 +554,7 @@ export class ToolGroupComponent extends Container {
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
 			const toolStatus = status(tool);
-			const color = toolStatus === "pending" ? "accent" : toolStatus;
+			const color = toolStatus === "pending" ? "dim" : toolStatus;
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
 			if (!this._expanded) {
@@ -581,8 +580,8 @@ export class ToolGroupComponent extends Container {
 			}
 		}
 		if (this._expanded) {
-			// 展开面板统一一个背景槽位（ccstyle 约定），不按状态区分。
-			const backgroundSlot = config.expandedCardBackground;
+			// 有一个失败整卡用失败底色；没有失败但还有进行中用进行中底色。
+			const backgroundSlot = aggregateToolCardBgSlot(this.children);
 			for (const line of expandedLines) {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}

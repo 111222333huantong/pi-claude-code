@@ -28,7 +28,7 @@ import {
 } from "../../utils/patch-keys.ts";
 import { isToolTuiFullscreen } from "../tool/names.ts";
 import type { SgrMousePacket } from "./packets.ts";
-import { setScrollButtonVisible } from "./scroll.ts";
+import { dockScrollButtonActive, setScrollButtonVisible } from "./scroll.ts";
 
 /** 消息正文首行/末行的零宽 APC 标记；终端忽略，合成前剥离。 */
 const MESSAGE_START = "\x1b_cc:p\x07";
@@ -297,7 +297,7 @@ export function renderStickyPromptScreen(
 }
 
 /** 行与列都落在本帧画出的粘性条内。滚动条那一列在条外。 */
-function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
+export function stickyBarHit(tui: any, packet: SgrMousePacket): boolean {
 	const state = stickyState();
 	if (!stickyPromptActive() || !state.visible || state.layout !== tui?.currentLayout) return false;
 	if (packet.row - 1 !== state.row) return false;
@@ -339,7 +339,7 @@ export function handleStickyPromptClick(tui: any, packet: SgrMousePacket): boole
 	const view = tui.getPrimaryScrollView?.();
 	if (typeof view?.scrollTo === "function") {
 		view.scrollTo(state.jumpRow, { disableFollow: true });
-		if (view.isFollowingEnd === false) setScrollButtonVisible(true);
+		if (view.isFollowingEnd === false && dockScrollButtonActive()) setScrollButtonVisible(true);
 	}
 	// 落点已到消息头，这一帧的粘性行立即失效；等下一帧按新位置重算。
 	state.visible = false;

@@ -36,39 +36,12 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { insetComponent } from "../extensions/renderer/tool/result.ts";
+import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
 
 initTheme("dark");
-
-/** 精确模拟 Pi 0.84.1 createInteractiveTuiReference 的 renderer 重绑语义。 */
-function createLazyProxy<T extends object>(getRenderer: () => T): T {
-	return new Proxy({} as T, {
-		get: (_target, property) => {
-			const tui = getRenderer();
-			const value = Reflect.get(tui, property, tui);
-			if (typeof value !== "function") return value;
-			let methodTui = tui;
-			let method = value;
-			return (...args: any[]) => {
-				const currentTui = getRenderer();
-				if (currentTui !== methodTui) {
-					const currentMethod = Reflect.get(currentTui, property, currentTui);
-					if (typeof currentMethod !== "function") {
-						throw new TypeError(`not callable: ${String(property)}`);
-					}
-					methodTui = currentTui;
-					method = currentMethod;
-				}
-				return Reflect.apply(method, methodTui, args);
-			};
-		},
-		set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
-		has: (_target, property) => Reflect.has(getRenderer(), property),
-		getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
-	});
-}
 
 function runtime() {
 	const events = new Map<string, Function>();
@@ -595,9 +568,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	tui.handleViewportInput("\x1b[5~"); // PageUp
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "PageUp away from bottom shows the button");
-	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
-	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
-	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
 });
 
@@ -1425,6 +1395,41 @@ test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components
 
 	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<35;20;2M`));
 	assert.equal(renderer.officialInputs.length, 1, "motion still reaches official chain");
+	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: missing or stale overlay layouts are not consumed as tool clicks", () => {
+	const tool = createTool("tool-overlay-untrusted");
+	const terminal = { columns: 80, rows: 24, write() {} };
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	renderer.hasOverlay = () => true;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	const hintCol = tool.render()[1].indexOf("(ctrl+o expand / click)") + 1;
+	const hintClick = `\x1b[<0;${hintCol};2M`;
+
+	tui.handleViewportInput(hintClick);
+	assert.equal(tool.expanded, false, "missing layouts do not expand the tool");
+	assert.equal(
+		renderer.officialInputs.length,
+		0,
+		"missing layouts are not sent to the official chain",
+	);
+
+	const overlay = { handleInput() {} };
+	(renderer as any).isOverlayFocused = () => true;
+	(renderer as any).focusedComponent = overlay;
+	(renderer as any).renderedOverlayLayouts = [
+		{ col: 0, row: 0, width: 80, height: 24, entry: { component: { handleInput() {} } } },
+	];
+	tui.handleViewportInput(hintClick);
+	assert.equal(tool.expanded, false, "previous-frame layouts do not expand the tool");
+	assert.equal(
+		renderer.officialInputs.length,
+		0,
+		"stale layouts are not sent to the official chain",
+	);
 	installToolMouseInteraction({});
 });
 

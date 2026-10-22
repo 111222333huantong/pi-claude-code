@@ -417,9 +417,8 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 
 		getAvailableReferences = getReferences;
 		if (ctx.mode === "tui") {
-			// 预取是 detached 的，必须兜住 rejection，否则 stale 错误会变成
-			// unhandled rejection 直接终止 Pi。
-			void getReferences().catch(() => {});
+			// 不在这里预取：SessionManager.listAll() 会读完整个会话库，大库要几秒，
+			// 而启动并不需要结果。首次 @ 输入由 getSuggestions 触发加载。
 			// Register after other session_start handlers. pi-fff claims every @
 			// prefix, so a provider installed before it would never see session mentions.
 			setTimeout(() => {

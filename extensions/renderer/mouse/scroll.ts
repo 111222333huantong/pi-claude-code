@@ -17,7 +17,7 @@ import { parseSgrMousePackets } from "./packets.ts";
 
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
-const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
+const SCROLL_BOTTOM_KEYBINDING = "tui.altScreen.bottom";
 
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export function getToolMouseTui(): any {
@@ -68,7 +68,15 @@ export function setScrollButtonVisible(visible: boolean): void {
 export function noteNewTranscriptItem(): void {
 	const state = scrollButtonState();
 	const tui = getToolMouseTui();
-	if (!state.visible || !tui) return;
+	if (nativeScrollTextEnabled(tui)) {
+		syncOfficialScrollToEnd(tui);
+		if (nativeScrollTextPatch && !isFullscreenAtBottom(tui)) {
+			state.newCount += 1;
+			tui.requestRender?.();
+		}
+		return;
+	}
+	if (!dockScrollButtonActive() || !state.visible || !tui) return;
 	// 提交新消息时官方可能直接跳回底部（不经过滚动输入）：先按实时跟随状态校正，
 	// 否则跟随期间的内容会被当成“离开底部时的新消息”计入。
 	if (isAtTranscriptBottom(tui)) {
@@ -107,6 +115,11 @@ export function toolMouseInteractionActive(): boolean {
 	return config.mode !== "off";
 }
 
+/** dock 模式才用扩展的独占行；native 或 ccstyle off 时交还 Pi 原生浮层。 */
+export function dockScrollButtonActive(): boolean {
+	return toolMouseInteractionActive() && config.scrollButtonMode === "dock";
+}
+
 /** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */
 export function fullscreenLazyTui(tui: any): boolean {
 	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
@@ -132,10 +145,55 @@ export function restoreOfficialScrollToEnd(tui: any): void {
 	tui[OFFICIAL_SCROLL_TO_END_KEY] = undefined;
 }
 
-/** on/compact 用 dock 按钮；off 还回 pi 原生 Jump to latest。 */
+/** dock 模式替换官方浮层；native 保留 Pi 原生浮层并换上 dock 文案；ccstyle off 还原 Pi 原样。 */
 export function syncOfficialScrollToEnd(tui: any): void {
-	if (toolMouseInteractionActive()) disableOfficialScrollToEnd(tui);
-	else restoreOfficialScrollToEnd(tui);
+	if (!nativeScrollTextEnabled(tui)) restoreNativeScrollIndicatorText();
+	if (dockScrollButtonActive()) {
+		disableOfficialScrollToEnd(tui);
+		return;
+	}
+	restoreOfficialScrollToEnd(tui);
+	if (nativeScrollTextEnabled(tui)) {
+		// 离开 dock 时清零一次；native 的后续渲染保留共享计数。
+		if (getScrollButtonVisible()) setScrollButtonVisible(false);
+		setScrollButtonHovered(false);
+		syncNativeScrollIndicatorText(tui);
+		return;
+	}
+	setScrollButtonVisible(false);
+	setScrollButtonHovered(false);
+}
+
+/** 只记录文案补丁；dock 的显隐、快捷键和原生浮层开关仍走原路径。 */
+let nativeScrollTextPatch: { renderer: any; original: () => string } | undefined;
+
+function nativeScrollTextEnabled(tui: any): boolean {
+	return (
+		toolMouseInteractionActive() && config.scrollButtonMode === "native" && fullscreenLazyTui(tui)
+	);
+}
+
+/** widget 销毁或离开 native 模式时还原 Pi 的原始回调。 */
+export function restoreNativeScrollIndicatorText(): void {
+	if (!nativeScrollTextPatch) return;
+	const { renderer, original } = nativeScrollTextPatch;
+	renderer.scrollToEndIndicator = original;
+	nativeScrollTextPatch = undefined;
+	scrollButtonState().newCount = 0;
+}
+
+function syncNativeScrollIndicatorText(tui: any): void {
+	// Pi 的稳定 Proxy 会重绑捕获的方法；文案回调必须从真实 renderer 上取得。
+	const renderer = tui.valueOf();
+	if (nativeScrollTextPatch?.renderer !== renderer) restoreNativeScrollIndicatorText();
+	if (!nativeScrollTextPatch) {
+		const original = renderer.scrollToEndIndicator;
+		if (typeof original !== "function") return;
+		nativeScrollTextPatch = { renderer, original };
+		renderer.scrollToEndIndicator = () =>
+			original.call(renderer).replace("Jump to latest message", scrollButtonText());
+	}
+	if (isFullscreenAtBottom(renderer)) scrollButtonState().newCount = 0;
 }
 
 /** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
@@ -144,17 +202,21 @@ export function isFullscreenAtBottom(tui: any): boolean {
 	return Boolean(following);
 }
 
-function formatShortcut(shortcut: string): string {
-	return shortcut
-		.split("+")
-		.map((part) =>
-			part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
+/** 与 Pi 原生浮层同源（keyDisplayText）：用户实际绑定，首字母大写，macOS 上 alt 显示为 option。 */
+function scrollBottomShortcutText(): string {
+	return getKeybindings()
+		.getKeys(SCROLL_BOTTOM_KEYBINDING)
+		.map((key) =>
+			key
+				.split("+")
+				.map((part) => {
+					const display =
+						process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
+					return display.charAt(0).toUpperCase() + display.slice(1);
+				})
+				.join("+"),
 		)
-		.join("+");
-}
-
-export function isScrollBottomInput(data: string): boolean {
-	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
+		.join("/");
 }
 
 function isScrollNavigationInput(data: string): boolean {
@@ -202,7 +264,7 @@ export function hideScrollButton(tui: any): void {
 export function scheduleScrollButtonSync(tui: any, data: string): void {
 	if (
 		!fullscreenLazyTui(tui) ||
-		!toolMouseInteractionActive() ||
+		!dockScrollButtonActive() ||
 		!isScrollNavigationInput(data) ||
 		scrollButtonSyncScheduled
 	)
@@ -211,7 +273,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 	const previousLines = tui.previousLines;
 	const check = (attempt: number) => {
 		scrollButtonSyncScheduled = false;
-		if (getToolMouseTui() !== tui) return;
+		if (getToolMouseTui() !== tui || !dockScrollButtonActive()) return;
 		// Pi renders on its own frame timer. Inspect the resulting viewport before
 		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
@@ -234,23 +296,29 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 export function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!fullscreenLazyTui(tui) || !toolMouseInteractionActive()) return;
+	if (!fullscreenLazyTui(tui) || !dockScrollButtonActive()) return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
 /** 无新内容时提示原文案；有新内容时换成累计条数。 */
 function scrollButtonText(): string {
 	const count = getScrollButtonNewCount();
-	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
-	if (count <= 0) return `Back to bottom · ${shortcut}`;
-	return `${count} new message${count === 1 ? "" : "s"} · ${shortcut}`;
+	if (count <= 0) return "Back to bottom";
+	return `${count} new message${count === 1 ? "" : "s"}`;
 }
 
 export function renderScrollButton(width: number, theme: any): string[] {
-	if (!getScrollButtonVisible() || !fullscreenLazyTui(getToolMouseTui())) return [];
+	if (
+		!dockScrollButtonActive() ||
+		!getScrollButtonVisible() ||
+		!fullscreenLazyTui(getToolMouseTui())
+	)
+		return [];
+	// 未绑定时与 Pi 原生一样省略快捷键段。
+	const shortcut = scrollBottomShortcutText();
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",
-		`[ ↓ ${scrollButtonText()} ]`,
+		`[ ↓ ${scrollButtonText()}${shortcut ? ` · ${shortcut}` : ""} ]`,
 	);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];

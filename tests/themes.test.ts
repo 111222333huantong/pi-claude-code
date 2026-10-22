@@ -28,7 +28,7 @@ for (const rel of themePaths) {
 			assert.ok(v.startsWith("#") ? HEX.test(v) : v in theme.vars, `colors.${k} 可解析`);
 		}
 		for (const [k, v] of Object.entries<string>(theme.export)) {
-			assert.ok(v in theme.vars, `export.${k} 可解析`);
+			assert.ok(v.startsWith("#") ? HEX.test(v) : v in theme.vars, `export.${k} 可解析`);
 		}
 	});
 }
@@ -39,8 +39,8 @@ test("Catppuccin 两套：Mocha 暗 + Latte 亮", async () => {
 	assert.equal(mocha.name, "catppuccin-mocha");
 	assert.equal(latte.name, "catppuccin-latte");
 	// 官方色板抽查（Mocha base #1e1e2e / Blue #89b4fa；Latte base #eff1f5 / Blue #1e66f5）。
-	assert.equal(mocha.vars.surface, "#1e1e2e");
-	assert.equal(mocha.vars.accent, "#89b4fa");
-	assert.equal(latte.vars.panel, "#eff1f5");
-	assert.equal(latte.vars.accent, "#1e66f5");
+	assert.equal(mocha.vars.canvasSubtle, "#1e1e2e");
+	assert.equal(mocha.vars.blue, "#89b4fa");
+	assert.equal(latte.vars.canvas, "#eff1f5");
+	assert.equal(latte.vars.blue, "#1e66f5");
 });

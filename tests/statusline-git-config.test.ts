@@ -136,9 +136,9 @@ test("git poller: 变化即推、无变化退避不扰", async () => {
 		// 无变化：退避期间不再推送（400ms 内若按 50ms 轮询应远多于 count+1 次）。
 		await new Promise((resolve) => setTimeout(resolve, 400));
 		assert.ok(seen.length <= count + 1, `no spam while unchanged, got ${seen.length} vs ${count}`);
-		// 有变化：改文件后下次轮询推送。
+		// 有变化：改文件后下次轮询推送（退避已到 800ms，留足两拍余量）。
 		writeFileSync(join(dir, "b.txt"), "yo\n");
-		await new Promise((resolve) => setTimeout(resolve, 800));
+		await new Promise((resolve) => setTimeout(resolve, 1800));
 		assert.ok(seen.length > count, "change must be pushed");
 		assert.ok((seen.at(-1)?.changedFiles ?? 0) > 0);
 	} finally {

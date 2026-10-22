@@ -198,12 +198,10 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		},
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
-	// userMsgBg #343541 → 48;2;52;53;65；toolPendingBg → 48;2;40;40;40。
-	// 每个槽位给一个可区分的底色，断言才能跟着本机配置走。
 	const CARD_BG_ANSI: Record<string, string> = {
-		userMessageBg: "\x1b[48;2;52;53;65m",
 		toolPendingBg: "\x1b[48;2;40;40;40m",
-		customMessageBg: "\x1b[48;2;60;50;70m",
+		toolSuccessBg: "\x1b[48;2;15;42;36m",
+		toolErrorBg: "\x1b[48;2;38;20;24m",
 	};
 	const cardBgAnsi = (slot: string) => CARD_BG_ANSI[slot] ?? "\x1b[48;2;90;90;90m";
 	const ui = {
@@ -256,131 +254,121 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			content: [{ type: "text", text: "first line\nsecond line\nthird line" }],
 			isError: false,
 		});
-		// 最小可读窗口（700ms）内标题仍转圈：墙钟拨过窗口再断言落定态。
-		const realNow = Date.now;
-		Date.now = () => realNow() + 5000;
-		try {
-			assert.equal(component.children.includes(component.selfRenderContainer), true);
-			const collapsedLines = component
-				.render(100)
-				.map((line: string) => line.replace(/\x1b\[[0-9;]*m/g, ""));
-			const collapsedCall = collapsedLines.find((line: string) => line.includes("✓ Bash "));
-			const collapsedOutput = collapsedLines.filter((line: string) => line.includes("↳"));
-			assert.ok(collapsedCall);
-			assert.ok(collapsedOutput.length === 1);
-			assert.ok(visibleWidth(collapsedCall) <= 80, "collapsed input uses 80% of the viewport");
-			assert.ok(
-				collapsedOutput.every((line: string) => visibleWidth(line) <= 80),
-				"collapsed output uses 80% of the viewport",
-			);
-			component.setExpanded(true);
-			assert.equal(component.children.includes(component.contentBox), true);
-			assert.equal(component.children.includes(component.selfRenderContainer), false);
+		assert.equal(component.children.includes(component.selfRenderContainer), true);
+		const collapsedLines = component
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+		const collapsedCall = collapsedLines.find((line: string) => line.includes("✓ Bash "));
+		const collapsedOutput = collapsedLines.filter((line: string) => line.includes("↳"));
+		assert.ok(collapsedCall);
+		assert.ok(collapsedOutput.length === 1);
+		assert.ok(visibleWidth(collapsedCall) <= 80, "collapsed input uses 80% of the viewport");
+		assert.ok(
+			collapsedOutput.every((line: string) => visibleWidth(line) <= 80),
+			"collapsed output uses 80% of the viewport",
+		);
+		component.setExpanded(true);
+		assert.equal(component.children.includes(component.contentBox), true);
+		assert.equal(component.children.includes(component.selfRenderContainer), false);
 
-			// /reload can leave the previous module's result component attached briefly.
-			// A structurally compatible stale view must be replaced, not reused.
-			component.resultRendererComponent = {
-				getInputBody: () => "legacy input",
-				getOutputBody: () => "legacy output",
-				setHoveredSection() {},
-				setContent() {},
-				render: () => ["legacy full-width body"],
-				invalidate() {},
-			};
-			component.invalidate();
-			assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
+		// /reload can leave the previous module's result component attached briefly.
+		// A structurally compatible stale view must be replaced, not reused.
+		component.resultRendererComponent = {
+			getInputBody: () => "legacy input",
+			getOutputBody: () => "legacy output",
+			setHoveredSection() {},
+			setContent() {},
+			render: () => ["legacy full-width body"],
+			invalidate() {},
+		};
+		component.invalidate();
+		assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
 
-			const cardLines = component.render(60);
-			// 展开面板背景取配置的槽位（默认 userMsgBg #343541），不再按状态区分。
-			const panelAnsi = cardBgAnsi(config.expandedCardBackground);
-			assert.ok(cardLines.some((line: string) => line.includes(panelAnsi)));
-			assert.ok(
-				cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
-				"no toolSuccessBg remains in the expanded panel",
-			);
-			const callLine = cardLines.find((line: string) => line.includes("Bash "));
-			assert.ok(callLine);
-			assert.equal(
-				visibleWidth(callLine),
-				60,
-				"background card title stays within its full-width row",
-			);
-			const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
-			// input 摘要与多 tool 一致：从头截断（保留开头，省略尾部），默认上限 100 字符
-			assert.match(plainCallLine, /✓ Bash .*…$/);
-			assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
-			assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
+		const cardLines = component.render(60);
+		// 成功的工具展开后整卡用成功底色。
+		assert.ok(cardLines.some((line: string) => line.includes(cardBgAnsi("toolSuccessBg"))));
+		assert.ok(
+			cardLines.every((line: string) => !line.includes(cardBgAnsi("toolErrorBg"))),
+			"a successful tool leaves no error background",
+		);
+		const callLine = cardLines.find((line: string) =>
+			line.replace(/\x1b\[[0-9;]*m/g, "").includes("Bash "),
+		);
+		assert.ok(callLine);
+		assert.equal(
+			visibleWidth(callLine),
+			60,
+			"background card title stays within its full-width row",
+		);
+		const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+		// input 摘要与多 tool 一致：从头截断（保留开头，省略尾部），默认上限 100 字符
+		assert.match(plainCallLine, /✓ Bash .*…$/);
+		assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
+		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
 
-			// issue 46：展开卡背景槽位可配，渲染时现读配置。
-			// 单卡 paint 缓存不含主题/槽位，靠面板的 refresh 走 invalidate 重画。
-			const previousSlot = config.expandedCardBackground;
-			const targetSlot = previousSlot === "toolPendingBg" ? "customMessageBg" : "toolPendingBg";
-			try {
-				config.expandedCardBackground = targetSlot;
-				component.invalidate();
-				const repainted = component.render(60);
-				assert.ok(
-					repainted.some((line: string) => line.includes(cardBgAnsi(targetSlot))),
-					"expanded card uses the configured background slot",
-				);
-				assert.ok(
-					repainted.every((line: string) => !line.includes(cardBgAnsi(previousSlot))),
-					"the previous slot leaves no expanded row behind",
-				);
-			} finally {
-				config.expandedCardBackground = previousSlot;
-			}
-			component.setExpanded(false);
-			assert.equal(component.children.includes(component.selfRenderContainer), true);
+		// 失败后整卡改用失败底色，成功底色不留在任何一行。
+		component.updateResult({
+			content: [{ type: "text", text: "failed" }],
+			isError: true,
+		});
+		component.invalidate();
+		const repainted = component.render(60);
+		assert.ok(
+			repainted.some((line: string) => line.includes(cardBgAnsi("toolErrorBg"))),
+			"a failed tool paints the error background",
+		);
+		assert.ok(
+			repainted.every((line: string) => !line.includes(cardBgAnsi("toolSuccessBg"))),
+			"the success background leaves no expanded row behind",
+		);
+		component.setExpanded(false);
+		assert.equal(component.children.includes(component.selfRenderContainer), true);
 
-			const longPath = join(
-				process.cwd(),
-				"extensions",
-				"very-long-feature-name",
-				"nested-renderer-implementation",
-				"target-file.ts",
-			);
-			const read = new ToolExecutionComponent(
-				"read",
-				"path-summary",
-				{ path: longPath },
-				{},
-				undefined,
-				ui as any,
-				process.cwd(),
-			) as any;
-			const readCall = read
-				.render(55)
-				.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-				.find((line: string) => line.includes("Read"));
-			assert.match(readCall!, /Read extensions.*…[\\/]target-file\.ts$/);
-			assert.doesNotMatch(
-				readCall!,
-				new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-			);
+		const longPath = join(
+			process.cwd(),
+			"extensions",
+			"very-long-feature-name",
+			"nested-renderer-implementation",
+			"target-file.ts",
+		);
+		const read = new ToolExecutionComponent(
+			"read",
+			"path-summary",
+			{ path: longPath },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		) as any;
+		const readCall = read
+			.render(55)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.find((line: string) => line.includes("Read"));
+		assert.match(readCall!, /Read extensions.*…[\\/]target-file\.ts$/);
+		assert.doesNotMatch(
+			readCall!,
+			new RegExp(process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+		);
 
-			const edit = new ToolExecutionComponent(
-				"edit",
-				"inset-edit-marker",
-				{ path: "sample.ts" },
-				{},
-				undefined,
-				ui as any,
-				process.cwd(),
-			) as any;
-			edit.updateResult({
-				content: [],
-				details: { diff: "@@ -1 +1 @@\n-old\n+new" },
-				isError: false,
-			});
-			const editMarker = edit
-				.render(100)
-				.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-				.find((line: string) => line.includes("↳"));
-			assert.match(editMarker!, /^ {3}↳/, "rich diff marker is nested two columns inside the tool");
-		} finally {
-			Date.now = realNow;
-		}
+		const edit = new ToolExecutionComponent(
+			"edit",
+			"inset-edit-marker",
+			{ path: "sample.ts" },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		) as any;
+		edit.updateResult({
+			content: [],
+			details: { diff: "@@ -1 +1 @@\n-old\n+new" },
+			isError: false,
+		});
+		const editMarker = edit
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.find((line: string) => line.includes("↳"));
+		assert.match(editMarker!, /^ {3}↳/, "rich diff marker is nested two columns inside the tool");
 	} finally {
 		await events.get("session_shutdown")?.({}, ctx);
 	}
@@ -461,7 +449,13 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			ui as any,
 			process.cwd(),
 		) as any;
-		assert.match(agentResult.render(100).join("\n"), /Get Subagent Result agent-123/);
+		assert.match(
+			agentResult
+				.render(100)
+				.join("\n")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
+			/Get Subagent Result agent-123/,
+		);
 
 		for (const [name, args, expected] of [
 			["Agents", { description: "review changes" }, "Agents review changes"],
@@ -486,7 +480,10 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 				process.cwd(),
 			) as any;
 			assert.match(
-				external.render(160).join("\n"),
+				external
+					.render(160)
+					.join("\n")
+					.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
 				new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
 			);
 		}

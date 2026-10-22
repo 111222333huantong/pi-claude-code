@@ -17,7 +17,7 @@ function clip(value: unknown): string {
 	return oneLine(value, clipLimit());
 }
 
-/** 载荷（入参 JSON / 脚本代码）至少留出这么多宽度才显示，否则整段省略（避免只剩一个孤零零的 " {…"）。 */
+/** 载荷（入参 JSON / 脚本代码 / 路径值）至少留出这么多宽度才显示，否则整段省略（避免只剩一个孤零零的 " {…"）。 */
 const MIN_PAYLOAD_WIDTH = 10;
 
 /** 品牌大小写固定写法；humanize 推导不出来的工具名写在这里。 */
@@ -222,7 +222,7 @@ export type ToolCallSummary = {
 	detail: string;
 	/** 路径摘要保留结构，供最终渲染按实际宽度优先保留文件名。 */
 	path?: { prefix: string; value: string; absolute?: string };
-	/** 标题之外的原始载荷（完整入参 JSON、脚本代码…），已压成单行，渲染时用 dim 接在标题后。 */
+	/** 标题之外的原始载荷（完整入参 JSON、脚本代码…），已压成单行，渲染时用 muted 接在标题后。 */
 	payload?: string;
 };
 
@@ -408,11 +408,8 @@ function pathSummary(
 	detail = "",
 ): ToolCallSummary {
 	const path = displayPath(value, cwd);
-	return {
-		main: `${prefix} ${truncatePathToWidth(path, clipLimit())}`,
-		detail,
-		path: { prefix, value: path, absolute: absoluteOf(value, cwd) },
-	};
+	// main 只留标题：渲染时 prefix 用标题色、路径值用次级色，截断按 path 结构走中间省略。
+	return { main: prefix, detail, path: { prefix, value: path, absolute: absoluteOf(value, cwd) } };
 }
 
 /** 入参是 shell 命令的工具。 */
@@ -451,7 +448,7 @@ const GENERIC_SUMMARY_FIELDS = [
 ] as const;
 
 /** 通用字段链取值：字符串直接用；数组取首个可展示项并标注剩余条数。 */
-type SummaryValue = { text: string; more: number };
+type SummaryValue = { text: string; more: number; input: boolean };
 
 function arrayItemText(item: unknown): string | undefined {
 	if (typeof item === "string" && item) return item;
@@ -464,7 +461,7 @@ function arrayItemText(item: unknown): string | undefined {
 }
 
 function summaryFieldValue(value: unknown): SummaryValue | undefined {
-	if (typeof value === "string" && value) return { text: value, more: 0 };
+	if (typeof value === "string" && value) return { text: value, more: 0, input: true };
 	if (!Array.isArray(value)) return undefined;
 	let first: string | undefined;
 	let count = 0;
@@ -474,7 +471,7 @@ function summaryFieldValue(value: unknown): SummaryValue | undefined {
 		count += 1;
 		first ??= text;
 	}
-	return first === undefined ? undefined : { text: first, more: count - 1 };
+	return first === undefined ? undefined : { text: first, more: count - 1, input: true };
 }
 
 /** 通用字段链取值；无可用字段时返回 undefined，交给调用方继续降级。 */
@@ -484,7 +481,7 @@ function genericSummary(title: string, args: any): ToolCallSummary | undefined {
 		if (!found) continue;
 		// (+N) 追加在截断之后，避免首个元素过长时把条数挤没
 		const more = found.more > 0 ? ` (+${found.more})` : "";
-		return { main: `${title} ${clip(found.text)}${more}`, detail: "" };
+		return { main: title, detail: "", payload: `${clip(found.text)}${more}` };
 	}
 	return undefined;
 }
@@ -520,7 +517,7 @@ export function toolCallSummary(
 
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
-		return `${title} ${clip(found || fallback)}`;
+		return { main: title, detail: "", payload: clip(found || fallback) };
 	};
 
 	if (variant === "default" && AGENT_FAMILY_TOOL_NAMES.has(toolName)) {
@@ -531,30 +528,24 @@ export function toolCallSummary(
 	if (variant === "grouping" && (name === "agent" || name === "agents")) {
 		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
 		if (typeof displayName === "string" && displayName) {
-			return { main: `${title} ${displayName}`, detail: "" };
+			return { main: title, detail: "", payload: displayName };
 		}
-		return {
-			main: value(name === "agent" ? "launch agent" : "launch agents", "description", "prompt"),
-			detail: "",
-		};
+		return value(name === "agent" ? "launch agent" : "launch agents", "description", "prompt");
 	}
 	if (variant === "grouping" && name === "subagent") {
 		return { main: `${title} ${subagentSpawnPlan(args)}`, detail: "" };
 	}
 	if (variant === "grouping" && AGENT_FAMILY_TOOL_NAMES.has(toolName)) {
 		return (
-			agentIdSummary(title, toolName, args) ?? {
-				main: value("agent task", "runId", "agent_id", "taskId"),
-				detail: "",
-			}
+			agentIdSummary(title, toolName, args) ?? value("agent task", "runId", "agent_id", "taskId")
 		);
 	}
 	if (variant === "default" && name === "agents") {
-		return { main: value("launch agents", "description", "prompt"), detail: "" };
+		return value("launch agents", "description", "prompt");
 	}
-	if (name === "skill") return { main: value("run skill", "name"), detail: "" };
+	if (name === "skill") return value("run skill", "name");
 	if (name === "enterplanmode" || name === "enter_plan_mode") {
-		return { main: `${title} enable read-only planning`, detail: "" };
+		return { main: title, detail: "", payload: "enable read-only planning" };
 	}
 	// MCP：单卡已由 mcpToolTitle 解析出真实名（opts.title 原样传入）则尊重；
 	// 无显式标题时走本地人性化 MCP 行。
@@ -562,24 +553,16 @@ export function toolCallSummary(
 		const mcp = mcpCallSummary(toolName, title, args);
 		if (mcp) return mcp;
 	}
-	if (name === "bash") {
-		const headline = bashHeadline(args.command);
-		if (headline !== undefined) return { main: `${title} ${headline}`, detail: "" };
-		// 空命令：default 回标题独行，grouping 保留旧 `Bash ...` 占位。
-		return variant === "grouping"
-			? { main: `${title} ...`, detail: "" }
-			: { main: title, detail: "" };
-	}
 	if (name === "exitplanmode" || name === "exit_plan_mode") {
-		return { main: `${title} present plan`, detail: "" };
+		return { main: title, detail: "", payload: "present plan" };
 	}
-	if (name === "taskcreate") return { main: value("create task", "subject"), detail: "" };
-	if (name === "tasklist") return { main: `${title} task list`, detail: "" };
+	if (name === "taskcreate") return value("create task", "subject");
+	if (name === "tasklist") return { main: title, detail: "", payload: "task list" };
 	if (name === "taskget" || name === "taskupdate") {
-		return { main: value("task", "taskId", "task_id"), detail: "" };
+		return value("task", "taskId", "task_id");
 	}
 	if (name === "taskoutput" || name === "taskstop") {
-		return { main: value("background task", "task_id", "taskId"), detail: "" };
+		return value("background task", "task_id", "taskId");
 	}
 	if (name === "taskexecute") {
 		const ids = Array.isArray(args.task_ids)
@@ -590,7 +573,7 @@ export function toolCallSummary(
 		const summary = ids.length
 			? `${ids[0]}${ids.length > 1 ? ` (+${ids.length - 1} tasks)` : ""}`
 			: "start tasks";
-		return { main: `${title} ${summary}`, detail: "" };
+		return { main: title, detail: "", payload: summary };
 	}
 	if (toolName === "read") {
 		const details = [
@@ -602,8 +585,9 @@ export function toolCallSummary(
 			return pathSummary(variant === "grouping" ? "Read" : title, args.path, opts.cwd, detail);
 		}
 		return {
-			main: variant === "grouping" ? "Read ..." : title,
+			main: variant === "grouping" ? "Read" : title,
 			detail,
+			payload: variant === "grouping" ? "..." : undefined,
 		};
 	}
 	if (variant === "grouping") {
@@ -624,14 +608,14 @@ export function toolCallSummary(
 	}
 	if (variant === "grouping" && SHELL_TOOL_NAMES.has(name)) {
 		// 分组行缺 command 时保留占位，避免与单工具卡一样只剩标题
-		return { main: value("...", "command"), detail: "" };
+		return value("...", "command");
 	}
 
 	// 检索类：pattern 是正文，path 只是范围；两个变体同格式
 	if (typeof args.pattern === "string" || SEARCH_TOOL_NAMES.has(name)) {
 		const pattern = clip(args.pattern || "...");
 		const scope = typeof args.path === "string" && args.path ? ` in ${clip(args.path)}` : "";
-		return { main: `${title} ${JSON.stringify(pattern)}${scope}`, detail: "" };
+		return { main: title, detail: "", payload: `${JSON.stringify(pattern)}${scope}` };
 	}
 
 	const generic = genericSummary(title, args);
@@ -664,28 +648,29 @@ function mcpGatewaySummary(title: string, args: any): ToolCallSummary | undefine
 	const action = text(args.action);
 	const scoped = (target: string) => (server ? `${target} @ ${server}` : target);
 
-	if (action === "ui-messages") return { main: `${title} ${action}`, detail: "" };
+	if (action === "ui-messages") return { main: title, detail: "", payload: action };
 	if (tool) {
-		const main = `${title} call ${scoped(tool)}`;
-		const payload = innerArgsPayload(args.args);
-		return payload ? { main, detail: "", payload } : { main, detail: "" };
+		const argsPayload = innerArgsPayload(args.args);
+		const payload = argsPayload ? `call ${scoped(tool)} ${argsPayload}` : `call ${scoped(tool)}`;
+		return { main: title, detail: "", payload };
 	}
-	if (connect) return { main: `${title} connect ${connect}`, detail: "" };
-	if (describe) return { main: `${title} describe ${scoped(describe)}`, detail: "" };
-	if (instructions) return { main: `${title} instructions ${instructions}`, detail: "" };
+	if (connect) return { main: title, detail: "", payload: `connect ${connect}` };
+	if (describe) return { main: title, detail: "", payload: `describe ${scoped(describe)}` };
+	if (instructions) return { main: title, detail: "", payload: `instructions ${instructions}` };
 	if (search) {
 		const flags = [
 			args.regex === true ? "regex" : "",
 			args.includeSchemas === false ? "schemas hidden" : "",
 		].filter(Boolean);
 		return {
-			main: `${title} search ${scoped(search)}`,
+			main: title,
 			detail: flags.length ? ` (${flags.join(", ")})` : "",
+			payload: `search ${scoped(search)}`,
 		};
 	}
-	if (server) return { main: `${title} list ${server}`, detail: "" };
-	if (action) return { main: `${title} ${action}`, detail: "" };
-	if (Object.keys(args).length === 0) return { main: `${title} status`, detail: "" };
+	if (server) return { main: title, detail: "", payload: `list ${server}` };
+	if (action) return { main: title, detail: "", payload: action };
+	if (Object.keys(args).length === 0) return { main: title, detail: "", payload: "status" };
 	return undefined;
 }
 
@@ -707,9 +692,9 @@ function jsonArgs(args: any): string {
 }
 
 /**
- * 标题行内容：标题用调用方的 toolTitle 色，原始载荷（入参 JSON / 脚本代码）单独用 dim。
- * 标题优先占宽（它是身份），剩下的宽度给载荷；载荷超宽时尾部省略，连
- * MIN_PAYLOAD_WIDTH 都放不下时整段省略。
+ * 标题行内容：main 是身份（工具名），用 toolTitle 色；路径值与载荷（入参 JSON、
+ * 脚本代码、命令、查询…）是输入，单独用 muted。标题优先占宽，剩下的宽度给载荷；
+ * 载荷超宽时尾部省略，连 MIN_PAYLOAD_WIDTH 都放不下时整段省略。
  */
 export function renderToolSummary(
 	summary: ToolCallSummary,
@@ -721,7 +706,7 @@ export function renderToolSummary(
 	if (!summary.payload) return styledTitle;
 	const room = width - visibleWidth(title);
 	return room >= MIN_PAYLOAD_WIDTH
-		? `${styledTitle}${fg("dim", headTruncateToWidth(` ${summary.payload}`, room))}`
+		? `${styledTitle}${fg("muted", headTruncateToWidth(` ${summary.payload}`, room))}`
 		: styledTitle;
 }
 

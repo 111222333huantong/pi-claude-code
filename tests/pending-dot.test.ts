@@ -49,7 +49,7 @@ test("pendingDotColor breathes accent/dim on a 800ms phase", () => {
 
 test("toolIconColor follows visual state without time-based breathing", () => {
 	const running: any = { executionStarted: true, isPartial: true, state: {} };
-	assert.equal(toolIconColor(running), "accent");
+	assert.equal(toolIconColor(running), "dim");
 	// 排队未起跑：muted 常亮，不随时间变。
 	const queued: any = { state: {} };
 	assert.equal(toolIconColor(queued), "muted");

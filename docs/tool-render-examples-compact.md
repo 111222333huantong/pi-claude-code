@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.1.1 · mode=`compact`。
+> 当前版本：ccstyle 1.3.0 · mode=`compact`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 消息折叠摘要行
@@ -15,18 +15,18 @@
      ↳ 1 line returned
 ```
 
-展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（`expandedCardBackground`，默认 userMessageBg）：
+展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进展开卡背景面板（底色按工具状态取 toolPendingBg / toolSuccessBg / toolErrorBg）：
 
 ```text
  ● checking the diff
 
-  Thinking...
+ Thinking...
 
-  ✓ Bash npm test
-    ↳ 1 line returned · click to show more
+ ✓ Bash npm test
+   ↳ 1 line returned · click to show more
 
-  ✓ Read a.ts
-    ↳ Read 2 lines · click to show more
+ ✓ Read a.ts
+   ↳ Read 2 lines · click to show more
 ```
 
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
@@ -93,7 +93,6 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
  ▌  1 │ const x = 1
  ▌  1 │ const x = 2
  ───────────────────────────────────────────────────────────────────────
- Ran for 1s · click to show more
  ● task done
 ```
 
@@ -101,7 +100,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
 
 ```text
  ✓ edit sample.ts
- ↳ diff · +1 · -1 · unified [━━━━━━━━]
+   ↳ diff · +1 · -1 · unified [━━━━━━━━]
  ────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1

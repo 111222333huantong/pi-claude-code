@@ -4,6 +4,12 @@ import { config } from "../../config/config.ts";
 import { formatDuration, formatTokens } from "../../utils/format.ts";
 import { interruptShortcutText } from "../../utils/key-hints.ts";
 import { hexToFgAnsi, RESET } from "./spinner-color.ts";
+import {
+	loaderDebugStats,
+	logSpinnerError,
+	logSpinnerInstall,
+	spinnerLog,
+} from "./spinner-debug.ts";
 import { readSpinnerSettings, spinnerModuleEnabled } from "./spinner-settings.ts";
 import { colorSweep, getShimmerIntervalMs, resolveShimmerColors } from "./spinner-shimmer.ts";
 import {
@@ -189,6 +195,8 @@ function stopLoaderIfUiStopped(loader: any): boolean {
 }
 
 (Loader.prototype as any).updateDisplay = function patchedUpdateDisplay() {
+	loaderDebugStats.updates++;
+	loaderDebugStats.lastUpdateAt = Date.now();
 	if (stopLoaderIfUiStopped(this)) return;
 	sharedGlyphFrame = (this.currentFrame ?? 0) % OB_FRAMES.length;
 	const frame = OB_FRAMES[sharedGlyphFrame];
@@ -208,6 +216,8 @@ function stopLoaderIfUiStopped(loader: any): boolean {
 };
 
 Loader.prototype.start = function patchedStart() {
+	loaderDebugStats.starts++;
+	loaderDebugStats.lastStartAt = Date.now();
 	this.stop();
 	(this as any)[LOADER_ACTIVE] = true;
 	const generation = ((this as any)[LOADER_GENERATION] ?? 0) + 1;
@@ -241,6 +251,8 @@ Loader.prototype.start = function patchedStart() {
 };
 
 Loader.prototype.stop = function patchedStop() {
+	loaderDebugStats.stops++;
+	loaderDebugStats.lastStopAt = Date.now();
 	(this as any)[LOADER_ACTIVE] = false;
 	(this as any)[LOADER_GENERATION] = ((this as any)[LOADER_GENERATION] ?? 0) + 1;
 	if ((this as any)._tickerUnsub) {
@@ -294,7 +306,9 @@ const STALL_AFTER_MS = 30_000;
  * token 数同时喂给上游 token-rate（估算 → provider usage 同源），供 footer 速率芯片读取。
  */
 export default function (pi: ExtensionAPI): void {
-	if (!spinnerModuleEnabled()) return;
+	const spinnerEnabled = spinnerModuleEnabled();
+	logSpinnerInstall({ spinnerEnabled });
+	if (!spinnerEnabled) return;
 	// 代际令牌：reload 后旧实例的 shimmer 回调自检过期并自退订。
 	const tickerGeneration = claimTickerGeneration();
 	let agentStartTime = 0;
@@ -314,6 +328,178 @@ export default function (pi: ExtensionAPI): void {
 	let activeCtx: { ui: WorkingUi & { theme?: unknown }; hasUI: boolean } | null = null;
 	const activeTools = new Map<string, string>();
 	let startupProgress = false;
+
+	// --- diagnostics (temporary; see spinner-debug.ts) ----------------------
+	let turnStartedAt = 0;
+	let lastTickAt = 0;
+	let lastChangeAt = 0;
+	let lastEvent = "install";
+	let lastVisibleMessage = "";
+	let lastFrame = 0;
+	let tickCount = 0;
+	let syncAttempts = 0;
+	let syncChanged = 0;
+	let syncSame = 0;
+	let syncNoUi = 0;
+	let syncSetErrors = 0;
+	let tickErrors = 0;
+	let loopStarts = 0;
+	let loopStops = 0;
+	let stallLogged = false;
+	let lastStallLogAt = 0;
+	let errorBurstLogged = false;
+	let loaderPatchMissingLogged = false;
+	const heartbeatPrev = {
+		ticks: 0,
+		attempts: 0,
+		changed: 0,
+		same: 0,
+		noUi: 0,
+		errors: 0,
+		loaderUpdates: loaderDebugStats.updates,
+	};
+
+	const plain = (text: string): string => text.replace(/\u001B\[[0-9;]*m/g, "");
+	const tail = (text: string, max = 100): string => {
+		const visible = plain(text);
+		return visible.length > max ? visible.slice(-max) : visible;
+	};
+
+	function debugState(extra: Record<string, unknown> = {}): Record<string, unknown> {
+		const now = Date.now();
+		return {
+			turnActive,
+			loop: Boolean(shimmerUnsub),
+			turnAgeMs: turnStartedAt ? now - turnStartedAt : null,
+			tickAgeMs: lastTickAt ? now - lastTickAt : null,
+			changeAgeMs: lastChangeAt ? now - lastChangeAt : null,
+			verb: currentVerb,
+			frame: Number(lastFrame.toFixed(2)),
+			activeTools: activeTools.size,
+			lastEvent,
+			visible: lastVisibleMessage,
+			ticks: tickCount,
+			changed: syncChanged,
+			same: syncSame,
+			noUi: syncNoUi,
+			setErrors: syncSetErrors,
+			tickErrors,
+			loopStarts,
+			loopStops,
+			loader: {
+				starts: loaderDebugStats.starts,
+				stops: loaderDebugStats.stops,
+				updates: loaderDebugStats.updates,
+				updateAgeMs: loaderDebugStats.lastUpdateAt ? now - loaderDebugStats.lastUpdateAt : null,
+			},
+			...extra,
+		};
+	}
+
+	function debugEvent(name: string, extra: Record<string, unknown> = {}): void {
+		lastEvent = name;
+		spinnerLog(name, { ...debugState(), ...extra });
+	}
+
+	const heartbeatTimer = setInterval(() => {
+		if (isStaleTickerGeneration(tickerGeneration)) {
+			clearInterval(heartbeatTimer);
+			return;
+		}
+		const now = Date.now();
+		if (
+			!loaderPatchMissingLogged &&
+			turnActive &&
+			syncChanged > 0 &&
+			loaderDebugStats.updates === 0
+		) {
+			loaderPatchMissingLogged = true;
+			spinnerLog("loader_patch_missing", {
+				note: "Loader.prototype patch has not run; extension pi-tui differs from host pi-tui",
+				...debugState(),
+			});
+		}
+		// 空闲时不刷心跳；只保留工作态和完成提示的几秒窗口。
+		if (!turnActive && !completionTimer && now - (lastChangeAt || now) > 10_000) return;
+		spinnerLog("heartbeat", {
+			turnActive,
+			loop: Boolean(shimmerUnsub),
+			turnAgeMs: turnStartedAt ? now - turnStartedAt : null,
+			tickAgeMs: lastTickAt ? now - lastTickAt : null,
+			changeAgeMs: lastChangeAt ? now - lastChangeAt : null,
+			verb: currentVerb,
+			frame: Number(lastFrame.toFixed(2)),
+			activeTools: activeTools.size,
+			lastEvent,
+			visible: lastVisibleMessage,
+			window: {
+				ticks: tickCount - heartbeatPrev.ticks,
+				attempts: syncAttempts - heartbeatPrev.attempts,
+				changed: syncChanged - heartbeatPrev.changed,
+				same: syncSame - heartbeatPrev.same,
+				noUi: syncNoUi - heartbeatPrev.noUi,
+				tickErrors: tickErrors - heartbeatPrev.errors,
+				loaderUpdates: loaderDebugStats.updates - heartbeatPrev.loaderUpdates,
+			},
+			totals: {
+				ticks: tickCount,
+				attempts: syncAttempts,
+				changed: syncChanged,
+				same: syncSame,
+				noUi: syncNoUi,
+				setErrors: syncSetErrors,
+				tickErrors,
+				loopStarts,
+				loopStops,
+			},
+			loader: {
+				starts: loaderDebugStats.starts,
+				stops: loaderDebugStats.stops,
+				updates: loaderDebugStats.updates,
+				updateAgeMs: loaderDebugStats.lastUpdateAt ? now - loaderDebugStats.lastUpdateAt : null,
+			},
+			rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+		});
+		heartbeatPrev.ticks = tickCount;
+		heartbeatPrev.attempts = syncAttempts;
+		heartbeatPrev.changed = syncChanged;
+		heartbeatPrev.same = syncSame;
+		heartbeatPrev.noUi = syncNoUi;
+		heartbeatPrev.errors = tickErrors;
+		heartbeatPrev.loaderUpdates = loaderDebugStats.updates;
+	}, 1_000);
+	unrefTimer(heartbeatTimer);
+
+	// 独立 watchdog：即使 shimmer 订阅已经死掉，也能记下停摆时的工作态。
+	const stallTimer = setInterval(() => {
+		if (isStaleTickerGeneration(tickerGeneration)) {
+			clearInterval(stallTimer);
+			return;
+		}
+		if (!turnActive) {
+			stallLogged = false;
+			return;
+		}
+		const now = Date.now();
+		const gap = lastTickAt ? now - lastTickAt : turnStartedAt ? now - turnStartedAt : 0;
+		const noSubscription = !shimmerUnsub;
+		if (!noSubscription && gap <= 500) {
+			if (stallLogged) {
+				spinnerLog("stall_cleared", debugState({ gapMs: gap }));
+				stallLogged = false;
+			}
+			return;
+		}
+		if (stallLogged && now - lastStallLogAt < 5_000) return;
+		stallLogged = true;
+		lastStallLogAt = now;
+		spinnerLog(
+			"stall",
+			debugState({ reason: noSubscription ? "no-subscription" : "tick-gap", gapMs: gap }),
+		);
+	}, 250);
+	unrefTimer(stallTimer);
+	// ------------------------------------------------------------------------
 
 	function tokenCount(): number {
 		return providerOutputTokens || Math.max(0, Math.round(responseLength / 4));
@@ -365,6 +551,7 @@ export default function (pi: ExtensionAPI): void {
 		const glyphWeight = Math.max(0.28, Math.min(0.38, 0.405 - verbText.length * 0.00625));
 		const glyphInfluence = sharedGlyphFrame * glyphWeight;
 		const frame = baseFrameFloat + glyphInfluence;
+		lastFrame = frame;
 		const sweptVerb = colorSweep(verbText, frame, baseRgb, shimmerRgb);
 		let message = sweptVerb;
 		message += statusText(` (${statusParts.join(" · ")})`);
@@ -397,7 +584,11 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	function syncWorkingMessage(force = false): void {
-		if (!activeCtx?.hasUI) return;
+		syncAttempts++;
+		if (!activeCtx?.hasUI) {
+			syncNoUi++;
+			return;
+		}
 		applyThemeColors((activeCtx.ui as { theme?: unknown })?.theme);
 		const rawMessage = buildWorkingMessage();
 		// Width-safe: truncate if wider than terminal.
@@ -407,22 +598,42 @@ export default function (pi: ExtensionAPI): void {
 				: 120;
 		const nextMessage =
 			visibleWidth(rawMessage) > cols ? truncateToWidth(rawMessage, cols, "") : rawMessage;
-		if (!force && nextMessage === lastWorkingMessage) return;
+		if (!force && nextMessage === lastWorkingMessage) {
+			syncSame++;
+			return;
+		}
 		lastWorkingMessage = nextMessage;
+		lastVisibleMessage = tail(nextMessage);
 		try {
 			activeCtx.ui.setWorkingMessage(nextMessage);
-		} catch {
-			/* noop */
+			syncChanged++;
+			lastChangeAt = Date.now();
+			errorBurstLogged = false;
+		} catch (error) {
+			syncSetErrors++;
+			if (!errorBurstLogged) {
+				errorBurstLogged = true;
+				logSpinnerError("set_error", error, debugState());
+			}
 		}
 	}
 
 	function restoreDefaultWorkingMessage(): void {
 		lastWorkingMessage = null;
-		if (!activeCtx?.hasUI) return;
+		lastVisibleMessage = "";
+		lastChangeAt = Date.now();
+		if (!activeCtx?.hasUI) {
+			syncNoUi++;
+			return;
+		}
 		try {
 			activeCtx.ui.setWorkingMessage();
-		} catch {
-			/* noop */
+		} catch (error) {
+			syncSetErrors++;
+			if (!errorBurstLogged) {
+				errorBurstLogged = true;
+				logSpinnerError("restore_error", error, debugState());
+			}
 		}
 	}
 
@@ -439,34 +650,53 @@ export default function (pi: ExtensionAPI): void {
 	function scheduleRefreshTick(): void {
 		if (!turnActive || shimmerUnsub) return;
 		refreshFailures = 0;
+		spinnerLog("loop_subscribe", { refreshFailures, ...debugState() });
 		shimmerUnsub = subscribeShimmer(() => {
 			if (isStaleTickerGeneration(tickerGeneration)) {
 				// reload 后旧实例残留：退订自己，不再碰失效 ctx。
-				stopRefreshLoop();
+				stopRefreshLoop("stale-generation");
 				return;
 			}
 			if (!turnActive) return;
+			tickCount++;
+			lastTickAt = Date.now();
 			try {
 				syncWorkingMessage();
+				if (refreshFailures > 0) {
+					spinnerLog("tick_recover", { failures: refreshFailures, ...debugState() });
+					errorBurstLogged = false;
+				}
 				refreshFailures = 0;
-			} catch {
+			} catch (error) {
 				// 定时器内的异常会成为 uncaughtException 终止 Pi；装饰性刷新不能逃逸。
 				// 连续失败才停，给事件换新 ctx 留出恢复窗口。
 				refreshFailures++;
-				if (refreshFailures >= MAX_REFRESH_FAILURES) stopRefreshLoop();
+				tickErrors++;
+				if (!errorBurstLogged) {
+					errorBurstLogged = true;
+					logSpinnerError("tick_error", error, {
+						...debugState(),
+						refreshFailures,
+					});
+				}
+				if (refreshFailures >= MAX_REFRESH_FAILURES) stopRefreshLoop("max-failures");
 			}
 		});
 	}
 
 	/** 若本回合仍在进行但动画订阅丢了（异常/重建），立刻补回来。 */
 	function ensureRefreshLoop(): void {
-		if (turnActive && !shimmerUnsub) scheduleRefreshTick();
+		if (turnActive && !shimmerUnsub) {
+			spinnerLog("loop_restart", { reason: "ensure", ...debugState() });
+			scheduleRefreshTick();
+		}
 	}
 
 	function startRefreshLoop(): void {
-		stopRefreshLoop();
+		stopRefreshLoop("restart");
 		syncWorkingMessage(true);
 		scheduleRefreshTick();
+		loopStarts++;
 	}
 
 	function rescheduleRefreshLoop(): void {
@@ -476,7 +706,7 @@ export default function (pi: ExtensionAPI): void {
 		else syncWorkingMessage(true);
 	}
 
-	function stopRefreshLoop(): void {
+	function stopRefreshLoop(reason = "unspecified"): void {
 		if (shimmerUnsub) {
 			try {
 				shimmerUnsub();
@@ -484,6 +714,8 @@ export default function (pi: ExtensionAPI): void {
 				/* ignore */
 			}
 			shimmerUnsub = null;
+			loopStops++;
+			spinnerLog("loop_stop", { reason, ...debugState() });
 		}
 	}
 
@@ -526,7 +758,8 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	function clearDisplay(): void {
-		stopRefreshLoop();
+		debugEvent("clear_display");
+		stopRefreshLoop("clear-display");
 		clearCompletionTimer();
 		clearThoughtStatusTimer();
 		agentStartTime = 0;
@@ -558,18 +791,21 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("agent_start", async () => {
 		if (!agentStartTime) agentStartTime = Date.now();
+		debugEvent("agent_start");
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
 		startupProgress = true;
+		debugEvent("session_start", { hasUI: ctx.hasUI });
 		if (ctx.hasUI) {
 			try {
 				ctx.ui.setWorkingMessage(
 					`${CLAUDE_ORANGE}Loading…${RESET}${statusText(" (Reading 1 file, Loading context)")}`,
 				);
-			} catch {
-				/* noop */
+				lastChangeAt = Date.now();
+			} catch (error) {
+				logSpinnerError("session_start_set_error", error, debugState());
 			}
 		}
 	});
@@ -578,9 +814,11 @@ export default function (pi: ExtensionAPI): void {
 		activeCtx = ctx as typeof activeCtx;
 		ensureRefreshLoop();
 		const id = String((event as any)?.toolCallId ?? `${Date.now()}-${activeTools.size}`);
-		activeTools.set(id, toolLabel((event as any)?.toolName));
+		const label = toolLabel((event as any)?.toolName);
+		activeTools.set(id, label);
 		startupProgress = false;
 		pauseTokenRate();
+		debugEvent("tool_start", { id, label, toolName: (event as any)?.toolName });
 		if (turnActive) syncWorkingMessage(true);
 	});
 
@@ -590,6 +828,7 @@ export default function (pi: ExtensionAPI): void {
 		const id = String((event as any)?.toolCallId ?? "");
 		if (id) activeTools.delete(id);
 		resumeTokenRate();
+		debugEvent("tool_end", { id, remainingTools: activeTools.size });
 		if (turnActive) syncWorkingMessage(true);
 	});
 
@@ -598,6 +837,9 @@ export default function (pi: ExtensionAPI): void {
 		turnActive = true;
 		startupProgress = false;
 		activeCtx = ctx as typeof activeCtx;
+		turnStartedAt = Date.now();
+		lastTickAt = turnStartedAt;
+		stallLogged = false;
 		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
 		turnStartTime = (_event as any)?.timestamp || Date.now();
 		if (!agentStartTime) agentStartTime = turnStartTime;
@@ -632,6 +874,7 @@ export default function (pi: ExtensionAPI): void {
 		} else {
 			scheduleThoughtStatusClear();
 		}
+		debugEvent("turn_start", { verb: currentVerb, prevVerb });
 		startRefreshLoop();
 	});
 
@@ -641,6 +884,7 @@ export default function (pi: ExtensionAPI): void {
 		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
 		const evt = (event as any)?.assistantMessageEvent;
 		if (!evt) return;
+		lastEvent = `message_update:${String(evt.type ?? "?")}`;
 		updateProviderUsage(evt.partial ?? {});
 		let statusChanged = false;
 		const previousTokenCount = tokenCount();
@@ -697,6 +941,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 
 		if (statusChanged) {
+			debugEvent("status_changed", { type: evt.type });
 			syncWorkingMessage(true);
 			rescheduleRefreshLoop();
 			// Same-frame ordering: ensure footer updates even if pi rendered first.
@@ -724,6 +969,11 @@ export default function (pi: ExtensionAPI): void {
 		const failed = message.stopReason === "error" || message.stopReason === "aborted";
 		updateProviderUsage(message, !failed);
 		syncWorkingMessage();
+		debugEvent("message_end", {
+			stopReason: message.stopReason,
+			output: (message as any)?.usage?.output,
+			providerOutputTokens,
+		});
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
@@ -734,7 +984,13 @@ export default function (pi: ExtensionAPI): void {
 		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
 		const turnId = activeTurnId;
 		const elapsed = Date.now() - (agentStartTime || turnStartTime);
-		stopRefreshLoop();
+		debugEvent("turn_end", {
+			elapsedMs: elapsed,
+			toolResults: Array.isArray((_event as any)?.toolResults)
+				? (_event as any).toolResults.length
+				: 0,
+		});
+		stopRefreshLoop("turn_end");
 		clearCompletionTimer();
 
 		if (typeof thinkingStatus === "number" && Date.now() - thoughtForSetAt >= THOUGHT_DISPLAY_MS) {
@@ -745,10 +1001,13 @@ export default function (pi: ExtensionAPI): void {
 		if (activeCtx?.hasUI) {
 			const message = `${STATUS_DIM}✻ Turn took ${formatWorkingDuration(elapsed)}${RESET}`;
 			lastWorkingMessage = message;
+			lastVisibleMessage = tail(message);
+			lastChangeAt = Date.now();
 			try {
 				activeCtx.ui.setWorkingMessage(message);
-			} catch {
-				/* noop */
+			} catch (error) {
+				syncSetErrors++;
+				logSpinnerError("turn_end_set_error", error, debugState());
 			}
 			// 长任务完成响铃（默认关闭；TTY 才发 BEL，避免污染管道输出）。
 			try {
@@ -765,6 +1024,7 @@ export default function (pi: ExtensionAPI): void {
 			completionTimer = setTimeout(() => {
 				completionTimer = null;
 				if (activeTurnId !== turnId) return;
+				debugEvent("completion_restore");
 				restoreDefaultWorkingMessage();
 			}, TURN_COMPLETION_MS);
 			unrefTimer(completionTimer);
@@ -779,6 +1039,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_end", async () => {
+		debugEvent("agent_end", { completionPending: Boolean(completionTimer) });
 		turnActive = false;
 		agentStartTime = 0;
 		// Preserve the just-finished "Turn took …" line. Pi emits agent_end
@@ -789,6 +1050,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
+		debugEvent("session_shutdown");
 		turnActive = false;
 		clearCompletionTimer();
 		clearThoughtStatusTimer();

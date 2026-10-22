@@ -97,3 +97,26 @@ test("disabling removes our layer even when another extension wrapped it", (t) =
 	clearPromptEditor(ctx);
 	assert.equal(slot.factory, before);
 });
+
+test("pi 把插槽重置回占据前的工厂时，clear 不再写回一遍", (t) => {
+	useEditorPrefix(t, true);
+	const slot = fakeEditorSlot();
+	const ctx = { hasUI: true, ui: slot.ui } as unknown as ExtensionContext;
+	const before: EditorFactory = () => ({});
+	slot.factory = before;
+
+	applyPromptEditor(ctx);
+	assert.notEqual(slot.factory, before);
+	const installs = slot.installs;
+
+	// /new、/reload 走 pi 的 resetExtensionUI：插槽被重置回占据前的工厂，不经 setEditorComponent。
+	slot.factory = before;
+
+	clearPromptEditor(ctx);
+	assert.equal(slot.factory, before);
+	assert.equal(slot.installs, installs, "release must not write back over pi's own reset");
+
+	// 下一轮 session_start 还能装回去。
+	applyPromptEditor(ctx);
+	assert.notEqual(slot.factory, before);
+});

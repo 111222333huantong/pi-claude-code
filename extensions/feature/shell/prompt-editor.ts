@@ -65,12 +65,16 @@ let previousEditorFactory: EditorFactory | undefined;
  * 插槽可能已经被其他扩展包在外层（pi-inline-skills 会把当前工厂再包一层），
  * 那种结构里无法只拆内层，直接还回占据前的工厂；外层扩展会在下次终端输入时
  * 自己重新包装，前缀不会因此复活。
+ *
+ * 例外：插槽被 pi 重置回占据前的工厂时（/new、/reload 走 resetExtensionUI），
+ * 我们已经不在槽里，再写一次会把 pi 刚重置的结果又覆盖掉；此时只清状态。
  */
 function releasePromptEditor(ctx: ExtensionContext): void {
 	if (!active) return;
 	const previous = previousEditorFactory;
 	active = false;
 	previousEditorFactory = undefined;
+	if (ctx.ui.getEditorComponent?.() === previous) return;
 	ctx.ui.setEditorComponent(previous);
 }
 

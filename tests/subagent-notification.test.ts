@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
 	AssistantMessageComponent,
 	CustomMessageComponent,
@@ -378,7 +379,10 @@ test("a theme switch repaints grouped notification details after invalidate", (t
 	const previousTheme = (globalThis as any)[THEME_SLOT];
 	t.after(() => setThemeInstance(previousTheme));
 	const repoTheme = (name: string) =>
-		loadThemeFromPath(new URL(`../themes/${name}.json`, import.meta.url).pathname, "truecolor");
+		loadThemeFromPath(
+			fileURLToPath(new URL(`../themes/${name}.json`, import.meta.url)),
+			"truecolor",
+		);
 	const dark = repoTheme("cc-dark");
 	const light = repoTheme("cc-light");
 	const errorSgr = (instance: any) => instance.fg("error", "|").split("|")[0];

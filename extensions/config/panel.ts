@@ -70,6 +70,7 @@ import {
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
+	THINKING_SUMMARY_LIMIT_VALUES,
 	TOOL_LABEL_CLIP_VALUES,
 	updateConfig,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
@@ -597,7 +598,8 @@ export async function showCcstylePanel(
 		const thinkingPreviewSetting = {
 			id: "previewLines",
 			label: "Preview lines",
-			description: "Preview content lines (blank lines skipped); 0 hides the body.",
+			description:
+				"Raw preview lines when the summary stream is off (blank lines skipped); 0 hides the body.",
 			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -621,6 +623,32 @@ export async function showCcstylePanel(
 			values: [...THINKING_EXPANDED_MAX_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingExpandedSetting, closeSubmenu),
+		};
+		const thinkingLiveSummarySetting = {
+			id: "thinkingLiveSummary",
+			label: "Summary stream",
+			description:
+				"Shimmer the active Thinking title and append one summary per finished reasoning chunk. Applies when thinking blocks are hidden (Ctrl+T).",
+			currentValue: config.thinkingLiveSummary ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const thinkingSummaryLimitSetting = {
+			id: "thinkingSummaryLimit",
+			label: "Summary lines",
+			description:
+				"Number of recent summaries kept in the collapsed thinking block. Expanded blocks show the full list. Default 5.",
+			currentValue: String(config.thinkingSummaryLimit),
+			values: [...THINKING_SUMMARY_LIMIT_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, thinkingSummaryLimitSetting, closeSubmenu),
+		};
+		const showRawThinkingSetting = {
+			id: "showRawThinking",
+			label: "Show raw thinking",
+			description:
+				"Expanded thinking shows raw reasoning instead of the summary list. Debug only; collapsed mode stays summary-only.",
+			currentValue: config.showRawThinking ? "on" : "off",
+			values: ["on", "off"],
 		};
 		const startupHeaderSetting = {
 			id: "showStartupHeader",
@@ -1205,6 +1233,25 @@ export async function showCcstylePanel(
 					});
 					thinkingExpandedSetting.currentValue = String(config.thinkingExpandedMaxLines);
 					break;
+				case "thinkingLiveSummary":
+					updateConfig({ thinkingLiveSummary: value === "on" });
+					thinkingLiveSummarySetting.currentValue = config.thinkingLiveSummary ? "on" : "off";
+					break;
+				case "thinkingSummaryLimit":
+					updateConfig({
+						thinkingSummaryLimit: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.thinkingSummaryLimit,
+							1,
+							50,
+						),
+					});
+					thinkingSummaryLimitSetting.currentValue = String(config.thinkingSummaryLimit);
+					break;
+				case "showRawThinking":
+					updateConfig({ showRawThinking: value === "on" });
+					showRawThinkingSetting.currentValue = config.showRawThinking ? "on" : "off";
+					break;
 				case "stickyUserMessage": {
 					updateConfig({ stickyUserMessage: value === "on" });
 					stickyUserMessageSetting.description = config.stickyUserMessage
@@ -1363,6 +1410,9 @@ export async function showCcstylePanel(
 					thinkingPreviewSetting,
 					thinkingAnimationSetting,
 					thinkingExpandedSetting,
+					thinkingLiveSummarySetting,
+					thinkingSummaryLimitSetting,
+					showRawThinkingSetting,
 				],
 			},
 			{

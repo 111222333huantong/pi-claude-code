@@ -98,6 +98,9 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "previewLines": 3,                       // 预览内容行数（空行不占窗口），0 隐藏
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
   "thinkingExpandedMaxLines": 200,         // 展开先给尾部行数，再推进一次看全文
+  "thinkingLiveSummary": true,             // 活动 thinking 标题扫光 + 按段落累积摘要
+  "thinkingSummaryLimit": 5,               // 折叠态保留的最近摘要条数
+  "showRawThinking": false,                // 展开态显示原文（调试用）
 
   // ui（本 fork 增补）
   "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
@@ -130,6 +133,12 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "footerLine3Keys": []                    // 有可见芯片才占行
 }
 ```
+
+> `thinkingLiveSummary` 只在 thinking 被隐藏（`Ctrl+T` 或 `hideThinkingBlock: true`）时接管；
+> 折叠/展开默认都只显示摘要列表，`showRawThinking: true` 才在展开态显示原文。
+> 有 provider 的 `**Section title**` 时优先用标题；没有时按空行/句末换行/500 字/2 秒空闲切块，
+> 每块本地提炼一行摘要，不额外调用模型。本地 fallback 会过滤“用户问了什么/我要怎么回答/确保格式”
+> 这类元话语和短碎片；过滤后没有有效内容就不生成条目。
 
 本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）：
 

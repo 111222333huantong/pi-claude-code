@@ -70,6 +70,12 @@ export type Config = {
 	animationIntervalMs: number;
 	/** 展开中间态 tail 窗口行数；再推进一次才全文。 */
 	thinkingExpandedMaxLines: number;
+	/** 活动思考标题扫光 + 按段落累积摘要列表。 */
+	thinkingLiveSummary: boolean;
+	/** 折叠态保留的最近摘要条数。 */
+	thinkingSummaryLimit: number;
+	/** 展开态显示 thinking 原文（调试用），默认 false。 */
+	showRawThinking: boolean;
 	showStartupHeader: boolean;
 	startupAnimation: boolean;
 	/** 启动头 slogan（空串关闭）；独立主题色，不跟随 logo/accent 以外文案。 */
@@ -157,6 +163,7 @@ export const TOOL_LABEL_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2000"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
+export const THINKING_SUMMARY_LIMIT_VALUES = ["3", "5", "8", "10", "20"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** 完成响铃阈值（秒）预设；0 关闭。 */
@@ -195,6 +202,9 @@ export const DEFAULT_CONFIG: Config = {
 	previewLines: 3,
 	animationIntervalMs: 90,
 	thinkingExpandedMaxLines: 200,
+	thinkingLiveSummary: true,
+	thinkingSummaryLimit: 5,
+	showRawThinking: false,
 	showStartupHeader: true,
 	startupAnimation: true,
 	startupSlogan: "",
@@ -345,6 +355,14 @@ export function normalizeConfig(input: unknown): Config {
 			10,
 			50_000,
 		),
+		thinkingLiveSummary: source.thinkingLiveSummary !== false,
+		thinkingSummaryLimit: pickPositiveInt(
+			source.thinkingSummaryLimit,
+			DEFAULT_CONFIG.thinkingSummaryLimit,
+			1,
+			50,
+		),
+		showRawThinking: source.showRawThinking === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		startupAnimation: source.startupAnimation !== false,
 		startupSlogan:
@@ -416,6 +434,9 @@ export function getCompactThinkingConfig(source: Config = config): CompactThinki
 		previewLines: source.previewLines,
 		animationIntervalMs: source.animationIntervalMs,
 		thinkingExpandedMaxLines: source.thinkingExpandedMaxLines,
+		thinkingLiveSummary: source.thinkingLiveSummary,
+		thinkingSummaryLimit: source.thinkingSummaryLimit,
+		showRawThinking: source.showRawThinking,
 	};
 }
 
@@ -455,6 +476,9 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`thinkingExpanded=${source.thinkingExpandedMaxLines}`,
+		`thinkingLive=${source.thinkingLiveSummary ? "on" : "off"}`,
+		`thinkingSummaryLimit=${source.thinkingSummaryLimit}`,
+		`thinkingRaw=${source.showRawThinking ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
 		`startupSlogan=${source.startupSlogan ? `"${source.startupSlogan}"` : "off"}`,

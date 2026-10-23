@@ -77,6 +77,18 @@
 - **Local delta**（已大幅改写）：三级 LRU 缓存、`duration` 落盘持久化、
   `patchRegistry` 所有权管理、`CompactThinkingController` 只读查询面
   （供 `renderer/compact-mode` 复用，不建第二套计时器）。
+- **Local delta（thinking 呈现）**：活动标题复用 compact 摘要扫光；
+  按空行/句末换行/500 字/2 秒空闲切分 reasoning，每块本地提炼一行摘要；
+  有 provider 的 `**Section title**` 时优先用标题，否则先过滤元话语/输出规划/短碎片，
+  再按动作、结果、路径、决策线索选一行；没有有效内容时不生成条目。
+  折叠态保留最近 `thinkingSummaryLimit` 条，展开态显示完整摘要列表。
+  对应配置 `thinkingLiveSummary`（默认 on）、`thinkingSummaryLimit`（默认 5）、
+  `showRawThinking`（默认 off，调试时展开原文）。
+- **Summary streaming 增量优化**：纯摘要函数在
+  `extensions/feature/thinking-summary.ts`，按 run 的状态机在
+  `extensions/feature/thinking-summary-stream.ts`；provider 标题按新增行扫描，
+  动画 tick 只重算标题，不再每帧全量重建 content tree。
+  回归基准：`npm run bench:thinking`。
 
 ## 5. npm 运行时依赖（非 vendored，但合规相关）
 

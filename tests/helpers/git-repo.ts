@@ -59,6 +59,10 @@ export function repository(t: test.TestContext, initialBranch = "main") {
 	});
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+	// clone 不会继承模板的本地 identity；fixture 自己配置，避免依赖宿主全局 git 用户。
+	git("config", "user.name", "Footer Test");
+	git("config", "user.email", "footer@example.invalid");
+	git("config", "commit.gpgsign", "false");
 	// clone 会加 origin 和 branch tracking；测试要自己控制 remote，先删 remote 顺便清 tracking。
 	if (initialBranch !== "main") {
 		git("branch", "-m", "main", initialBranch);

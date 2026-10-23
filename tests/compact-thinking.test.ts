@@ -8,7 +8,10 @@ import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-
 
 import {
 	clearThinkingPreviewCache,
+	extractProviderThinkingTitles,
 	installCompactThinking,
+	splitThinkingChunkBuffer,
+	summarizeThinkingChunk,
 	ThinkingPreviewBlock,
 	thinkingExpandedMarkdownCacheSize,
 } from "../extensions/feature/compact-thinking.ts";
@@ -20,6 +23,30 @@ const config = {
 	animationIntervalMs: 30,
 	thinkingExpandedMaxLines: 200,
 };
+
+test("thinking preview animates its heading without rebuilding the content tree", () => {
+	let frame = 0;
+	const block = new ThinkingPreviewBlock(
+		"Thinking",
+		"body",
+		0,
+		1,
+		(text) => text,
+		undefined,
+		0,
+		true,
+		undefined,
+		undefined,
+		undefined,
+		false,
+		() => `Thinking ${frame}`,
+	);
+	const first = block.render(40);
+	frame = 1;
+	const second = block.render(40);
+	assert.notDeepEqual(first, second, "heading provider is evaluated on every render");
+	assert.match(second.join("\n"), /Thinking 1/);
+});
 
 test("collapsed thinking previews memoize complete output until invalidated", () => {
 	const originalConfig = { ...config };
@@ -98,6 +125,298 @@ test("thinking 展开态按消息时间戳与 run 序号记，换实例后仍生
 	} finally {
 		controller.updateConfig(originalConfig);
 		clearThinkingPreviewCache();
+	}
+});
+
+test("summary fallback drops meta planning chatter and keeps concrete content", () => {
+	const metaOnly = [
+		"The user asks in Chinese for a three-point analysis.",
+		"They want a conceptual answer about TUI summaries.",
+		"Need plain text, Chinese, three concise points.",
+		"Keep to three points, short.",
+		"Maybe also mention user trust and cognitive load.",
+	].join(" ");
+	assert.equal(summarizeThinkingChunk(metaOnly), undefined, "meta-only reasoning stays silent");
+	for (const line of [
+		"1: two sentences. Yes.",
+		'That would be extra text but not a "point".',
+		"Write framing: 1MB reasoning ≈ 250k–500k tokens(中文约 50万–100万字符), 全量窗口不可行。",
+		'One nuance: "摘要列表" might mean a UI list of summaries. I\'ll frame accordingly.',
+		"Avoid over-length. Each point two sentences, fairly rich.",
+		"The requirement is each point two sentences; extra framing is okay but might be seen as verbose.",
+		'"详细分析" so reasonably detailed.',
+		"Keep concise but detailed",
+	]) {
+		assert.equal(summarizeThinkingChunk(line), undefined, line);
+	}
+	assert.match(
+		summarizeThinkingChunk("Avoid O(n²) string concatenation; use rope/gap buffer.") ?? "",
+		/O\(n²\)/,
+		"concrete engineering notes survive the meta filter",
+	);
+	assert.match(
+		summarizeThinkingChunk("Keep response latency under 300ms with a bounded queue.") ?? "",
+		/response latency/,
+	);
+	assert.match(
+		summarizeThinkingChunk("Use a JSON schema for structured output format.") ?? "",
+		/JSON schema/,
+	);
+
+	const mixed = [
+		"The user asks for a design analysis.",
+		"Need plain text and three points.",
+		"Incremental parsing / streaming protocol — event-based parsing, don't wait for full text; chunk boundaries.",
+		"Sliding window / hierarchical summarization — avoid re-summarizing 1MB; merge summaries incrementally.",
+	].join(" ");
+	const summary = summarizeThinkingChunk(mixed);
+	assert.ok(summary, "concrete list item should survive the meta filter");
+	assert.match(summary, /Incremental parsing|Sliding window/);
+	assert.doesNotMatch(summary, /The user asks|Need plain text/);
+});
+
+test("summary fallback strips ANSI and truncates at a readable boundary", () => {
+	const long =
+		"Incremental parsing keeps the stream chunked and avoids re-rendering the entire virtual list on every token; cache by content hash and invalidate on terminal resize.";
+	const summary = summarizeThinkingChunk(long);
+	assert.ok(summary);
+	assert.ok(!summary.includes("\u001b"), "summary must not contain pi-tui reset codes");
+	assert.ok(!summary.endsWith("(e…"), "summary should not cut a word/parenthesis in half");
+	assert.ok(summary.endsWith("…"), "long summary should be visibly truncated");
+	assert.equal(summarizeThinkingChunk("Formulate."), undefined);
+	assert.equal(summarizeThinkingChunk("Write."), undefined);
+});
+
+test("thinking chunks split on blank lines and summaries strip filler", () => {
+	const text = [
+		"I need to inspect the compact-thinking patch and verify the spinner still works.",
+		"",
+		"Then I will add a summary line for the active thinking state.",
+		"",
+		"```ts",
+		"const hidden = 'not a summary';",
+		"```",
+		"",
+		"Finally I will run the full test suite.",
+	].join("\n");
+
+	assert.equal(
+		summarizeThinkingChunk("I need to inspect the renderer patch chain."),
+		"Inspect the renderer patch chain",
+	);
+	assert.equal(
+		summarizeThinkingChunk("Then I will verify the spinner animation."),
+		"Verify the spinner animation",
+	);
+	assert.equal(summarizeThinkingChunk("我需要检查渲染器补丁链。"), "检查渲染器补丁链");
+	assert.equal(
+		summarizeThinkingChunk(
+			"Looking at the renderer, I think the issue is the spinner. I need to fix the animation loop.",
+		),
+		"Fix the animation loop",
+		"action sentence wins over vague first sentence",
+	);
+	assert.deepEqual(
+		extractProviderThinkingTitles(
+			"**Inspecting renderer**\n\nbody text\n\n**Verifying spinner**\n\nmore body",
+		),
+		["Inspecting renderer", "Verifying spinner"],
+	);
+	assert.deepEqual(
+		extractProviderThinkingTitles("I need to inspect\n\n**not a title** trailing"),
+		[],
+		"bold text must be a standalone line",
+	);
+
+	const partial = splitThinkingChunkBuffer(text, false);
+	assert.ok(partial.closed.length >= 3, "completed sections are split out");
+	assert.ok(partial.rest.includes("Finally"), "the unfinished tail stays in the buffer");
+	const unfinished = splitThinkingChunkBuffer("I need to inspect the renderer", false);
+	assert.equal(unfinished.closed.length, 0, "unfinished text stays open");
+	assert.equal(unfinished.rest, "I need to inspect the renderer");
+
+	const complete = splitThinkingChunkBuffer(text, true);
+	const summaries = complete.closed
+		.map((chunk) => summarizeThinkingChunk(chunk))
+		.filter((summary): summary is string => Boolean(summary));
+	assert.ok(
+		summaries.some((summary) => summary.includes("Inspect the compact-thinking patch")),
+		`prose summary missing: ${JSON.stringify(summaries)}`,
+	);
+	assert.ok(
+		summaries.some((summary) => summary.includes("Add a summary line")),
+		`second summary missing: ${JSON.stringify(summaries)}`,
+	);
+	assert.ok(
+		!summaries.some((summary) => summary.includes("const hidden")),
+		"fenced code must not become a summary",
+	);
+	assert.equal(
+		new Set(summaries.map((summary) => summary.toLowerCase())).size,
+		summaries.length,
+		"duplicate summaries are de-duplicated",
+	);
+});
+
+test("provider summary titles become the summary list without local extraction", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-provider-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = [
+		"**Inspecting renderer**",
+		"",
+		"I need to inspect the renderer and find why the spinner stalls.",
+		"",
+		"**Verifying spinner**",
+		"",
+		"Then I will verify the animation frame and the shimmer timing.",
+		"",
+		"**Running tests**",
+		"",
+		"Finally I will run the full test suite.",
+	].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: true,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 5,
+			showRawThinking: false,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+		});
+
+		const live = new AssistantMessageComponent(msg, true) as any;
+		live.updateContent(msg);
+		const liveSummaries = renderText(live)
+			.filter((line) => line.startsWith("· "))
+			.map((line) => line.slice(2));
+		assert.deepEqual(
+			liveSummaries,
+			["Inspecting renderer", "Verifying spinner", "Running tests"],
+			"non-OpenAI messages have no provider title in the heading, so every section stays in the list",
+		);
+		assert.ok(
+			!renderText(live).some((line) => line.includes("I need to inspect")),
+			"provider title mode must not fall back to raw body",
+		);
+
+		emit("message_end", { message: msg }, ctx);
+		const done = new AssistantMessageComponent(msg, true) as any;
+		done.updateContent(msg);
+		assert.deepEqual(
+			renderText(done)
+				.filter((line) => line.startsWith("· "))
+				.map((line) => line.slice(2)),
+			["Inspecting renderer", "Verifying spinner", "Running tests"],
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("active thinking appends paragraph summaries and hides raw reasoning", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-live-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = [
+		"I need to inspect the compact-thinking renderer and verify the spinner still works.",
+		"Then I will add a summary list for the active thinking state.",
+		"Next I will check the chunking logic and the idle fallback.",
+		"Finally I will run the full test suite.",
+	].join("\n\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 2,
+			showRawThinking: false,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		emit("message_update", {
+			message: msg,
+			assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+		});
+
+		const live = new AssistantMessageComponent(msg, true) as any;
+		live.updateContent(msg);
+		const liveLines = renderText(live);
+		assert.ok(
+			liveLines.some((line) => line.includes("Thinking")),
+			`active heading missing: ${JSON.stringify(liveLines)}`,
+		);
+		assert.ok(
+			liveLines.some((line) => line.startsWith("· ")),
+			`summary list missing: ${JSON.stringify(liveLines)}`,
+		);
+		assert.ok(
+			!liveLines.some((line) => line.includes("I need to inspect")),
+			`raw reasoning leaked into collapsed block: ${JSON.stringify(liveLines)}`,
+		);
+		assert.ok(
+			liveLines.filter((line) => line.startsWith("· ")).length <= 2,
+			`collapsed summary limit not applied: ${JSON.stringify(liveLines)}`,
+		);
+
+		emit("message_end", { message: msg }, ctx);
+		const done = new AssistantMessageComponent(msg, true) as any;
+		done.updateContent(msg);
+		const doneLines = renderText(done);
+		assert.equal(
+			doneLines.filter((line) => line.startsWith("· ")).length,
+			2,
+			`collapsed block keeps the latest two summaries: ${JSON.stringify(doneLines)}`,
+		);
+		assert.ok(
+			doneLines.some((line) => line.includes("2 more summaries")),
+			`hidden summary hint missing: ${JSON.stringify(doneLines)}`,
+		);
+		assert.ok(
+			!doneLines.some((line) => line.includes("Finally I will run")),
+			"raw reasoning must stay hidden after completion",
+		);
+
+		thinkingBlockOf(done).setExpanded(true);
+		const expandedLines = renderText(done);
+		assert.equal(
+			expandedLines.filter((line) => line.startsWith("· ")).length,
+			4,
+			`expanded block shows the full summary list: ${JSON.stringify(expandedLines)}`,
+		);
+		assert.ok(
+			!expandedLines.some((line) => line.includes("I need to inspect")),
+			"expanded block must not fall back to raw reasoning",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 

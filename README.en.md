@@ -98,6 +98,9 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "previewLines": 3,                       // preview content lines (blanks skipped); 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
   "thinkingExpandedMaxLines": 200,         // expanded tail lines first; expand again for full body
+  "thinkingLiveSummary": true,             // shimmer active thinking title + append paragraph summaries
+  "thinkingSummaryLimit": 5,               // recent summaries kept in the collapsed block
+  "showRawThinking": false,                // expanded block shows raw reasoning (debug)
 
   // ui (this fork)
   "showStartupHeader": true,               // startup header (mascot + tips + Loaded) toggle
@@ -132,6 +135,14 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerLine3Keys": [],                   // painted only when a chip is visible
 }
 ```
+
+> `thinkingLiveSummary` takes over only when thinking blocks are hidden (`Ctrl+T` or
+> `hideThinkingBlock: true`). Collapsed and expanded blocks show summaries by default;
+> set `showRawThinking: true` to show raw reasoning when expanded.
+> Provider `**Section title**` blocks are used directly when present; otherwise reasoning is
+> split on blank lines, sentence-ending newlines, 500 chars, or 2s idle, and summarized locally
+> without an extra model call. The local fallback drops meta/planning chatter and short fragments,
+> and emits nothing when a section has no useful content.
 
 This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Features tab in `/ccstyle`):
 

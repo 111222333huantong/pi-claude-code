@@ -12,7 +12,6 @@ import {
 	markCompactRoundToolExpanded,
 	setHoveredCompactAssistant,
 } from "../compact-mode.ts";
-import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { setToolTuiFullscreen, isCollapseHintLine } from "../tool/names.ts";
 import {
@@ -43,6 +42,7 @@ import {
 	collapsedHintHitbox,
 	fullscreenContentWidth,
 	fullscreenLeafAt,
+	isMessageCard,
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
@@ -422,7 +422,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const isGroup = component instanceof ToolGroupComponent;
 	const isAssistant = isCompactAssistantComponent(component);
 	const isThinking = component instanceof ThinkingPreviewBlock;
-	const isMessage = isMessageDisplayComponent(component);
+	const isMessage = isMessageCard(component);
 	if (!isTool && !isGroup && !isAssistant && !isThinking && !isMessage) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
@@ -585,7 +585,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			} else if (isCompactAssistantComponent(component)) {
 				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
 				if (component.expanded || overHint) target = { kind: "assistant", component };
-			} else if (isMessageDisplayComponent(component)) {
+			} else if (isMessageCard(component)) {
 				if (overHint) target = { kind: "message", component };
 			}
 		}

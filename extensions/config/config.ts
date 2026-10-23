@@ -122,6 +122,7 @@ export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
+	"agent",
 	"bash",
 	"powershell",
 	"read",

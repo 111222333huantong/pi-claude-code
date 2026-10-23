@@ -49,13 +49,17 @@ import {
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
+import {
+	installSubagentNotificationRenderer,
+	refreshSubagentNotifications,
+} from "./tool/subagent-notification.ts";
 
 /**
  * Claude Code Style for pi — 装配入口。
  *
  * mode=on      → default-mode（工具卡样式 + 展开背景）
  * mode=compact → compact-mode（消息折叠摘要）
- * 共用        → tool-grouping / message-display / mouse / write override
+ * 共用        → tool-grouping / message-display / subagent-notification / mouse / write override
  */
 
 let compactModeHooks: CompactModeHooks | undefined;
@@ -64,6 +68,7 @@ function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): 
 	const tui = getToolMouseTui();
 	toolGrouping?.refresh(tui);
 	refreshMessageDisplays(tui);
+	refreshSubagentNotifications(tui);
 	refreshCompactModeComponents(tui);
 	compactModeHooks?.refresh();
 	tui?.requestRender?.(true);
@@ -117,6 +122,7 @@ export default function (
 				toolGrouping: ToolGroupingHooks;
 				compactMode: CompactModeHooks;
 				disposeMessageDisplay: () => void;
+				disposeSubagentNotificationRenderer: () => void;
 				disposeToolExpandedBackground: () => void;
 		  }
 		| undefined;
@@ -138,6 +144,8 @@ export default function (
 		});
 		compactModeHooks = compactMode;
 		const disposeMessageDisplay = installMessageDisplayRendering();
+		// pi-subagents 的结束通知：换查找结果而不注册，加载先后都归本插件，off 还给原生。
+		const disposeSubagentNotificationRenderer = installSubagentNotificationRenderer();
 		// 展开背景必须在 compact-mode 之后装，shutdown 时先于 compact 释放。
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		installation = {
@@ -145,6 +153,7 @@ export default function (
 			toolGrouping,
 			compactMode,
 			disposeMessageDisplay,
+			disposeSubagentNotificationRenderer,
 			disposeToolExpandedBackground,
 		};
 		return installation;
@@ -253,7 +262,11 @@ export default function (
 		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
 		// 否则它没有后续消息，摘要行会停在 Running。
 		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
-		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
+		scheduleSessionRender(() => {
+			hooks.toolGrouping.refresh(getToolMouseTui());
+			// /reload、/resume 在 session_start 之前就重建了 transcript：已挂载的通知卡换上本插件的渲染器。
+			refreshSubagentNotifications(getToolMouseTui());
+		});
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
@@ -307,6 +320,7 @@ export default function (
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
+		current.disposeSubagentNotificationRenderer();
 		disposeStickyPromptPatches();
 		clearAllAnimations();
 		installation = undefined;

@@ -1,0 +1,1081 @@
+[
+  {
+    "name": "format-01-error-batch-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "error": "Fixture error.",
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "error": "Fixture error.",
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "error",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "error": "Fixture error.",
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.",
+            "status": "error",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "error",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-02-error-batch-path-zero-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "error": "Fixture error.",
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "error": "Fixture error.",
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "error",
+            "toolUses": 0,
+            "totalCost": 0,
+            "totalTokens": 0,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "error",
+        "toolUses": 0,
+        "totalCost": 0,
+        "totalTokens": 0,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-03-error-single-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "error": "Fixture error.",
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "error",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-04-error-single-path-zero-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "error": "Fixture error.",
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "error",
+        "toolUses": 0,
+        "totalCost": 0,
+        "totalTokens": 0,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-05-error-single-no-path-zero-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "error": "Fixture error.",
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.",
+        "status": "error",
+        "toolUses": 0,
+        "totalCost": 0,
+        "totalTokens": 0,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-06-steered-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-07-completed-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-08-completed-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-09-completed-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-10-completed-batch-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-11-completed-batch-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-12-steered-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-13-steered-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.\nFixture second line.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-14-completed-batch-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          },
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-3",
+            "outputFile": "/fixture/transcripts/fixture-agent-3.output",
+            "resultPreview": "Fixture preview.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-15-completed-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-16-completed-batch-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "completed",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-17-completed-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-18-steered-batch-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "others": [
+          {
+            "description": "Fixture task.",
+            "durationMs": 1200,
+            "id": "fixture-agent-2",
+            "outputFile": "/fixture/transcripts/fixture-agent-2.output",
+            "resultPreview": "Fixture preview.",
+            "status": "steered",
+            "toolUses": 2,
+            "totalCost": 0.125,
+            "totalTokens": 1234,
+            "turnCount": 0
+          }
+        ],
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-19-aborted-single-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "aborted",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-20-aborted-single-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "aborted",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-21-completed-single-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-22-completed-single-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-23-steered-single-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-24-steered-single-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-25-aborted-single-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "aborted",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-26-completed-single-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-27-steered-single-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-28-steered-single-path-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "outputFile": "/fixture/transcripts/fixture-agent-1.output",
+        "resultPreview": "Fixture preview.",
+        "status": "steered",
+        "toolUses": 0,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-29-completed-single-no-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-30-completed-single-no-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "completed",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-31-steered-single-no-path-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalCost": 0.125,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-32-steered-single-no-path-no-cost-multiline",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.\nFixture second line.",
+        "status": "steered",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  },
+  {
+    "name": "format-33-aborted-single-no-path-no-cost-single-line",
+    "entry": {
+      "type": "custom_message",
+      "id": "fixture-entry",
+      "parentId": null,
+      "timestamp": "2000-01-01T00:00:00.000Z",
+      "customType": "subagent-notification",
+      "content": "<task-notification>\nFixture notification.\n</task-notification>",
+      "display": true,
+      "details": {
+        "description": "Fixture task.",
+        "durationMs": 1200,
+        "id": "fixture-agent-1",
+        "resultPreview": "Fixture preview.",
+        "status": "aborted",
+        "toolUses": 2,
+        "totalTokens": 1234,
+        "turnCount": 0
+      }
+    }
+  }
+]

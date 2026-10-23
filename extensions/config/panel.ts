@@ -82,8 +82,8 @@ function modeSettingDescription(mode: CompactStyleMode): string {
 
 function excludeRenderersDescription(names: readonly string[]): string {
 	return names.length === 0
-		? "No tools excluded. Agent always keeps its dedicated renderer. Enter to toggle common tools."
-		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
+		? "No tools excluded. Enter to toggle common tools."
+		: `Native renderer for: ${names.join(", ")}. Enter to toggle.`;
 }
 
 function customFooterDescription(enabled: boolean): string {
@@ -274,10 +274,7 @@ function buildExcludeRenderersSubmenu(
 	const items = candidates.map((name) => ({
 		id: name,
 		label: name,
-		description:
-			name === "Agent"
-				? "Agent always uses its dedicated renderer and cannot be forced through ccstyle."
-				: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
+		description: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
 		currentValue: config.excludeRenderers.includes(name) ? "exclude" : "style",
 		values: ["style", "exclude"],
 	}));

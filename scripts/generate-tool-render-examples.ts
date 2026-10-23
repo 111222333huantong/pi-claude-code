@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	AssistantMessageComponent,
+	CustomMessageComponent,
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -28,6 +29,7 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
+import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
 import { setToolTuiFullscreen } from "../extensions/renderer/tool/names.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -667,6 +669,63 @@ return g + f`,
 			group.setExpanded(true);
 			const expanded = renderLines(group);
 
+			// 子代理结束通知：单个 agent 单独成行；多个展示项复用同类或混合分组。
+			const subagentDetails = {
+				id: "6dae0e11-9341-43b",
+				description: "Locate completion text owner",
+				status: "completed",
+				toolUses: 35,
+				turnCount: 0,
+				totalTokens: 57_100,
+				totalCost: 0.8207,
+				durationMs: 34_800,
+				outputFile: "/tmp/pi-subagents-1000/…/tasks/6dae0e11-9341-43b.output",
+				resultPreview:
+					"The displayed block is owned by the installed/local pi-subagents\nextension, not by pi-cc-extensions.…",
+			};
+			const subagentNotification = (details: Record<string, unknown>) =>
+				new CustomMessageComponent(
+					{
+						role: "custom",
+						customType: "subagent-notification",
+						content: "<task-notification>…</task-notification>",
+						display: true,
+						details,
+						timestamp: 0,
+					} as any,
+					renderSubagentNotification,
+				);
+			// 单独出现的这条到了轮数软上限被要求收尾（steered），行里写出结局。
+			const standaloneSubagent = renderLines(
+				subagentNotification({ ...subagentDetails, status: "steered" }),
+				160,
+			);
+			const notificationOnlyParent = new Container();
+			notificationOnlyParent.addChild(subagentNotification({
+				...subagentDetails,
+				others: [{ ...subagentDetails, id: "second-agent" }],
+			}));
+			const notificationOnlyGroup = notificationOnlyParent.children[0];
+			if (!(notificationOnlyGroup instanceof ToolGroupComponent)) {
+				throw new Error("expected a multi-agent notification to form a display group");
+			}
+			const notificationOnlyCollapsed = renderLines(notificationOnlyGroup, 160);
+			const subagentParent = new Container() as any;
+			const result = tool("get_subagent_result", "g-result", { agent_id: "6dae0e11-9341-43b" });
+			result.updateResult({
+				content: [{ type: "text", text: "Agent: 6dae0e11-9341-43b" }],
+				isError: false,
+			});
+			const subagentRead = tool("read", "g-subagent-read", { path: "extensions/index.ts" });
+			subagentRead.updateResult({ content: [{ type: "text", text: "L0" }], isError: false });
+			subagentParent.addChild(subagentNotification(subagentDetails));
+			subagentParent.addChild(result);
+			subagentParent.addChild(subagentRead);
+			const subagentGroup = subagentParent.children[0];
+			const subagentCollapsed = renderLines(subagentGroup, 120);
+			subagentGroup.setExpanded(true);
+			const subagentExpanded = renderLines(subagentGroup, 120);
+
 			chunks.push(
 				section(
 					"11. 工具组（tool-grouping）",
@@ -689,6 +748,25 @@ return g + f`,
 							"- Input/Output 之间各有一个空白 rail 行。",
 							"- 点击展开区任意行、任意列（含底部 padding）均可收起。",
 							"- 组末尾不再额外追加空白行。",
+						].join("\n"),
+						"### 子代理结束通知（subagent-notification）",
+						"单个 agent，前后没有可并入的展示项：",
+						fence(standaloneSubagent),
+						"多条相邻通知，或一条通知含多个 agent（`others`），都复用同类分组标题：",
+						fence(notificationOnlyCollapsed),
+						"紧挨工具时作为展示项并入混合工具组：",
+						fence(subagentCollapsed),
+						fence(subagentExpanded),
+						[
+							"- 只换 pi-subagents 通知的展示：消息内容、details 与用量统计都不改，也不伪造工具调用。",
+							"- agent 一停下就发这条通知，不一定是完成：标题统一叫 `Subagent Finished`，普通完成之外的结局（`completed (steered)`、`error`、`stopped`、`aborted`）写在 id 后面。steered 指到了轮数软上限被要求收尾，与 steer_subagent 无关。",
+							"- 组头按行计数：通知的每个 agent 算一行，与工具同一口径（`3 done` 是 3 行，可能是 2 工具 + 1 通知行）。一条通知带多个 agent（`others`）时每个 agent 一行。",
+							"- 统计只报 payload 里测得的值；pi-subagents 拿不到时写 0（turns、未定价的花费），这些一律不显示。",
+							"- 展开只展示保存下来的内容：说明、状态、统计、结果预览（可能已被 pi-subagents 截断）、错误与 transcript 路径；不调用工具，也不读 transcript 文件。",
+							"- 展开态与工具展开卡同一套边框：`├`/`└` 角标 + accent 粗体小标题（`Description`、`Status`、`Saved result preview`、`Error`、`Transcript`），正文跟在 `│ ` 后，段落之间留一条 `│`；说明也成段，不留裸行断掉辅助线。",
+							"- on 按展示项分组：两项及以上即成组，不要求有真实工具；只有通知时标题为 `Subagent Finished`。一条批量通知仍是原来的消息，不拆成新消息或伪造工具。",
+							"- 中间隔着可见的 assistant/user 文本时不并组；移除成员后仍有两项展示内容就保留组，只有一项时拆回单独行。",
+							"- compact 保留原来的单独通知视图，不并组、不纳入工具执行计数；off 交回原生渲染。",
 						].join("\n"),
 					].join("\n\n"),
 				),

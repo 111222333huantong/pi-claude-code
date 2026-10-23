@@ -30,6 +30,17 @@ export function oneLine(value: unknown, max = 96): string {
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+/** token 计数带单位：保留一位小数，与通知 fixture 口径一致。 */
+export function formatTokenCountWithUnit(value: number): string {
+	const count =
+		value < 1000
+			? `${value}`
+			: value < 1_000_000
+				? `${(value / 1000).toFixed(1)}k`
+				: `${(value / 1_000_000).toFixed(1)}M`;
+	return `${count} token`;
+}
+
 /** 把一行文本补齐到固定可见宽度，超宽时截断并追加省略号。 */
 export function padLine(text: string, width: number): string {
 	const truncated = truncateToWidth(text, width, "…");

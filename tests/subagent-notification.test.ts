@@ -136,7 +136,7 @@ test("the row names the outcome unless the agent simply completed", () => {
 	);
 	assert.match(
 		outcome("stopped"),
-		/^ ✗ Subagent Finished 6dae0e11-9341-43b · stopped · 35 tool uses/,
+		/^ ⚠ Subagent Finished 6dae0e11-9341-43b · stopped · 35 tool uses/,
 	);
 	assert.match(
 		outcome("queued"),
@@ -144,7 +144,10 @@ test("the row names the outcome unless the agent simply completed", () => {
 	);
 	const expanded = card(standalone(finishedAgent({ status: "steered" }), true).render(120));
 	assert.equal(expanded[0], " ✓ Subagent Finished 6dae0e11-9341-43b");
-	assert.equal(expanded[2], "   Status: completed (steered)");
+	assert.equal(expanded[1], " ├ Description");
+	assert.equal(expanded[2], " │ Locate completion text owner");
+	assert.equal(expanded[4], " ├ Status");
+	assert.equal(expanded[5], " │ completed (steered)");
 });
 
 function card(lines: string[]): string[] {
@@ -158,15 +161,18 @@ test("the expanded view shows description, status, stats, saved preview, and tra
 	const rows = card(standalone(finishedAgent(), true).render(120));
 	assert.deepEqual(rows, [
 		" ✓ Subagent Finished 6dae0e11-9341-43b",
-		"   Locate completion text owner",
-		"   Status: completed",
-		"   35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
-		"",
-		"   Saved result preview",
-		"   The displayed block is owned by pi-subagents.",
-		"   Second line…",
-		"",
-		"   Transcript",
+		" ├ Description",
+		" │ Locate completion text owner",
+		" │",
+		" ├ Status",
+		" │ completed",
+		" │ 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
+		" │",
+		" ├ Saved result preview",
+		" │ The displayed block is owned by pi-subagents.",
+		" │ Second line…",
+		" │",
+		" └ Transcript",
 		"   /tmp/pi-subagents-1000/session/tasks/6dae0e11-9341-43b.output",
 	]);
 });
@@ -186,14 +192,17 @@ test("the expanded view adds the error and omits whatever the payload lacks", ()
 	);
 	assert.deepEqual(failed, [
 		" ✗ Subagent Finished 6dae0e11-9341-43b",
-		"   Locate completion text owner",
-		"   Status: error",
-		"   35 tool uses · 57.1k token · 34.8s",
-		"",
-		"   Saved result preview",
-		"   No output.",
-		"",
-		"   Error",
+		" ├ Description",
+		" │ Locate completion text owner",
+		" │",
+		" ├ Status",
+		" │ error",
+		" │ 35 tool uses · 57.1k token · 34.8s",
+		" │",
+		" ├ Saved result preview",
+		" │ No output.",
+		" │",
+		" └ Error",
 		"   Error Code null: upstream stream failed",
 	]);
 	assert.deepEqual(card(standalone(null, true).render(120)), [" ✓ Subagent Finished"]);
@@ -207,13 +216,15 @@ test("expanded preview wraps to the card width and agents are separated", () => 
 	};
 	const rows = card(standalone(details, true).render(60));
 	for (const row of rows) assert.ok(row.length <= 60, row);
-	const preview = rows.slice(rows.indexOf("   Saved result preview") + 1);
-	assert.ok(preview[0]!.startsWith("   word word"));
-	assert.ok(preview[1]!.startsWith("   word word"), "long preview wraps instead of truncating");
+	// 预览是最后一段时用 `└` + 两格缩进，否则用 `│`；比较文字时先去掉边框。
+	const heading = rows.findIndex((row) => /^ [├└] Saved result preview$/.test(row));
+	const preview = rows.slice(heading + 1).map((row) => row.replace(/^[ │]+/, ""));
+	assert.ok(preview[0]!.startsWith("word word"), preview[0]);
+	assert.ok(preview[1]!.startsWith("word word"), "long preview wraps instead of truncating");
 	const second = rows.indexOf(" ✓ Subagent Finished second");
 	assert.ok(second > 0);
 	assert.equal(rows[second - 1], "", "agents are separated by a blank row");
-	assert.equal(rows[second + 1], "   Status: completed");
+	assert.equal(rows[second + 1], " ├ Status");
 });
 
 test("narrow standalone rows stay within the width and expanded text survives wrapping", () => {
@@ -225,7 +236,8 @@ test("narrow standalone rows stay within the width and expanded text survives wr
 			finishedAgent({ id: "fourth" }),
 		],
 	};
-	const squash = (rows: string[]) => rows.join("").replace(/\s+/g, "");
+	// 边框字符随折行重复，比较文字时连边框一起去掉。
+	const squash = (rows: string[]) => rows.join("").replace(/[\s│├└]/g, "");
 	const wide = squash(card(standalone(details, true).render(200)));
 	for (const width of [20, 30, 40, 120]) {
 		for (const expanded of [false, true]) {
@@ -336,21 +348,24 @@ test("an expanded group nests agent details in the tree and keeps tool views", (
 		group.setExpanded(true);
 		const rows = card(group.render(120));
 		assert.match(rows[0]!, /^ ● Multiple Tools: 3 done · .* · ↑ Collapse$/);
-		assert.deepEqual(rows.slice(1, 13), [
+		assert.deepEqual(rows.slice(1, 16), [
 			" ├ ✓ Subagent Finished 6dae0e11-9341-43b",
-			" │   Locate completion text owner",
-			" │   Status: completed",
-			" │   35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
-			" │",
-			" │   Saved result preview",
-			" │   The displayed block is owned by pi-subagents.",
-			" │   Second line…",
-			" │",
-			" │   Transcript",
+			" │ ├ Description",
+			" │ │ Locate completion text owner",
+			" │ │",
+			" │ ├ Status",
+			" │ │ completed",
+			" │ │ 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
+			" │ │",
+			" │ ├ Saved result preview",
+			" │ │ The displayed block is owned by pi-subagents.",
+			" │ │ Second line…",
+			" │ │",
+			" │ └ Transcript",
 			" │   /tmp/pi-subagents-1000/session/tasks/6dae0e11-9341-43b.output",
 			" │",
 		]);
-		assert.deepEqual(rows.slice(13), toolRows, "tool rows are unchanged by the notification");
+		assert.deepEqual(rows.slice(16), toolRows, "tool rows are unchanged by the notification");
 
 		// 展开状态转发给通知本身：拆组后它仍是展开卡。
 		assert.match(card(note.render(120)).join("\n"), /Saved result preview/);
@@ -448,14 +463,15 @@ test("narrow expanded groups wrap every notification row and keep tool rows clic
 				.slice(2, toolRowOf(lines))
 				.map((line) => line.replace(/^ (?:[├└] [✓✗] |│ )/, ""))
 				.join("")
-				.replace(/\s+/g, "");
+				.replace(/[\s│├└]/g, "");
 		};
 		const wide = notificationText(200);
 		for (const text of [
 			"SubagentFinished6dae0e11-9341-43b-first",
 			"SubagentFinished6dae0e11-9341-43b-second",
-			"Status:completed(steered)",
-			"Status:aborted",
+			"Status",
+			"completed(steered)",
+			"aborted",
 			"Savedresultpreview",
 			"Errorupstreamstreamfailed",
 			"Transcript",

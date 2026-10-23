@@ -11,6 +11,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
+import { formatTokenCountWithUnit } from "../../utils/format.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
 	patchRegistry,
@@ -31,6 +32,7 @@ import { TOOL_CARD_BG_SLOT } from "./tool-state.ts";
  */
 
 export const SUBAGENT_NOTIFICATION_TYPE = "subagent-notification";
+export const AGENT_TOOL_NAME = "Agent";
 const FINISHED_LABEL = "Subagent Finished";
 
 type Fg = (color: string, text: string) => string;
@@ -69,12 +71,6 @@ function plural(count: number, unit: string): string {
 	return `${count} ${unit}${count === 1 ? "" : "s"}`;
 }
 
-function formatTokens(count: number): string {
-	if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M token`;
-	if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k token`;
-	return `${count} token`;
-}
-
 /** 估算花费：带 `~`，一美元以下最多四位小数。 */
 function formatCost(cost: number): string {
 	if (cost < 0.0001) return "<$0.0001";
@@ -84,14 +80,17 @@ function formatCost(cost: number): string {
 	return `~$${rounded.toFixed(Math.max(2, decimals))}`;
 }
 
-function subagentStats(details: Record<string, unknown>): string[] {
+/** 统计口径：0 一律当缺失（pi-subagents 对未测字段写 0，无法区分）。
+ * 字段名兼容两套：通知 payload 用 totalTokens/totalCost；工具结果 details 用 tokens。
+ */
+export function measuredStats(details: Record<string, unknown>): string[] {
 	const stats: string[] = [];
 	const turns = measured(details.turnCount);
 	if (turns) stats.push(plural(turns, "turn"));
 	const toolUses = measured(details.toolUses);
 	if (toolUses) stats.push(plural(toolUses, "tool use"));
-	const tokens = measured(details.totalTokens);
-	if (tokens) stats.push(formatTokens(tokens));
+	const tokens = measured(details.totalTokens) ?? measured(details.tokens);
+	if (tokens) stats.push(formatTokenCountWithUnit(tokens));
 	const cost = measured(details.totalCost);
 	if (cost) stats.push(formatCost(cost));
 	const duration = measured(details.durationMs);
@@ -99,7 +98,22 @@ function subagentStats(details: Record<string, unknown>): string[] {
 	return stats;
 }
 
-const FAILED_STATUSES = new Set(["error", "stopped", "aborted"]);
+/** 状态分类：stopped 是用户主动停，不算失败；error/aborted 才是真失败。 */
+export function isFailedSubagentStatus(status: string): boolean {
+	return status === "error" || status === "aborted";
+}
+
+/** stopped 用中性图标；其它非 completed 的非失败状态用 ✓。 */
+export function subagentStatusIcon(status: string, failed: boolean): string {
+	if (failed) return "✗";
+	if (status === "stopped") return "⚠";
+	return "✓";
+}
+
+/** 结果行/统计行里 status 的展示叫法，与通知行 outcomeText 同一口径。 */
+export function agentStatusLabel(status: string): string {
+	return status === "steered" ? "completed (steered)" : status;
+}
 
 function toFinishedSubagent(details: Record<string, unknown>): FinishedSubagent {
 	const status = text(details.status);
@@ -108,9 +122,10 @@ function toFinishedSubagent(details: Record<string, unknown>): FinishedSubagent 
 		id: text(details.id),
 		description: text(details.description),
 		status,
+		// stopped 是用户主动停（不是失败），error/aborted 才用 ✗。
 		// 没有 status 时只能看有没有错误正文；有 status 就以它为准。
-		failed: status ? FAILED_STATUSES.has(status) : Boolean(error),
-		stats: subagentStats(details),
+		failed: status ? isFailedSubagentStatus(status) : Boolean(error),
+		stats: measuredStats(details),
 		resultPreview: text(details.resultPreview),
 		error,
 		outputFile: text(details.outputFile),
@@ -165,43 +180,100 @@ function subagentSummary(subagent: FinishedSubagent, width: number, fg: Fg): str
 }
 
 const DETAIL_INDENT = "  ";
+/** 段落正文的左栏；最后一段改用 DETAIL_INDENT（与工具展开卡的 └ 后缩进一致）。 */
+const SECTION_RAIL = "│ ";
 
-/** 一段正文：保留原有换行，超宽折行，每行带缩进。 */
-function detailBlock(value: string, width: number, color: string, fg: Fg): string[] {
-	const room = Math.max(1, width - DETAIL_INDENT.length);
-	return value
-		.split("\n")
-		.flatMap((line) => (line ? wrapTextWithAnsi(line, room) : [""]))
-		.map((line) => (line ? `${DETAIL_INDENT}${fg(color, line)}` : ""));
+/** 着色之外还需要粗体：工具展开卡的小标题是 accent + bold。 */
+type Styler = {
+	fg: Fg;
+	bold(text: string): string;
+};
+
+function stylerFor(theme: any): Styler {
+	return {
+		fg: themeFg(theme),
+		bold: (text) => (typeof theme?.bold === "function" ? theme.bold(text) : text),
+	};
 }
 
-function detailSection(heading: string, value: string, width: number, color: string, fg: Fg) {
-	return ["", `${DETAIL_INDENT}${fg("muted", heading)}`, ...detailBlock(value, width, color, fg)];
+/** 一段正文：保留原有换行，超宽折行；边框由 detailRows 加。 */
+function sectionBody(value: string, width: number, color: string, styler: Styler): string[] {
+	return value
+		.split("\n")
+		.flatMap((line) => (line ? wrapTextWithAnsi(line, Math.max(1, width)) : [""]))
+		.map((line) => (line ? styler.fg(color, line) : ""));
+}
+
+/** 展开卡里的一个段落：标题走 accent 粗体，正文自己带颜色。 */
+type DetailSection = { heading: string; body: string[] };
+
+/**
+ * 展开详情里的段落：任务说明、状态、结果预览、错误、transcript。payload 里缺的段落不出现。
+ * 正文宽度不含边框：调用方已扣掉 `│ ` 占的两列。
+ */
+function subagentSections(
+	subagent: FinishedSubagent,
+	width: number,
+	styler: Styler,
+): DetailSection[] {
+	const sections: DetailSection[] = [];
+	// 说明自己成段而不是标题副行：副行没有边框，会把展开卡的 `│` 辅助线截断。
+	if (subagent.description) {
+		sections.push({
+			heading: "Description",
+			body: sectionBody(subagent.description, width, "text", styler),
+		});
+	}
+	if (subagent.status) {
+		const color = subagent.failed ? "error" : subagent.status === "stopped" ? "warning" : "muted";
+		const body = sectionBody(outcomeText(subagent.status), width, color, styler);
+		if (subagent.stats.length) {
+			body.push(...sectionBody(subagent.stats.join(" · "), width, "dim", styler));
+		}
+		sections.push({ heading: "Status", body });
+	}
+	if (subagent.resultPreview) {
+		sections.push({
+			heading: "Saved result preview",
+			body: sectionBody(subagent.resultPreview, width, "toolOutput", styler),
+		});
+	}
+	if (subagent.error) {
+		sections.push({ heading: "Error", body: sectionBody(subagent.error, width, "error", styler) });
+	}
+	if (subagent.outputFile) {
+		sections.push({
+			heading: "Transcript",
+			body: sectionBody(subagent.outputFile, width, "dim", styler),
+		});
+	}
+	return sections;
 }
 
 /**
- * 展开详情（标题行之后的部分）：说明、状态、统计、结果预览、错误、transcript。
+ * 展开详情（标题行之后的部分）：用工具展开卡同一套边框——`├`/`└` 角标 + accent 粗体小标题，
+ * 正文跟在 `│ ` 后，最后一段改用两格缩进，段落之间留一条 `│`。
  * 只展示保存下来的内容：不调用工具、不读 transcript 文件。
  */
-function subagentDetailRows(subagent: FinishedSubagent, width: number, fg: Fg): string[] {
+function subagentDetailRows(subagent: FinishedSubagent, width: number, styler: Styler): string[] {
+	// width 是这一行可用的总列数（含段落边框）；正文再扣掉 `│ ` 两列。
+	const room = Math.max(1, width - SECTION_RAIL.length);
 	const rows: string[] = [];
-	if (subagent.description) rows.push(...detailBlock(subagent.description, width, "text", fg));
-	if (subagent.status) {
-		const color = subagent.failed ? "error" : "dim";
-		rows.push(`${DETAIL_INDENT}${fg("dim", "Status:")} ${fg(color, outcomeText(subagent.status))}`);
-	}
-	if (subagent.stats.length) {
-		rows.push(...detailBlock(subagent.stats.join(" · "), width, "dim", fg));
-	}
-	if (subagent.resultPreview) {
-		rows.push(
-			...detailSection("Saved result preview", subagent.resultPreview, width, "toolOutput", fg),
+	const sections = subagentSections(subagent, room, styler);
+	sections.forEach((section, index) => {
+		const last = index === sections.length - 1;
+		if (index) rows.push(styler.fg("dim", "│"));
+		const bodyPrefix = last ? DETAIL_INDENT : SECTION_RAIL;
+		const heading = wrapTextWithAnsi(styler.fg("accent", styler.bold(section.heading)), room);
+		heading.forEach((line, lineIndex) =>
+			rows.push(`${styler.fg("dim", lineIndex ? bodyPrefix : `${last ? "└" : "├"} `)}${line}`),
 		);
-	}
-	if (subagent.error) rows.push(...detailSection("Error", subagent.error, width, "error", fg));
-	if (subagent.outputFile) {
-		rows.push(...detailSection("Transcript", subagent.outputFile, width, "dim", fg));
-	}
+		for (const line of section.body) {
+			rows.push(
+				line ? `${styler.fg("dim", bodyPrefix)}${line}` : styler.fg("dim", last ? "" : "│"),
+			);
+		}
+	});
 	return rows;
 }
 
@@ -211,7 +283,10 @@ function wrapRows(rows: string[], width: number): string[] {
 }
 
 function statusIcon(subagent: FinishedSubagent, fg: Fg): string {
-	return subagent.failed ? fg("error", "✗") : fg("success", "✓");
+	const icon = subagentStatusIcon(subagent.status, subagent.failed);
+	if (subagent.failed) return fg("error", icon);
+	if (icon === "⚠") return fg("warning", icon);
+	return fg("success", icon);
 }
 
 /**
@@ -286,21 +361,24 @@ class FinishedSubagentView implements Component {
 	/** 展开卡：与工具展开卡同一套底色，有一个 agent 失败就整卡用失败底色。 */
 	private renderExpanded(width: number): string[] {
 		const fg = this.fg;
+		const styler = stylerFor(this.theme);
 		const failed = this.subagents.some((subagent) => subagent.failed);
 		const slot = TOOL_CARD_BG_SLOT[failed ? "error" : "success"];
 		const box = new Box(this.pad, 1, (line) => this.theme.bg(slot, line));
 		const subagents = this.subagents;
 		box.addChild({
-			// 标题、状态与小标题也折进内宽。
-			render: (inner: number) =>
-				wrapRows(
-					subagents.flatMap((subagent, index) => [
-						...(index ? [""] : []),
-						`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`,
-						...subagentDetailRows(subagent, inner, fg),
-					]),
-					inner,
-				),
+			// 标题行自己折；详情已按内宽折过，不能再折，否则 `│` 会掉到下一行。
+			render: (inner: number) => {
+				const rows: string[] = [];
+				subagents.forEach((subagent, index) => {
+					if (index) rows.push("");
+					rows.push(
+						...wrapRows([`${statusIcon(subagent, fg)} ${subagentTitle(subagent, fg)}`], inner),
+					);
+					rows.push(...subagentDetailRows(subagent, inner - SECTION_RAIL.length, styler));
+				});
+				return rows;
+			},
 			invalidate() {},
 		});
 		return box.render(width);
@@ -371,9 +449,13 @@ export function installSubagentNotificationRenderer(): () => void {
 	patchRegistry.get<RendererLookupPatch>(RENDERER_PATCH_KEY)?.dispose();
 	const prototype = ExtensionRunner.prototype as any;
 	let original: RendererLookup = prototype.getMessageRenderer;
+	// 上游 pi 如果改掉了这个方法名（版本升级后可能移除），返回 undefined，让 Pi
+	// 画通用自定义卡片兜底，而不是崩在 `undefined.call`。
+	if (typeof original !== "function") return () => {};
 	// 最外层还是失效的旧补丁（所有权槽已丢）就拆开，不在它外面再套一层；被别人包着的不动。
 	while ((original as any)[RENDERER_PATCH_KEY] && (original as any)[PROTOTYPE_ORIGINAL_KEY]) {
 		original = (original as any)[PROTOTYPE_ORIGINAL_KEY];
+		if (typeof original !== "function") return () => {};
 	}
 	const installed: RendererLookup = function (this: unknown, customType) {
 		const upstream = original.call(this, customType);
@@ -393,7 +475,9 @@ export function installSubagentNotificationRenderer(): () => void {
 			if (!patch.active) return;
 			patch.active = false;
 			// 被别人包在里面时撤不下来：留着失效直通，不动对方的包装。
-			if (prototype.getMessageRenderer === installed) prototype.getMessageRenderer = original;
+			if (prototype.getMessageRenderer === installed) {
+				prototype.getMessageRenderer = original;
+			}
 			patchRegistry.dispose(RENDERER_PATCH_KEY, patch);
 		},
 	};
@@ -435,13 +519,13 @@ function subagentItem(subagent: FinishedSubagent): GroupDisplayItem {
 		summary: (width, theme) => subagentSummary(subagent, width, themeFg(theme)),
 		expandedRows(width, theme) {
 			if (cache?.width === width && cache.theme === theme) return cache.rows;
-			const fg = themeFg(theme);
-			// 首行接在 `├ ✓ ` 之后占 4 列，续行前缀（`│ `）占 2 列；分组只截不折，这里先折好。
-			// 末尾空行把详情和下一项隔开。
-			const room = Math.max(1, width - 2);
+			const styler = stylerFor(theme);
+			// 首行接在 `├ ✓ ` 之后占 4 列；续行前缀（`│ `）由分组再加 2 列，详情自己又带 2 列边框。
+			// 分组只截不折，所以这里先把行折好。末尾空行把详情和下一项隔开。
+			const room = Math.max(1, width - 4);
 			const rows = [
-				...wrapRows([subagentTitle(subagent, fg)], width - 4),
-				...wrapRows(subagentDetailRows(subagent, room, fg), room),
+				...wrapRows([subagentTitle(subagent, styler.fg)], width - 4),
+				...subagentDetailRows(subagent, room, styler),
 				"",
 			];
 			cache = { width, theme, rows };

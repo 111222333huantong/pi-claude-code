@@ -37,6 +37,7 @@ import {
 import { formatToolDuration, headTruncateToWidth, toolViewportWidth } from "./result.ts";
 import { isLiveToolCall } from "./tool-state.ts";
 import {
+	AGENT_TOOL_NAME,
 	isSubagentNotificationComponent,
 	subagentNotificationItems,
 } from "./subagent-notification.ts";
@@ -327,7 +328,7 @@ function toolSummaryText(tool: any, toolStatus: ToolStatus, width: number, fg: F
  * 问题 -> 回答写法：跑后台的结果状态放在 payload 后，比单独的 ↳ 行省一行。
  */
 function agentResultTail(tool: any, fg: Fg): string {
-	if (toolName(tool) !== "Agent" || !tool?.result) return "";
+	if (toolName(tool).toLowerCase() !== AGENT_TOOL_NAME.toLowerCase() || !tool?.result) return "";
 	const details = tool.result.details;
 	if (details?.status !== "background") return "";
 	const agentId = details.agentId ? ` ID: ${details.agentId}` : "";
@@ -590,6 +591,8 @@ export class ToolGroupComponent extends Container {
 		const fg = themeFg(theme);
 		const items = groupItems(this.children);
 		const counts = { pending: 0, success: 0, error: 0 };
+		// 组头按行计数：通知的每个 agent 算一行（与工具各一行同一口径，避免
+		// 「5 done 其实是 4 工具 + 1 通知行」这类误导）。
 		for (const item of items) counts[item.status]++;
 		const countText = groupCountText(counts, fg);
 		const names = new Set(items.map((item) => item.name));

@@ -48,6 +48,11 @@ import {
 } from "./tool-state.ts";
 import { showMoreHintText } from "./names.ts";
 import { oneLine } from "../../utils/format.ts";
+import {
+	isFailedSubagentStatus,
+	measuredStats,
+	agentStatusLabel,
+} from "./subagent-notification.ts";
 
 /** 成功勾：亮绿 truecolor（与 message-display 一致）。 */
 const BRIGHT_GREEN = "[38;2;80;220;100m";
@@ -216,16 +221,7 @@ function renderAgentResult(
 		return renderDefault(originalTool, "renderResult", [result, options, theme, context], text);
 	}
 
-	const statsParts: string[] = [];
-	if (details.modelName) statsParts.push(String(details.modelName));
-	if (typeof details.turnCount === "number" && details.turnCount > 0) {
-		statsParts.push(`${details.turnCount} turn${details.turnCount === 1 ? "" : "s"}`);
-	}
-	if (typeof details.toolUses === "number" && details.toolUses > 0) {
-		statsParts.push(`${details.toolUses} tool use${details.toolUses === 1 ? "" : "s"}`);
-	}
-	if (details.tokens) statsParts.push(String(details.tokens));
-	const stats = statsParts.join(" · ");
+	const stats = measuredStats(details).join(" · ");
 
 	const agentId = details.agentId ? `ID: ${details.agentId}` : "";
 	const tail = (body: string) => (stats ? `${body} · ${stats}` : body);
@@ -250,9 +246,7 @@ function renderAgentResult(
 	if (status === "completed" || status === "steered") {
 		if (!expanded) {
 			const label = status === "steered" ? "Wrapped up (turn limit)" : "Done";
-			const duration =
-				typeof details.durationMs === "number" ? formatToolDuration(details.durationMs) : "";
-			const body = [label, stats, duration].filter(Boolean).join(" · ");
+			const body = [label, stats].filter(Boolean).join(" · ");
 			return new Text(theme.fg("muted", renderCollapsedToolResult(body, "")), 0, 0);
 		}
 		const view = renderExpandedToolResult(
@@ -273,9 +267,17 @@ function renderAgentResult(
 	}
 
 	// error / aborted：首行错误文案 + 统计，与通用失败行口径一致。
-	const firstLine = text.split("\n").find((line) => line.trim()) ?? status;
+	const label = agentStatusLabel(status);
+	const firstLine = text.split("\n").find((line) => line.trim()) ?? label;
 	const body = tail(oneLine(firstLine, 72));
-	return new Text(theme.fg("error", renderCollapsedToolResult(body, "")), 0, 0);
+	return new Text(
+		theme.fg(
+			isFailedSubagentStatus(status) ? "error" : "muted",
+			renderCollapsedToolResult(body, ""),
+		),
+		0,
+		0,
+	);
 }
 
 /** 用 ccstyle call/result 包装任意工具定义。 */
@@ -409,7 +411,8 @@ export function createCcstyleTool(
 			const expanded = isToolExpanded(options, context);
 			const isError = Boolean(options?.isError || context?.isError);
 			// Agent：running 转交原渲染器（spinner/activity 只有它有）；其余画 ↳ 摘要行。
-			if (toolName === AGENT_TOOL_NAME) {
+			// toolName 大小写宽松匹配：上游改名也不静默失效。
+			if (toolName.toLowerCase() === AGENT_TOOL_NAME.toLowerCase()) {
 				const agentResult = renderAgentResult(
 					originalTool,
 					result,

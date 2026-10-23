@@ -139,7 +139,7 @@ function standalone(fixture: Fixture, expanded = false): CustomMessageComponent 
 	return component;
 }
 
-const FAILED = ["error", "stopped", "aborted"];
+const FAILED = ["error", "aborted"];
 const icon = (agent: any) => (FAILED.includes(agent.status) ? "✗" : "✓");
 const title = (agent: any) => `${icon(agent)} Subagent Finished ${agent.id}`;
 /** 测得（非 0）才显示的统计，以及它在行里的字样。 */
@@ -192,9 +192,13 @@ test("every format collapses to one row per agent with its outcome and measured 
 	}
 });
 
+/** 段落小标题行：`├ Status` / `└ Transcript`（角标 + accent 标题，与工具展开卡同一套）。 */
+const headingRows = (rows: string[], heading: string) =>
+	rows.filter((row) => new RegExp(`^ [├└] ${heading}$`).test(row)).length;
+/** 正文行去掉边框：`│ text` / `  text` 都还原成 `text`。 */
+const bodyText = (row: string) => row.replace(/^[ │├└]+/, "");
+
 test("every format expands to exactly the details its payload supplies", () => {
-	const occurrences = (rows: string[], row: string) =>
-		rows.filter((candidate) => candidate === row).length;
 	for (const fixture of fixtures) {
 		const agents = agentsOf(fixture.entry.details);
 		const rows = plainRows(standalone(fixture, true).render(120));
@@ -204,15 +208,15 @@ test("every format expands to exactly the details its payload supplies", () => {
 			fixture.name,
 		);
 		const supplied = (key: string) => agents.filter((agent) => agent[key]).length;
-		assert.equal(occurrences(rows, "   Saved result preview"), supplied("resultPreview"));
-		assert.equal(occurrences(rows, "   Error"), supplied("error"), fixture.name);
-		assert.equal(occurrences(rows, "   Transcript"), supplied("outputFile"), fixture.name);
-		const statuses = rows.filter((row) => row.startsWith("   Status: ")).length;
-		assert.equal(statuses, supplied("status"), fixture.name);
+		assert.equal(headingRows(rows, "Saved result preview"), supplied("resultPreview"));
+		assert.equal(headingRows(rows, "Error"), supplied("error"), fixture.name);
+		assert.equal(headingRows(rows, "Transcript"), supplied("outputFile"), fixture.name);
+		assert.equal(headingRows(rows, "Status"), supplied("status"), fixture.name);
+		const texts = rows.map(bodyText);
 		for (const agent of agents) {
 			for (const key of ["description", "resultPreview", "error", "outputFile"]) {
 				for (const line of agent[key] ? agent[key].split("\n") : []) {
-					assert.ok(rows.includes(`   ${line}`), `${fixture.name}: ${key} line "${line}"`);
+					assert.ok(texts.includes(line), `${fixture.name}: ${key} line "${line}"`);
 				}
 			}
 		}
@@ -221,7 +225,8 @@ test("every format expands to exactly the details its payload supplies", () => {
 });
 
 test("narrow expanded cards wrap within the width without losing text", () => {
-	const squash = (rows: string[]) => rows.join("").replace(/\s+/g, "");
+	// 边框字符随折行重复，比较文字时连边框一起去掉。
+	const squash = (rows: string[]) => rows.join("").replace(/[\s│├└]/g, "");
 	for (const fixture of fixtures) {
 		const wide = squash(plainRows(standalone(fixture, true).render(120)));
 		for (const width of [20, 30, 40]) {
@@ -270,54 +275,66 @@ const LITERAL_EXPANDED: Record<string, string[]> = {
 	// completed, multiline preview
 	"21": [
 		" ✓ Subagent Finished fixture-agent-1",
-		"   Fixture task.",
-		"   Status: completed",
-		`   ${STATS}`,
-		"",
-		"   Saved result preview",
-		"   Fixture preview.",
-		"   Fixture second line.",
-		"",
-		"   Transcript",
+		" ├ Description",
+		" │ Fixture task.",
+		" │",
+		" ├ Status",
+		" │ completed",
+		` │ ${STATS}`,
+		" │",
+		" ├ Saved result preview",
+		" │ Fixture preview.",
+		" │ Fixture second line.",
+		" │",
+		" └ Transcript",
 		"   /fixture/transcripts/fixture-agent-1.output",
 	],
 	// error with its error section
 	"03": [
 		" ✗ Subagent Finished fixture-agent-1",
-		"   Fixture task.",
-		"   Status: error",
-		`   ${STATS}`,
-		"",
-		"   Saved result preview",
-		"   Fixture preview.",
-		"",
-		"   Error",
-		"   Fixture error.",
-		"",
-		"   Transcript",
+		" ├ Description",
+		" │ Fixture task.",
+		" │",
+		" ├ Status",
+		" │ error",
+		` │ ${STATS}`,
+		" │",
+		" ├ Saved result preview",
+		" │ Fixture preview.",
+		" │",
+		" ├ Error",
+		" │ Fixture error.",
+		" │",
+		" └ Transcript",
 		"   /fixture/transcripts/fixture-agent-1.output",
 	],
 	// zero usage: only the duration remains; no transcript
 	"05": [
 		" ✗ Subagent Finished fixture-agent-1",
-		"   Fixture task.",
-		"   Status: error",
-		"   1.2s",
-		"",
-		"   Saved result preview",
-		"   Fixture preview.",
-		"",
-		"   Error",
+		" ├ Description",
+		" │ Fixture task.",
+		" │",
+		" ├ Status",
+		" │ error",
+		" │ 1.2s",
+		" │",
+		" ├ Saved result preview",
+		" │ Fixture preview.",
+		" │",
+		" └ Error",
 		"   Fixture error.",
 	],
 	// no cost, no transcript
 	"33": [
 		" ✗ Subagent Finished fixture-agent-1",
-		"   Fixture task.",
-		"   Status: aborted",
-		"   2 tool uses · 1.2k token · 1.2s",
-		"",
-		"   Saved result preview",
+		" ├ Description",
+		" │ Fixture task.",
+		" │",
+		" ├ Status",
+		" │ aborted",
+		" │ 2 tool uses · 1.2k token · 1.2s",
+		" │",
+		" └ Saved result preview",
 		"   Fixture preview.",
 	],
 };
@@ -395,12 +412,10 @@ test("saved multi-agent formats form notification-only groups without splitting 
 			const group = parent.children[0];
 			assert.ok(group instanceof ToolGroupComponent, fixture.name);
 			assert.deepEqual(group.children, [note], fixture.name);
-			const failed = agents.filter((agent) => FAILED.includes(agent.status)).length;
-			const counts = [
-				...(agents.length > failed ? [`${agents.length - failed} done`] : []),
-				...(failed ? [`${failed} failed`] : []),
-			];
 			const rows = plainRows(group.render(240));
+			const done = agents.filter((a) => !FAILED.includes(a.status)).length;
+			const failed = agents.filter((a) => FAILED.includes(a.status)).length;
+			const counts = [...(done ? [`${done} done`] : []), ...(failed ? [`${failed} failed`] : [])];
 			assert.equal(
 				rows[0],
 				` ● Subagent Finished: ${counts.join(" · ")} · click to show more`,
@@ -419,9 +434,9 @@ test("every format joins a synthetic neighbour tool with one grouped row per age
 	withGrouping(() => {
 		for (const fixture of fixtures) {
 			const agents = agentsOf(fixture.entry.details);
-			const failed = agents.filter((agent) => FAILED.includes(agent.status)).length;
 			const group = groupWithRead(fixture);
 			const rows = plainRows(group.render(240));
+			const failed = agents.filter((agent) => FAILED.includes(agent.status)).length;
 			const counts = [
 				`${agents.length - failed + 1} done`,
 				...(failed ? [`${failed} failed`] : []),

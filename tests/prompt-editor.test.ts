@@ -9,11 +9,13 @@ type EditorFactory = (tui: unknown, theme: unknown, keybindings: unknown) => unk
 /** Minimal UI stub: one editor slot plus a notification sink. */
 function fakeEditorSlot() {
 	let factory: EditorFactory | undefined;
+	let installs = 0;
 	return {
 		ui: {
 			getEditorComponent: () => factory,
 			setEditorComponent: (next: EditorFactory | undefined) => {
 				factory = next;
+				installs++;
 			},
 			notify: () => {},
 		},
@@ -22,6 +24,9 @@ function fakeEditorSlot() {
 		},
 		set factory(next: EditorFactory | undefined) {
 			factory = next;
+		},
+		get installs() {
+			return installs;
 		},
 	};
 }
@@ -61,4 +66,57 @@ test("disabled prefix leaves another extension's editor alone", (t) => {
 	// Never occupied the slot: clearing must not touch it either.
 	clearPromptEditor(ctx);
 	assert.equal(slot.factory, other);
+});
+
+test("applying twice does not rebuild the editor", (t) => {
+	useEditorPrefix(t, true);
+	const slot = fakeEditorSlot();
+	const ctx = { hasUI: true, ui: slot.ui } as unknown as ExtensionContext;
+
+	applyPromptEditor(ctx);
+	const installed = slot.factory;
+	assert.equal(slot.installs, 1);
+
+	applyPromptEditor(ctx);
+	assert.equal(slot.factory, installed);
+	assert.equal(slot.installs, 1);
+});
+
+test("disabling removes our layer even when another extension wrapped it", (t) => {
+	useEditorPrefix(t, true);
+	const slot = fakeEditorSlot();
+	const ctx = { hasUI: true, ui: slot.ui } as unknown as ExtensionContext;
+	const before: EditorFactory = () => ({});
+	slot.factory = before;
+
+	applyPromptEditor(ctx);
+	const ours = slot.factory as EditorFactory;
+	// 模拟 pi-inline-skills：把当前工厂包一层再装回去，插槽里不再是我们自己的工厂。
+	slot.factory = () => ours({}, {}, {});
+
+	clearPromptEditor(ctx);
+	assert.equal(slot.factory, before);
+});
+
+test("pi 把插槽重置回占据前的工厂时，clear 不再写回一遍", (t) => {
+	useEditorPrefix(t, true);
+	const slot = fakeEditorSlot();
+	const ctx = { hasUI: true, ui: slot.ui } as unknown as ExtensionContext;
+	const before: EditorFactory = () => ({});
+	slot.factory = before;
+
+	applyPromptEditor(ctx);
+	assert.notEqual(slot.factory, before);
+	const installs = slot.installs;
+
+	// /new、/reload 走 pi 的 resetExtensionUI：插槽被重置回占据前的工厂，不经 setEditorComponent。
+	slot.factory = before;
+
+	clearPromptEditor(ctx);
+	assert.equal(slot.factory, before);
+	assert.equal(slot.installs, installs, "release must not write back over pi's own reset");
+
+	// 下一轮 session_start 还能装回去。
+	applyPromptEditor(ctx);
+	assert.notEqual(slot.factory, before);
 });

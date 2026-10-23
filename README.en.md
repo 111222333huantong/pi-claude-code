@@ -4,7 +4,7 @@
 
 # pi-cc-extensions
 
-> Claude Code-style TUI output with some personal touches and handy utilities.
+> Claude Code-style TUI output with some personal touches and handy utilities (no extra built-in tools).
 
 ## Preview
 
@@ -34,7 +34,7 @@ Run `/reload` after installation.
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages                                           | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents                                                             | `@`                                             |
 | Status bar                  | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle`                                      |
-| Theme                       | Bundled CC Dark and CC Light themes                                                                                                          | `/theme`                                        |
+| Theme                       | Bundled CC Dark and CC Light themes                                                                                                          | `/settings` → Theme                             |
 
 Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)
 
@@ -55,7 +55,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
   "enableAliases": true,                   // /clear, /exit aliases
-  "enableMarkdownEnhance": true,             // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
+  "enableMarkdownEnhance": true,           // markdown pass: Mermaid dialects and circled-number conversion; false hands it to other extensions
   "enableEditorPrefix": true,              // editor ❯ prefix
 
   // ui
@@ -97,12 +97,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 ```
 
 > [!TIP]
-> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines · click to show more` opens a full preview. Click to collapse.
->
-> Both `scrollButtonMode` values show the same `Back to bottom` / `N new message(s)` text: `dock` draws it in a dedicated row, `native` in Pi’s floating overlay.
+> **Fullscreen**: expanded diffs always show every line. When expanded Input/Output exceeds the line cap, the footer shows `… +N more lines`; click for the full preview, click again to collapse.
 
 > [!NOTE]
-> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
+> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or `/settings`. Default `streaming` redraws every frame; `final` renders once.
 
 ## Local development
 

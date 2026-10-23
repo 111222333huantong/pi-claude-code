@@ -385,12 +385,24 @@ const createCustomFooterFactory =
 			return 0;
 		};
 
-		const render = (width: number): string[] => {
+		// 三个会话统计每帧重算会全量遍历 session，长会话把 pi 钉在 100% CPU（issue #80）。
+		// leaf/model/thinking 任一变化立即重算；不变时 1s TTL，流式期间每秒刷新一次。
+		const SESSION_STATS_TTL_MS = 1_000;
+		let statsMemoKey = "";
+		let statsMemoAt = 0;
+		let statsMemo:
+			| { contextUsage: ReturnType<typeof ctx.getContextUsage>; cost: number; cachePct: number }
+			| undefined;
+		const sessionStats = () => {
 			const model = ctx.model;
-			const contextUsage = ctx.getContextUsage();
-			const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
-			const percent = contextUsage?.percent;
-
+			const key = `${ctx.sessionManager.getLeafId() ?? ""}|${model?.provider}/${model?.id}|${ctx.thinkingLevel ?? ""}`;
+			if (
+				statsMemo &&
+				key === statsMemoKey &&
+				performance.now() - statsMemoAt < SESSION_STATS_TTL_MS
+			) {
+				return statsMemo;
+			}
 			let cost = 0;
 			for (const entry of ctx.sessionManager.getEntries()) {
 				if (entry.type === "message") {
@@ -404,6 +416,17 @@ const createCustomFooterFactory =
 					cost += entry.usage.cost?.total || 0;
 				}
 			}
+			statsMemo = { contextUsage: ctx.getContextUsage(), cost, cachePct: getCachePct() };
+			statsMemoKey = key;
+			statsMemoAt = performance.now();
+			return statsMemo;
+		};
+
+		const render = (width: number): string[] => {
+			const model = ctx.model;
+			const { contextUsage, cost, cachePct } = sessionStats();
+			const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? 0;
+			const percent = contextUsage?.percent;
 
 			// cwd 默认只显示最底层路径（根目录时回退完整路径）
 			const cwdLabel = ctx.cwd.split(/[\\/]/).filter(Boolean).pop() || ctx.cwd;
@@ -430,7 +453,6 @@ const createCustomFooterFactory =
 			const dimPlugin = (text: string) => colorUsageChip(theme, text);
 
 			const pctLabel = percent === null || percent === undefined ? "?" : `${Math.floor(percent)}%`;
-			const cachePct = getCachePct();
 			const glyphs = footerGlyphs(config.footerNerdIcons);
 			const cacheLabel =
 				cachePct > 0 ? `${glyphs.cache ? `${glyphs.cache} ` : ""}${Math.floor(cachePct)}%` : "";

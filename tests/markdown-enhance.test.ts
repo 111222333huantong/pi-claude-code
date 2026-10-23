@@ -66,6 +66,23 @@ test("裸 URL 与提示框不接管，交给 pi 原生渲染", () => {
 	assert.strictEqual(run("> [!NOTE] 提示\n> 续行"), "> [!NOTE] 提示\n> 续行");
 });
 
+test("Pi 带颜色的 Mermaid 输出不被后面的链接吞掉（#84）", () => {
+	const ESC = "\x1b[38;5;240m";
+	const RST = "\x1b[0m";
+	const md = [
+		"Intro.",
+		"",
+		`\`${ESC}┌────┐${RST}\`  `,
+		`\`${ESC}│ A  │${RST}\`  `,
+		"",
+		"Some paragraph.",
+		"",
+		"Another paragraph, then a [link](https://example.com).",
+	].join("\n");
+	const out = run(md);
+	assert.deepStrictEqual(out.split("\n"), md.split("\n"), JSON.stringify(out));
+});
+
 test("流式跨行链接不产生空白 OSC 8 点击区", () => {
 	const md = "前缀 [\n](https://example.com)\n```md\n[代码\n链接](https://code.example)\n```";
 	const out = run(md, {

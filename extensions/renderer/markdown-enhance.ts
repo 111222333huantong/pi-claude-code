@@ -102,7 +102,10 @@ function deCircled(markdown: string): string {
 // 跨行链接规整
 // ============================================================================
 
-const MULTILINE_LINK_RE = /\[([^\]\n]*(?:\n[^\]\n]*)+)\](?=\()/g;
+// \x1b 排除：Pi 的带颜色 Mermaid 输出把每行包成含 ANSI SGR（\x1b[...m）的 code span，
+// 转义序列里的 `[` 不能当成链接起点，否则匹配会从第一个转义跨行直到后面真正的 `](`，
+// 把图和之后的段落全压成一行（#84）。
+const MULTILINE_LINK_RE = /(?<!\x1b)\[([^\]\n\x1b]*(?:\n[^\]\n\x1b]*)+)\](?=\()/g;
 
 /** 防止 Markdown 跨行链接把行尾填充空格纳入 OSC 8 点击区。 */
 function normalizeMultilineLinks(markdown: string): string {

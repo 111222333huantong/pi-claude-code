@@ -448,6 +448,11 @@ export async function showCcstylePanel(
 		return;
 	}
 
+	// 编辑器插槽只能在面板关闭后替换：面板自己就挂在 editorContainer 上，面板开着时调
+	// setEditorComponent 会把面板踢出渲染树、done() 再也走不到，`ctx.ui.custom()` 永不落定，
+	// 整个输入管线随之卡死。
+	let editorPrefixChanged = false;
+
 	await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: () => void) => {
 		const modeSetting = {
 			id: "mode",
@@ -1058,8 +1063,7 @@ export async function showCcstylePanel(
 				editorPrefixSetting.description = enabled
 					? "Show ❯ before the input line; color follows thinking level / bash mode."
 					: "Plain input line, no ❯ glyph.";
-				if (enabled) applyPromptEditor(ctx);
-				else clearPromptEditor(ctx);
+				editorPrefixChanged = true;
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1478,6 +1482,11 @@ export async function showCcstylePanel(
 			},
 		};
 	});
+	// 面板已经卸下，插槽此时替换才不会踢掉对话框。
+	if (editorPrefixChanged) {
+		if (config.enableEditorPrefix) applyPromptEditor(ctx);
+		else clearPromptEditor(ctx);
+	}
 	// 面板卸下后主 transcript 重新挂载；再刷一次，吃掉打开期间扫树失败的切换。
 	hooks.refreshCurrentTranscript(ctx, toolGrouping);
 }

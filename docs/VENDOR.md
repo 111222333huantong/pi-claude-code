@@ -13,7 +13,8 @@
 - **License**: MIT（见根目录 `LICENSE`：`Copyright (c) 2026 minuque` + fork 续注）
 - **关系**：全仓 fork；`origin` = `111222333huantong/pi-claude-code`。
   上游同步以 merge 方式进行（如 `8f1ac5d merge upstream/main 0d6f162`；
-  2026-10-14 merge `upstream/main 281d23f`（v1.0.3），本包升版 1.1.0）。
+  2026-10-14 merge `upstream/main 281d23f`（v1.0.3），本包升版 1.1.0；
+  2026-10-23 merge `upstream/main 6519fad`（v1.0.9））。
 - **Local delta**（fork 后自有部分，持续增长）：状态栏、后续全部改动由本 fork 维护
   （README 已声明）。1.1.0 合并要点见本文件 §8。
 
@@ -50,7 +51,8 @@
      （本包数学走 Pi 原生，thinking 走 compact-thinking 体系）
   3. `spinner-ticker` 上游链条：`ticker.ts` 本身脱胎于 FammasMaz `pi-cc-tools`
      （文件头 `Tim van den Hoorn / FammasMaz`）；本包另加共享 90/16ms 双 ticker、
-     代际防抖、`_resetTicker` 测试钩子
+     代际防抖（只在 `session_start` 领代际，避开 Pi project-trust 预检实例）、
+     `_resetTicker` 测试钩子
   4. 本轮另加（上游没有）：`LAST_TEXT` 语义早已存在于 Loader 补丁；
      `refreshIfIdle` 语义系按其 `refresh-coordinator.ts`（13 行 Semaphore）
      用 20 行无 `effect` 依赖重写，非复制
@@ -162,6 +164,22 @@
 - **版本**：`pi-claude-code` 1.2.0 → 1.3.0（上游 1.0.8+ 基线 + 本 fork 功能）。
 - **环境注记**：git-stats 系用例仍需 git 提交身份；`statusline-git-config`
   轮询用例在慢机上放宽了变更等待窗口。
+
+## 10. 1.0.9 合并记录（2026-10-23，`upstream/main 6519fad`）
+
+- **基线**：`3c60b72`（v1.0.8+）→ `6519fad`（v1.0.9），3 个上游提交
+  （#81 `/ccstyle` 输入框前缀切换冻结修复、编辑器插槽 reset 后不再写回过期工厂、
+  版本号）。
+- **以上游为准**：`/ccstyle` 面板打开期间不再替换 editor 插槽；面板关闭后才
+  `applyPromptEditor`/`clearPromptEditor`。`releasePromptEditor` 发现 Pi 已把插槽
+  重置回占据前工厂时只清状态，不重复写回。
+- **本地适配**：fork 的 prompt-editor 渲染包装层保留（不回到上游的直接替换
+  `PromptEditor`），否则会再次覆盖 pi-paster/working-row。每次安装创建独立
+  factory 并固定其 base，避免再次安装时 `previousEditorFactory` 指向外层 wrapper
+  形成递归；`decorateEditor` 加幂等标记，外层再次包装不会叠加 `❯`。
+- **测试**：移植上游 `ccstyle-panel-editor-prefix.test.ts` 与 prompt-editor
+  reset/重复安装用例；面板导航改为向上回绕到 UI 页最后一项（本 fork 设置项更多）。
+- **结果**：`npm run lint`、`npm run typecheck`、`npm test` 全绿（694/694）。
 
 ## 待办
 

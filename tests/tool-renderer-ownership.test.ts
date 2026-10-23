@@ -633,10 +633,9 @@ for (const [status, label] of [
 				isError: false,
 				details: {
 					status,
-					modelName: "sonnet",
 					turnCount: 3,
 					toolUses: 8,
-					tokens: "12.4k tokens",
+					totalTokens: 12400,
 					durationMs: 12300,
 				},
 			});
@@ -645,7 +644,7 @@ for (const [status, label] of [
 				.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trimEnd());
 			assert.deepEqual(
 				rows.filter((line) => line.includes("↳")),
-				[`   ↳ ${label} · sonnet · 3 turns · 8 tool uses · 12.4k tokens · 12.3s`],
+				[`   ↳ ${label} · 3 turns · 8 tool uses · 12.4k token · 12.3s`],
 			);
 		} finally {
 			hooks.shutdown();

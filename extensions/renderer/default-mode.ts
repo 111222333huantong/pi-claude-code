@@ -20,13 +20,7 @@ import { createCcstyleTool } from "./tool/ccstyle-tool.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 export { shouldRenderRichDiff } from "./tool/ccstyle-tool.ts";
 
-// pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
-// 本地实验：Agent 也由 ccstyle 接管（renderCall/renderResult 在 ccstyle-tool.ts 里特判）。
-// 原原因：pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
-// 若上游修复 background 缩进后可恢复：const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
-const DEDICATED_RENDERER_TOOLS = new Set<string>();
-
-/** 排除名单内且自带 renderer 的工具保留原渲染。 */
+/** 排除名单内且自带 renderer 的工具保留原渲染；excludeRenderers 里的工具也交给原生渲染器。 */
 export function preservesOriginalRenderer(
 	extensionDefinition: any,
 	toolName: string,
@@ -120,7 +114,6 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	// compact 也复用同一套 ccstyle call/result，避免折叠态工具卡回落到 Pi 原生样式。
 	const useCcstyle =
 		patch.mode() !== "off" &&
-		!DEDICATED_RENDERER_TOOLS.has(toolName) &&
 		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
 	return useCcstyle;

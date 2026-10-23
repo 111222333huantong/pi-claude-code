@@ -190,6 +190,62 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 	installToolMouseInteraction({});
 });
 
+test("native collapsed tool expands only from its trailing expand hint", async () => {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	// pi 0.87+ 原生 grep/find/ls/read/bash 折叠卡的末行是 `... (N more lines, ctrl+o to expand)`。
+	const tool = {
+		toolCallId: "native-grep",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return [
+				"✓ grep /thinking/ in src/",
+				"src/a.ts:1: thinking",
+				"src/b.ts:2: thinking",
+				"... (195 more lines, ctrl+o to expand)",
+			];
+		},
+	};
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		children: [tool],
+		previousLines: tool.render(),
+		previousViewportTop: 0,
+		handleInput() {},
+		requestRender() {},
+		doRender() {
+			this.previousLines = tool.render();
+		},
+	};
+	installToolMouseInteraction({
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+			},
+			onTerminalInput(handler: typeof inputHandler) {
+				inputHandler = handler;
+				return () => undefined;
+			},
+		},
+	});
+	try {
+		tui.doRender();
+		const hintRow = tui.previousLines.findIndex((l: string) => l.includes("to expand"));
+		assert.ok(hintRow >= 0);
+		const hintCol = tui.previousLines[hintRow].indexOf("to expand") + 1;
+		// 提示列上单击展开。
+		assert.equal(inputHandler?.(`\x1b[<0;${hintCol};${hintRow + 1}M`)?.consume, true);
+		assert.equal(tool.expanded, true);
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
 test("rich diff hint highlights and expands on click", async () => {
 	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	let renderRequests = 0;

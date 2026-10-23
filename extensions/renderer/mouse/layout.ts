@@ -19,7 +19,7 @@ export type ComponentRowHit = {
 export function collapsedHintHitbox(line: string): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);
 	const match =
-		/(\([^()\n]* \/ click\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
+		/(\([^()\n]*(?: \/ click|, (?:[\w/+]+\s+)?to (?:expand|show more))\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
 			plain,
 		);
 	if (!match?.[1]) return null;

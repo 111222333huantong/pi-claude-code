@@ -542,24 +542,27 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：同步按钮显隐
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "wheel away from bottom shows the button");
-	tui.handleViewportInput(`\x1b[<0;40;21M`);
+	tui.handleViewportInput(`\x1b[<0;70;21M`);
 	assert.equal(renderer.scrollBottomCalls, 1, "button click scrolls to bottom");
 	assert.deepEqual(ui.widget.render(80), []);
 
-	// 按钮 hover：motion 到按钮行高亮（accent → text），离开恢复。
+	// 按钮 hover：motion 到按钮行高亮（dim → text），离开恢复。
 	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
 	renderer.currentLayout.primaryScrollView.scrollTop = 50;
 	ui.widget.render(80);
 	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：按钮重新出现
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	renderer.currentLayout = fullscreenLayout(tool, ui.widget, false); // 重建布局（按钮行已可见）
-	tui.handleViewportInput(`\x1b[<35;40;21M`); // motion 到按钮行
+	tui.handleViewportInput(`\x1b[<35;70;21M`); // motion 到按钮行
 	assert.ok(
-		ui.widget.render(80)[0]?.includes("<text>[ ↓"),
+		ui.widget.render(80)[0]?.includes("<text>Jump to latest ↓"),
 		"button hover switches label to text color",
 	);
 	tui.handleViewportInput(`\x1b[<35;10;21M`); // motion 移出按钮行
-	assert.ok(ui.widget.render(80)[0]?.includes("<accent>[ ↓"), "hover leave restores accent color");
+	assert.ok(
+		ui.widget.render(80)[0]?.includes("<dim>Jump to latest ↓"),
+		"hover leave restores dim color",
+	);
 
 	// 键盘滚动（官方 PageUp）：同样同步按钮显隐（官方消费按键，扩展监听器无法补偿）。
 	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;

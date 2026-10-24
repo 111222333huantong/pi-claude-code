@@ -102,7 +102,7 @@ test("scroll button: schedule → immediate teardown → reinstall stays safe", 
 	assert.ok(count() >= 1, "reinstall 后滚动导航应触发按钮渲染");
 	const lines = renderScrollButton(80, fakeTheme());
 	assert.ok(
-		lines.some((line) => line.includes("Back to bottom")),
+		lines.some((line) => line.includes("Jump to latest")),
 		"不在底部时按钮应可见",
 	);
 
@@ -123,7 +123,7 @@ test("scroll button: disable official overlay keeps dock button", async () => {
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.ok(count() >= 1);
 	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Jump to latest")),
 		"关掉官方 overlay 后 dock 按钮仍可见",
 	);
 
@@ -178,7 +178,7 @@ test("scroll button: native mode seeds dock text into Pi overlay and omits dock 
 
 		config.scrollButtonMode = "native";
 		syncOfficialScrollToEnd(tui);
-		assert.equal(tui.scrollToEndIndicator(), "Back to bottom", "native 浮层换上 dock 文案");
+		assert.equal(tui.scrollToEndIndicator(), "Jump to latest", "native 浮层换上 dock 文案");
 		scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(count(), 0, "native 模式不调度 dock 按钮重绘");
@@ -201,10 +201,10 @@ test("scroll button: native mode seeds dock text into Pi overlay and omits dock 
 	}
 });
 
-// 计数：仅在离开底部期间累加，文案从 Back to bottom 切成 N new message(s)，回底清零。
+// 计数：仅在离开底部期间累加，文案从 Jump to latest 切成 N new message(s)，回底清零。
 test("scroll button: accumulates new content count while scrolled up", async () => {
 	const dockPhrases: string[] = [];
-	const phrase = (text: string) => text.trim().replace(/^\[ ↓ | · Ctrl\+End \]$/g, "");
+	const phrase = (text: string) => text.trim();
 	const { tui } = lazyFullscreenTui();
 	setToolMouseTui(tui);
 
@@ -216,21 +216,21 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
-		"无新内容时保持 Back to bottom 文案",
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Jump to latest")),
+		"无新内容时保持 Jump to latest 文案",
 	);
 	dockPhrases.push(phrase(renderScrollButton(80, fakeTheme())[0]));
 
 	noteNewTranscriptItem();
 	let text = renderScrollButton(80, fakeTheme()).join("\n");
-	assert.ok(text.includes("[ ↓ 1 new message · Ctrl+End ]"), `单条用单数：${text}`);
+	assert.ok(text.includes("1 new message ↓"), `单条用单数：${text}`);
 	dockPhrases.push(phrase(text));
 
 	noteNewTranscriptItem();
 	noteNewTranscriptItem();
 	text = renderScrollButton(80, fakeTheme()).join("\n");
-	assert.ok(text.includes("[ ↓ 3 new messages · Ctrl+End ]"), `多条用复数：${text}`);
-	assert.ok(!text.includes("Back to bottom"), "有计数时不再显示原正文");
+	assert.ok(text.includes("3 new messages ↓"), `多条用复数：${text}`);
+	assert.ok(!text.includes("Jump to latest"), "有计数时不再显示原正文");
 	dockPhrases.push(phrase(text));
 
 	// 滚回底部：按钮隐藏且计数清零；再离开底部时从 0 重新计数。
@@ -244,7 +244,7 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	scheduleScrollButtonSync(tui, WHEEL_DOWN_INPUT);
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.ok(
-		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Back to bottom")),
+		renderScrollButton(80, fakeTheme()).some((line) => line.includes("Jump to latest")),
 		"重新离开底部后回到原文案",
 	);
 
@@ -263,7 +263,7 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	assert.equal(getScrollButtonNewCount(), 0, "已跟随底部时不计入新内容");
 	assert.deepEqual(renderScrollButton(80, fakeTheme()), [], "校正后按钮隐藏");
 
-	// 同一组 0 / 1 / N 项通过 native 回调发出，必须与 dock 的正文完全相同。
+	// 同一组 0 / 1 / N 项通过 native 回调发出；native 保留 Pi 的箭头位置，dock 只在末尾补箭头。
 	const previous = { ...config };
 	try {
 		config.scrollButtonMode = "native";
@@ -276,7 +276,10 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 		noteNewTranscriptItem();
 		noteNewTranscriptItem();
 		nativePhrases.push(tui.scrollToEndIndicator());
-		assert.deepEqual(nativePhrases, dockPhrases);
+		assert.deepEqual(
+			nativePhrases,
+			dockPhrases.map((phrase) => phrase.replace(/ ↓$/u, "")),
+		);
 		tui.isFollowingOutput = true;
 		syncOfficialScrollToEnd(tui);
 		assert.equal(getScrollButtonNewCount(), 0, "native 跟随输出时同样清零");
@@ -288,8 +291,8 @@ test("scroll button: accumulates new content count while scrolled up", async () 
 	setToolMouseTui(null);
 });
 
-// dock 标签读 tui.altScreen.bottom 绑定，与 Pi 原生浮层同源；按键本身由 Pi viewport 处理。
-test("scroll button: dock shortcut follows the tui.altScreen.bottom binding", async (t) => {
+// dock 只显示紧凑文案；tui.altScreen.bottom 仍由 Pi viewport 处理。
+test("scroll button: dock label stays compact regardless of the bottom binding", async (t) => {
 	const previousBindings = getKeybindings();
 	const { tui } = lazyFullscreenTui();
 	setToolMouseTui(tui);
@@ -302,15 +305,18 @@ test("scroll button: dock shortcut follows the tui.altScreen.bottom binding", as
 	await new Promise((resolve) => setImmediate(resolve));
 	const dockRow = () => renderScrollButton(80, fakeTheme()).map((line) => line.trim());
 
-	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+End ]"]);
+	assert.deepEqual(dockRow(), ["Jump to latest ↓"]);
+	const rawRow = renderScrollButton(80, fakeTheme())[0] ?? "";
+	assert.equal(rawRow.length, 78, "右对齐时保留 2 列右边距");
+	assert.ok(rawRow.endsWith("Jump to latest ↓"));
 
 	setKeybindings(
 		new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": ["ctrl+g", "ctrl+b"] }),
 	);
 	assert.equal(keyDisplayText("tui.altScreen.bottom"), "Ctrl+G/Ctrl+B");
-	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom · Ctrl+G/Ctrl+B ]"], "标签与 Pi 原生文案一致");
+	assert.deepEqual(dockRow(), ["Jump to latest ↓"], "快捷键不再挤占 dock 行");
 
 	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, { "tui.altScreen.bottom": [] }));
 	assert.equal(keyDisplayText("tui.altScreen.bottom"), "");
-	assert.deepEqual(dockRow(), ["[ ↓ Back to bottom ]"], "未绑定时与 Pi 一样省略快捷键");
+	assert.deepEqual(dockRow(), ["Jump to latest ↓"]);
 });

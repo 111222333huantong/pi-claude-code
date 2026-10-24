@@ -756,8 +756,8 @@ export async function showCcstylePanel(
 			label: "Scroll button mode",
 			description:
 				config.scrollButtonMode === "dock"
-					? "Fullscreen: show the extension's dedicated Back to bottom row."
-					: "Fullscreen: show the same Back to bottom text in Pi's native floating overlay.",
+					? "Fullscreen: show the extension's compact Jump to latest row."
+					: "Fullscreen: use Pi's native floating Jump to latest overlay.",
 			currentValue: config.scrollButtonMode,
 			values: [...SCROLL_BUTTON_MODES],
 		};
@@ -1263,8 +1263,8 @@ export async function showCcstylePanel(
 					updateConfig({ scrollButtonMode: value as ScrollButtonMode });
 					scrollButtonSetting.description =
 						config.scrollButtonMode === "dock"
-							? "Fullscreen: show the extension's dedicated Back to bottom row."
-							: "Fullscreen: show the same Back to bottom text in Pi's native floating overlay.";
+							? "Fullscreen: show the extension's compact Jump to latest row."
+							: "Fullscreen: use Pi's native floating Jump to latest overlay.";
 					break;
 				}
 				case "showStartupHeader": {

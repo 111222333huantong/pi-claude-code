@@ -540,10 +540,15 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	if (hit) {
 		const line = hit.box.lines?.[hit.localRow];
 		// 回到底部按钮：渲染行文本 + 列区间识别（零组件树开销）。
-		if (typeof line === "string" && getScrollButtonVisible() && line.includes("[ ↓")) {
-			const plain = stripTerminalSequencesPreservingLayout(line);
-			const idx = plain.indexOf("[ ↓");
-			if (idx >= 0 && x >= idx && x <= idx + plain.length - 1) {
+		const buttonMatch =
+			typeof line === "string" && getScrollButtonVisible()
+				? /(?:Jump to latest|\d+ new messages?) ↓/u.exec(
+						stripTerminalSequencesPreservingLayout(line),
+					)
+				: null;
+		if (buttonMatch?.index !== undefined) {
+			const idx = buttonMatch.index;
+			if (x >= idx && x <= idx + buttonMatch[0].length - 1) {
 				target = { kind: "button" };
 			}
 		} else if (typeof line === "string" && !isOsc8LinkColumn(line, packet.col)) {

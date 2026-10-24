@@ -217,7 +217,7 @@ test("native mode changes only the real native label and preserves host geometry
 	assert.deepEqual(frame.widget.render(WIDTH), [], "the lifecycle widget adds no rows");
 	assert.deepEqual(frame.widgetsAbove.render(WIDTH), [""], "Pi's Spacer(1) remains installed");
 	assert.equal(frame.editor.render(WIDTH).length, 3, "the real editor keeps its three rows");
-	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+	assert.match(frame.renderer.scrollToEndIndicator(), /Jump to latest/);
 	assert.equal(seeded.rect.row, baseline.rect.row);
 	assert.equal(seeded.editorRow, baseline.editorRow);
 	assert.equal(seeded.viewportHeight, baseline.viewportHeight);
@@ -326,9 +326,9 @@ test("one-row sticky prompt paints after native and wins clicks", (t) => {
 	const lines = frame.render().map(stripTerminalSequences);
 	assert.equal(frame.scroll.viewportHeight, 1);
 	assert.match(lines[0], /pinned prompt/);
-	assert.doesNotMatch(lines[0], /Back to bottom|Jump to latest message/);
+	assert.doesNotMatch(lines[0], /Jump to latest/);
 	assert.ok(frame.renderer.scrollToEndIndicatorRect);
-	assert.match(frame.renderer.scrollToEndIndicator(), /Back to bottom/);
+	assert.match(frame.renderer.scrollToEndIndicator(), /Jump to latest/);
 	frame.tui.handleViewportInput(frame.packet(0));
 	assert.equal(frame.scroll.scrollTop, 0, "the sticky row handles the overlapping click");
 	assert.equal(frame.scroll.isFollowingEnd, false);
@@ -343,12 +343,12 @@ test("rebound bottom key stays with a focused overlay and only Pi's binding foll
 		frame
 			.render()
 			.map(stripTerminalSequences)
-			.find((line) => line.includes("Back to bottom"))
+			.find((line) => line.includes("Jump to latest"))
 			?.trim();
 	const settle = () => new Promise((resolve) => process.nextTick(resolve));
 	frame.renderer.handleTerminalInput("\x1b[<64;2;2M"); // Wheel up through the real input chain.
 	await settle();
-	assert.equal(dockRow(), "[ ↓ Back to bottom · End ]");
+	assert.equal(dockRow(), "Jump to latest ↓");
 
 	const input = new Input();
 	input.setValue("abc");

@@ -17,7 +17,6 @@ import { parseSgrMousePackets } from "./packets.ts";
 
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
-const SCROLL_BOTTOM_KEYBINDING = "tui.altScreen.bottom";
 
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export function getToolMouseTui(): any {
@@ -57,7 +56,7 @@ export function getScrollButtonNewCount(): number {
 export function setScrollButtonVisible(visible: boolean): void {
 	const state = scrollButtonState();
 	state.visible = visible;
-	// 计数只在离开底部期间有效：跟随输出即清零，文案回到 Back to bottom。
+	// 计数只在离开底部期间有效：跟随输出即清零，文案回到 Jump to latest。
 	if (!visible) state.newCount = 0;
 }
 
@@ -202,23 +201,6 @@ export function isFullscreenAtBottom(tui: any): boolean {
 	return Boolean(following);
 }
 
-/** 与 Pi 原生浮层同源（keyDisplayText）：用户实际绑定，首字母大写，macOS 上 alt 显示为 option。 */
-function scrollBottomShortcutText(): string {
-	return getKeybindings()
-		.getKeys(SCROLL_BOTTOM_KEYBINDING)
-		.map((key) =>
-			key
-				.split("+")
-				.map((part) => {
-					const display =
-						process.platform === "darwin" && part.toLowerCase() === "alt" ? "option" : part;
-					return display.charAt(0).toUpperCase() + display.slice(1);
-				})
-				.join("+"),
-		)
-		.join("/");
-}
-
 function isScrollNavigationInput(data: string): boolean {
 	if (
 		matchesKey(data, "pageUp") ||
@@ -300,10 +282,10 @@ export function updateScrollButtonFromInput(tui: any, data: string): void {
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
-/** 无新内容时提示原文案；有新内容时换成累计条数。 */
+/** 无新内容时提示回底；有新内容时换成累计条数。 */
 function scrollButtonText(): string {
 	const count = getScrollButtonNewCount();
-	if (count <= 0) return "Back to bottom";
+	if (count <= 0) return "Jump to latest";
 	return `${count} new message${count === 1 ? "" : "s"}`;
 }
 
@@ -314,12 +296,10 @@ export function renderScrollButton(width: number, theme: any): string[] {
 		!fullscreenLazyTui(getToolMouseTui())
 	)
 		return [];
-	// 未绑定时与 Pi 原生一样省略快捷键段。
-	const shortcut = scrollBottomShortcutText();
-	const label = theme.fg(
-		getScrollButtonHovered() ? "text" : "accent",
-		`[ ↓ ${scrollButtonText()}${shortcut ? ` · ${shortcut}` : ""} ]`,
-	);
-	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
-	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
+	// 默认低调的灰色小字，hover 时提亮；快捷键仍可用，但不再挤占这一行。
+	const label = theme.fg(getScrollButtonHovered() ? "text" : "dim", `${scrollButtonText()} ↓`);
+	// 靠右放，留 2 列呼吸空间；宽度不够时从左侧截断。
+	const rendered = truncateToWidth(label, width, "…");
+	const leftPad = Math.max(0, width - visibleWidth(rendered) - 2);
+	return [`${" ".repeat(leftPad)}${rendered}`];
 }

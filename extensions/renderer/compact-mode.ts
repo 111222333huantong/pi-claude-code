@@ -64,6 +64,7 @@ import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { styleChangeCounts } from "./tool/ccstyle-tool.ts";
 import { formatDisplayPath } from "./tool/names.ts";
 import {
+	contentRowRange,
 	hasVisibleText,
 	removeStyledRange,
 	stripBackgroundAnsi,
@@ -372,7 +373,7 @@ function editWriteExpandedCard(theme: any, component: any): any {
 /** compact 展开面板：外卡片保持展开卡背景；展开的 thinking 另包一层更深的
  *  内卡（自身 Box 背景与外卡同色，不区分会糊在一起），工具卡直接铺在外卡背景上。
  *  每个子卡前面补 1 行分隔（上一条已经是空行时不再补），子卡自带的首尾空行会被裁掉，
- *  避免与外卡/内卡 padding 叠出双空行。
+ *  避免与外卡/内卡 padding 叠出双空行（内联图片的占位行不裁，见 contentRowRange）。
  *  hits：子卡的行区间与命中目标（thinking 命中自身，工具命中 tool 组件），
  *  供展开后点击 hint。未开启 toolHits 时不映射工具，点击仍归外层面板。
  *  live=true：live 槽位用，不铺底色也不留上下空行，首行紧跟 `↳`、其余行缩进对齐
@@ -434,14 +435,8 @@ function layoutExpandedToolCard(
 		const painted = paints?.[childIndex];
 		const childLines = Array.isArray(painted) ? painted : child.render(innerWidth);
 		const innerCard = !live && isThinkingPreview(child) && child.expanded === true;
-		let first = -1;
-		let last = -1;
-		for (let i = 0; i < childLines.length; i++) {
-			if (hasVisibleText(childLines[i])) {
-				if (first < 0) first = i;
-				last = i;
-			}
-		}
+		// 内联图片按 placement 把范围撑开：锚点前后的空行是图片占的位置，不能当首尾空行裁。
+		const { first, last } = contentRowRange(childLines);
 		if (first < 0) {
 			if (live) continue;
 			for (const line of childLines) {

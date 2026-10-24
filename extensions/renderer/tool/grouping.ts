@@ -24,7 +24,13 @@ import {
 import { getToolMouseTui } from "../mouse/scroll.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
 import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./names.ts";
-import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
+import {
+	contentRowRange,
+	imagePlacement,
+	stripAnsi,
+	stripBackgroundAnsi,
+	stripLeadingStatusIcon,
+} from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
 	fitToolCallSummary,
@@ -193,8 +199,22 @@ function requestAnimationRender(patch: Patch): void {
 	getToolMouseTui()?.requestRender?.();
 }
 
+/** 丢掉空白行；内联图片锚点行与它占用的空行要留着，否则终端里图片盖住后续行。 */
 function visibleLines(lines: string[]): string[] {
-	return lines.filter((line) => stripAnsi(line).trim());
+	const keep = new Set<number>();
+	for (let index = 0; index < lines.length; index++) {
+		const placement = imagePlacement(lines[index]);
+		if (!placement) {
+			if (stripAnsi(lines[index]).trim()) keep.add(index);
+			continue;
+		}
+		const start = placement.grows === "up" ? index - placement.rows + 1 : index;
+		const end = placement.grows === "down" ? index + placement.rows - 1 : index;
+		for (let row = Math.max(0, start); row <= Math.min(lines.length - 1, end); row++) {
+			keep.add(row);
+		}
+	}
+	return lines.filter((_line, index) => keep.has(index));
 }
 
 function stripLeadingSpaces(line: string, count: number): string {
@@ -388,12 +408,11 @@ function collapsedGroupLine(
 	return truncateToWidth(`${prefix}${item.summary(room, theme)}`, rowWidth, "");
 }
 
-/** 展开面板里一项占的行：最后一项不留尾部空行（面板自带底部留白）。 */
+/** 末项结尾的尾随空行不计入卡高（内联图片的占位行除外，见 contentRowRange）。 */
 function panelRows(rows: string[], last: boolean): string[] {
 	if (!last) return rows;
-	let end = rows.length;
-	while (end > 1 && !stripAnsi(rows[end - 1]).trim()) end--;
-	return end === rows.length ? rows : rows.slice(0, end);
+	const end = Math.max(1, contentRowRange(rows).last + 1);
+	return end >= rows.length ? rows : rows.slice(0, end);
 }
 
 type GroupHeaderCounts = { pending: number; success: number; error: number };

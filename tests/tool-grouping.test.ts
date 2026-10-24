@@ -7,8 +7,15 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Spacer } from "@earendil-works/pi-tui";
+import {
+	Container,
+	resetCapabilitiesCache,
+	Spacer,
+	setCapabilities,
+	setCellDimensions,
+} from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { solidPngBase64 } from "./helpers/png.ts";
 import {
 	humanizeToolLabel,
 	renderToolSummary,
@@ -690,5 +697,54 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 		assert.ok(narrow[0]!.length <= Math.floor(72 * 0.8));
 	} finally {
 		hooks.shutdown();
+	}
+});
+
+test("分组展开卡为内联图片留出全部占位行", () => {
+	// 图片序列只写在锚点行，其余是空占位行：按空白行丢掉后，终端里图片会盖住后面的内容。
+	setCellDimensions({ widthPx: 9, heightPx: 18 });
+	setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const bash = started("bash", "img-bash");
+		// 图片工具放末项：分组卡会裁末项的尾随空行，正是图片占位行所在的位置。
+		const read = started("read", "img-read");
+		parent.addChild(bash);
+		parent.addChild(read);
+		assert.ok(parent.children[0] instanceof ToolGroupComponent, "两个工具应合成一张分组卡");
+		const group = parent.children[0] as ToolGroupComponent;
+		group.setExpanded(true);
+		bash.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		read.updateResult({
+			content: [
+				{ type: "text", text: "shot.png" },
+				{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
+			],
+			isError: false,
+		});
+
+		const lines: string[] = group.render(100);
+		const plain = (line: string): string =>
+			line
+				.replace(/\x1b_G[^\x1b]*\x1b\\/g, "")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+				.replace(/^[│├└]\s*/, "");
+		const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
+		assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
+		const rows = Number(
+			/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
+		);
+		assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
+		assert.ok(
+			imageRow + rows <= lines.length,
+			`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
+		);
+		for (let index = imageRow + 1; index < imageRow + rows; index++) {
+			assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
+		}
+	} finally {
+		hooks.shutdown();
+		resetCapabilitiesCache();
 	}
 });

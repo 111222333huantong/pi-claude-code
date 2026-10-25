@@ -887,27 +887,44 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 											return theme.style("█".repeat(Math.max(0, cells)), { fg: part.color });
 										})
 										.join("");
+									const amountCells = allParts.map((part) => {
+										const pct = contextWindow > 0 ? (part.tokens / contextWindow) * 100 : 0;
+										const tokens = formatTokens(part.tokens).padStart(7);
+										const percent = `${pct.toFixed(1).padStart(5)}%`;
+										return { tokens, percent, plain: `${tokens}  ${percent}` };
+									});
+									// 数字列整体贴右：label 最多占到「行宽 - 数字列宽 - 前缀 - 边距」为止。
+									const amountWidth = Math.max(
+										...amountCells.map((cell) => visibleWidth(cell.plain)),
+									);
 									const labelWidth = Math.min(
 										24,
 										Math.max(...allParts.map((part) => part.label.length)),
+										Math.max(1, inner - amountWidth - 5),
 									);
 									const selectedLabel = visiblePreviews[selectedPreviewIndex]?.label;
-									const partRows = allParts.map((part) => {
-										const pct = contextWindow > 0 ? (part.tokens / contextWindow) * 100 : 0;
+									const partRows = allParts.map((part, index) => {
 										const swatch = theme.style("■", { fg: part.color });
 										const label = part.label.padEnd(labelWidth);
-										const amount = `${formatTokens(part.tokens).padStart(7)}  ${pct.toFixed(1).padStart(5)}%`;
+										const amount = amountCells[index];
 										const selected = part.label === selectedLabel;
 										const hoverLabel = visiblePreviews.find((p) => p.key === hoveredKey)?.label;
 										const prefix = selected ? "› " : "  ";
-										const row = padLine(`${prefix}${swatch} ${label} ${amount}`, inner);
+										const left = `${prefix}${swatch} ${label}`;
+										const gap = Math.max(
+											1,
+											inner - 1 - visibleWidth(left) - visibleWidth(amount?.plain ?? ""),
+										);
+										// token 数字用次级色，百分比保持正文色以保留可读的主指标。
+										const right = `${theme.fg("dim", amount?.tokens ?? "")}  ${amount?.percent ?? ""}`;
+										const row = padLine(`${left}${" ".repeat(gap)}${right}`, inner);
 										if (selected) return theme.bg("selectedBg", row);
 										return part.label === hoverLabel ? theme.bg("customMessageBg", row) : row;
 									});
 									const border = (text: string) => theme.fg("border", text);
 									const lines = [
 										border(`╭${"─".repeat(inner)}╮`),
-										`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
+										`${border("│")}${padLine(` ${title}  ${theme.fg("dim", subtitle)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
 										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 										`${border("│")}${padLine(` ${segments}`, inner)}${border("│")}`,
 										`${border("│")}${" ".repeat(inner)}${border("│")}`,

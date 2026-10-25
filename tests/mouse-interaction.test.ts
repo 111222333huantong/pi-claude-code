@@ -14,6 +14,12 @@ import claudeCodeStyleExtension, {
 } from "../extensions/renderer/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
+	scheduleSessionRender,
+	TOOL_MOUSE_DISABLE,
+} from "../extensions/renderer/mouse/interaction.ts";
+import { sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
+import { getScrollButtonWidget } from "../extensions/renderer/mouse/scroll.ts";
+import {
 	renderRichToolResult,
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 } from "../extensions/renderer/tool/diff/index.ts";
@@ -1101,5 +1107,410 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 		}
 	} finally {
 		installToolMouseInteraction({});
+	}
+});
+
+test("installToolMouseInteraction ignores contexts without a TUI mouse source", () => {
+	let touched = 0;
+	const ui = {
+		setWidget() {
+			touched++;
+		},
+		onTerminalInput() {
+			touched++;
+			return () => undefined;
+		},
+	};
+	try {
+		installToolMouseInteraction({ mode: "rpc", hasUI: true, ui });
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget() {
+					touched++;
+				},
+			},
+		});
+		installToolMouseInteraction({ mode: "tui", hasUI: false, ui });
+		assert.equal(touched, 0, "不满足 tui + hasUI + onTerminalInput/setWidget 时不安装");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("pointer drag between press and release cancels the collapse", () => {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	// expanded-card 命中要求卡有内容框：行数决定可点击区域。
+	const contentBox = { render: () => ["line a", "line b"] };
+	const card = {
+		toolCallId: "card-1",
+		expanded: true,
+		children: [contentBox],
+		contentBox,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return this.expanded
+				? ["✓ bash", ...contentBox.render()]
+				: ["✓ bash", "... (3 more lines, ctrl+o to expand)"];
+		},
+	};
+	const tui = {
+		terminal: { columns: 40, write() {} },
+		children: [card],
+		previousLines: card.render(),
+		previousViewportTop: 0,
+		requestRender() {},
+		doRender() {
+			this.previousLines = card.render();
+		},
+	};
+	installToolMouseInteraction({
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+			},
+			onTerminalInput(handler: typeof inputHandler) {
+				inputHandler = handler;
+				return () => undefined;
+			},
+		},
+	});
+	try {
+		tui.doRender();
+		// 卡内按下后拖过容差（1 格）再松手：不算单击。
+		inputHandler?.("\x1b[<0;5;2M");
+		inputHandler?.("\x1b[<32;5;4M");
+		inputHandler?.("\x1b[<0;5;2m");
+		assert.equal(card.expanded, true, "拖动后松开不收起卡");
+
+		// 按下后未移动就滚轮：待结算的按下直接作废。
+		inputHandler?.("\x1b[<0;5;2M");
+		inputHandler?.("\x1b[<64;5;2M");
+		inputHandler?.("\x1b[<0;5;2m");
+		assert.equal(card.expanded, true, "滚轮打断后的松手不收起卡");
+
+		// 同一格按下与松开仍是一次单击。
+		inputHandler?.("\x1b[<0;5;2M");
+		inputHandler?.("\x1b[<0;5;2m");
+		assert.equal(card.expanded, false, "同格单击收起卡");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("teardown survives a closed terminal and a reset UI context", () => {
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		children: [],
+		previousLines: [],
+		previousViewportTop: 0,
+		requestRender() {},
+		doRender() {},
+	};
+	const ui = {
+		setWidget(_key: string, factory: any) {
+			if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+		},
+		onTerminalInput() {
+			return () => undefined;
+		},
+	};
+	installToolMouseInteraction({ mode: "tui", hasUI: true, ui });
+	// 退出时终端已关闭、扩展上下文已被重置：两条清理都必须各自吞掉异常。
+	tui.terminal.write = () => {
+		throw new Error("terminal closed");
+	};
+	ui.setWidget = () => {
+		throw new Error("ui context reset");
+	};
+	assert.doesNotThrow(() => installToolMouseInteraction({}));
+});
+
+test("scheduleSessionRender repaints the restored session once", async () => {
+	const renders: unknown[] = [];
+	let refreshed = 0;
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		children: [],
+		previousLines: [],
+		previousViewportTop: 0,
+		requestRender(value?: boolean) {
+			renders.push(value);
+		},
+		doRender() {},
+	};
+	try {
+		scheduleSessionRender(() => refreshed++);
+		assert.equal(renders.length, 0, "没有 tui 时直接返回");
+
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+		scheduleSessionRender(() => refreshed++);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		assert.equal(refreshed, 1, "恢复的会话只重绘一次");
+		assert.deepEqual(renders.at(-1), true, "强制整帧重绘");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("off mode still advertises the disable sequence", () => {
+	assert.match(TOOL_MOUSE_DISABLE, /\x1b\[\?1000l/);
+});
+
+/** 惰性 Proxy fullscreen：requestRender 每次 get 返回新函数（isLazyProxyTui 判定）。 */
+class FakeFullscreenTui {
+	mode = "fullscreen";
+	official: string[] = [];
+	previousLines: string[] = [];
+	previousViewportTop = 0;
+	currentLayout: any = null;
+	focusedComponent: any;
+	renderedOverlayLayouts: any[] | undefined;
+	scrollToEndIndicatorRect: any;
+	terminal: any;
+
+	constructor(written: string[]) {
+		this.terminal = { columns: 80, rows: 24, write: (data: string) => written.push(data) };
+	}
+
+	get requestRender() {
+		return (_value?: boolean) => undefined;
+	}
+
+	hasOverlay() {
+		return false;
+	}
+
+	handleViewportInput(data: string) {
+		this.official.push(data);
+		return "official";
+	}
+}
+
+function fullscreenToolFixture() {
+	const collapsedLines = ["✓ bash", "line a", "... (5 more lines, ctrl+o to expand)"];
+	const expandedLines = ["✓ bash", "line a", "line b"];
+	const tool: any = {
+		toolCallId: "fs-1",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return this.expanded ? expandedLines : collapsedLines;
+		},
+	};
+	return { tool, collapsedLines, expandedLines };
+}
+
+function fullscreenLayout(lines: string[], component: any) {
+	return {
+		root: {
+			clip: { x: 0, y: 0, width: 80, height: 24 },
+			rect: { x: 0, y: 0, width: 80, height: lines.length },
+			lines,
+			component,
+			children: [],
+		},
+	};
+}
+
+test("fullscreen install patches viewport input and expands a collapsed tool from its hint", () => {
+	const written: string[] = [];
+	const tui = new FakeFullscreenTui(written);
+	const { tool, collapsedLines } = fullscreenToolFixture();
+	tui.currentLayout = fullscreenLayout(collapsedLines, tool);
+	const theme = { fg: (_color: string, text: string) => text };
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, theme);
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+		assert.ok(written.includes("\x1b[?1003h\x1b[?1006h"), "fullscreen 下补开无按键 hover 上报");
+
+		// 提示文本以外的正文行不是展开入口，包照旧交给官方链。
+		assert.equal(tui.handleViewportInput("\x1b[<0;2;2M"), "official");
+		assert.equal(tool.expanded, false, "正文行不展开折叠卡");
+
+		// 布局外的坐标没有命中任何 leaf，照旧放行官方。
+		assert.equal(tui.handleViewportInput("\x1b[<0;2;20M"), "official");
+
+		// widget 每次绘制都要复核 patch 与回底同步；渲染结果仍是可绘制的行。
+		const widget = getScrollButtonWidget();
+		assert.ok(Array.isArray(widget?.render(80)), "回到底部 widget 可渲染");
+
+		// 展开时停在当前滚动位置，脱离底部跟随由官方回底按钮接手。
+		const scrollCalls: Array<[number, any]> = [];
+		(tui as any).getPrimaryScrollView = () => ({
+			scrollTop: 7,
+			isFollowingEnd: true,
+			scrollTo: (top: number, options: any) => scrollCalls.push([top, options]),
+		});
+		const hintCol = collapsedLines[2]!.indexOf("(") + 2;
+		assert.deepEqual(tui.handleViewportInput(`\x1b[<0;${hintCol};3M`), { consume: true });
+		assert.equal(tool.expanded, true, "点击提示文本展开卡");
+		assert.deepEqual(scrollCalls, [[7, { disableFollow: true }]], "展开时关掉底部跟随");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("fullscreen motion reporting stays off when the terminal opted out", () => {
+	const written: string[] = [];
+	const tui = new FakeFullscreenTui(written);
+	const { tool, collapsedLines } = fullscreenToolFixture();
+	tui.currentLayout = fullscreenLayout(collapsedLines, tool);
+	(tui as any).mouseEnabled = false;
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+		assert.ok(
+			!written.some((chunk) => chunk.includes("?1003h")),
+			"终端禁用鼠标时不补开 all-motion",
+		);
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("fullscreen wheel motion cancels a pending collapse and re-enables motion only once", () => {
+	const written: string[] = [];
+	const tui = new FakeFullscreenTui(written);
+	const { tool, collapsedLines } = fullscreenToolFixture();
+	tui.currentLayout = fullscreenLayout(collapsedLines, tool);
+	const theme = { fg: (_color: string, text: string) => text };
+	let widgetFactory: any;
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				widgetFactory = factory;
+				if (typeof factory === "function") factory(tui, theme);
+			},
+			onTerminalInput() {
+				return () => undefined;
+			},
+		},
+	};
+	try {
+		installToolMouseInteraction(ctx);
+		assert.equal(
+			written.filter((chunk) => chunk.includes("?1003h")).length,
+			1,
+			"首帧补开一次 DECSET 1003",
+		);
+		// widget 每次重绘都会重跑一次补开逻辑：已开启时必须早退。
+		widgetFactory(tui, theme);
+		assert.equal(
+			written.filter((chunk) => chunk.includes("?1003h")).length,
+			1,
+			"已开启就不再重复写 DECSET 1003",
+		);
+
+		const hintCol = collapsedLines[2]!.indexOf("(") + 2;
+		assert.equal(tui.handleViewportInput(`\x1b[<35;${hintCol};3M`), "official");
+		assert.equal(sharedToolHoverState().toolCallId, "fs-1", "hover 落到折叠卡提示上");
+		assert.equal(tui.handleViewportInput("\x1b[<35;2;2M"), "official");
+		assert.equal(sharedToolHoverState().toolCallId ?? null, null, "移出提示就清高亮");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("fullscreen install keeps the official chain for the viewport input it cannot judge", () => {
+	const written: string[] = [];
+	const tui = new FakeFullscreenTui(written);
+	const { tool, collapsedLines } = fullscreenToolFixture();
+	tui.currentLayout = fullscreenLayout(collapsedLines, tool);
+	const theme = { fg: (_color: string, text: string) => text };
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, theme);
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+
+		// 无 overlay：包直接走官方链。
+		assert.equal(tui.handleViewportInput("\x1b[<0;2;9M"), "official");
+		assert.equal(tui.official.length, 1);
+
+		// 落在 overlay 矩形内：交给官方 dispatchMouseToOverlay。
+		tui.hasOverlay = () => true;
+		tui.renderedOverlayLayouts = [
+			{ col: 0, row: 0, width: 80, height: 24, entry: { component: {} } },
+		];
+		assert.equal(tui.handleViewportInput("\x1b[<0;10;5M"), "official");
+
+		// overlay 还没画出布局：本帧无法判断命中，返回 undefined 让 overlay 自己处理。
+		tui.renderedOverlayLayouts = [];
+		assert.equal(tui.handleViewportInput("\x1b[<0;10;5M"), undefined);
+
+		// 焦点 overlay 不在上一帧的矩形列表里：同样不能拿旧布局判点击。
+		tui.renderedOverlayLayouts = [
+			{ col: 0, row: 0, width: 80, height: 24, entry: { component: { stale: true } } },
+		];
+		tui.focusedComponent = { fresh: true };
+		(tui as any).isOverlayFocused = () => true;
+		assert.equal(tui.handleViewportInput("\x1b[<0;10;5M"), undefined);
+
+		// 官方滚动条列：点击交给官方拖动，扩展不接手。
+		tui.hasOverlay = () => false;
+		tui.currentLayout.root.scrollView = { isScrollbarVisible: true, getContentWidth: () => 79 };
+		assert.equal(tui.handleViewportInput("\x1b[<0;80;2M"), "official");
+
+		// 官方回到底部指示器优先于工具卡。
+		tui.scrollToEndIndicatorRect = { row: 0, column: 0, width: 10 };
+		assert.equal(tui.handleViewportInput("\x1b[<0;3;1M"), "official");
+	} finally {
+		installToolMouseInteraction({});
+		assert.equal(
+			tui.handleViewportInput("\x1b[<0;2;9M"),
+			"official",
+			"teardown 还原官方的 handleViewportInput",
+		);
 	}
 });

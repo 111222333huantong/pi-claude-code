@@ -19,6 +19,8 @@ import claudeCodeStyleExtension, {
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
 import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
+import { resetToolHoverState } from "../extensions/renderer/mouse/interaction.ts";
+import { patchRegistry, TOOL_HOVER_STATE_KEY } from "../extensions/utils/patch-keys.ts";
 import { getScrollButtonVisible } from "../extensions/renderer/mouse/scroll.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
@@ -1004,7 +1006,7 @@ test("lazy-proxy tui: expanding a tool keeps every message of the same round ope
 	}
 });
 
-test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", async () => {
+test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width", () => {
 	const wrap = (label: string) => ({
 		render: (width: number) => (width === 80 ? [label] : [label, `${label}-2`]),
 		invalidate() {},
@@ -1053,14 +1055,13 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 	tui.handleViewportInput(`\x1b[<35;${hintCol};8M`);
 	assert.equal(sharedToolHoverState().toolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
-	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）；
-	// reload 语义不变：reset 走 interaction.ts 原生导出，状态读 globalThis 槽。
+	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）。
 	assert.equal(isToolCallHovered("width-tool-b"), true);
-	const reloadSpecifier = `../extensions/renderer/mouse/interaction.ts?reload=${Date.now()}`;
-	const reloadedMouse: typeof import("../extensions/renderer/mouse/interaction.ts") = await import(
-		reloadSpecifier
-	);
-	reloadedMouse.resetToolHoverState();
+	// /reload 会重新求值模块，hover 状态因此挂在 globalThis 的注册表槽里。
+	// 断言槽与当前状态是同一对象，就等价于「另一份模块实例读到的是同一份」，
+	// 不必真的再加载一份文件（那会让覆盖率报表把同文件的两份数据合并错）。
+	assert.equal(patchRegistry.get(TOOL_HOVER_STATE_KEY), sharedToolHoverState());
+	resetToolHoverState();
 	assert.equal(isToolCallHovered("width-tool-b"), false, "hover state is shared across reloads");
 	installToolMouseInteraction({});
 });

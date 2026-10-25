@@ -598,16 +598,20 @@ export type CompactModeHooks = {
 	/** 重新渲染包含指定 toolCallId 的 assistant 消息（思考收尾时刷新）。 */
 	refreshToolCallMessage(toolCallId: string | undefined): void;
 	/**
-	 * 收尾 resume 重放留下的活动回合。重放是同步的，回合之间靠下一条消息收口，
-	 * 只有最后一条没有后续消息，会停在 Running。
+	 * 会话已空闲时收尾末尾回合。回放/切换样式/重载重建之后，末尾那条消息
+	 * 后面没有消息来收口；活性只问会话，不从消息形状推断。
 	 */
-	settleReplayedRound(): void;
+	settleIdleRound(): void;
+	/** agent 这轮跑完：收尾仍在 live 的末尾回合，别让它一直挂着 Running。 */
+	settleFinishedRound(): void;
 	shutdown(): void;
 };
 
 type CompactModeInstallDeps = {
 	query?: CompactThinkingQuery;
 	writeMetadata: WriteExecutionMetadataStore;
+	/** 会话是否空闲；测试注入用，正式路径取 ctx.isIdle。 */
+	isIdle?: () => boolean;
 };
 
 type CompactModePatch = {
@@ -1228,7 +1232,17 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	const liveSlotToolIds = new Set<string>();
 	const pendingFoldRounds = new Set<CompactRound>();
 	let uiRef: { requestRender?: (force?: boolean) => void } | undefined;
+	let idleRef: (() => boolean) | undefined = deps.isIdle;
 	let roundTickTimer: ReturnType<typeof setInterval> | undefined;
+
+	/** 会话是否空闲：回合活性的事实来源，取不到就当没空闲（宁可保留 Running）。 */
+	const sessionIdle = (): boolean => {
+		try {
+			return idleRef?.() === true;
+		} catch {
+			return false;
+		}
+	};
 
 	const roundWallMs = (round: CompactRound): number => {
 		const end = round.active ? Date.now() : (round.endedAt ?? Date.now());
@@ -2167,6 +2181,19 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 	};
 
+	/**
+	 * 会话已空闲时收尾末尾回合。重建 pass 内仍按顺序并回合（同一 turn 的多条
+	 * 消息要合成一条摘要），只在 pass 结束时对账：会话没在跑，末尾那条就不会
+	 * 再长出内容，停在 Running 是假的。
+	 */
+	const settleTrailingRound = (): void => {
+		if (!sessionIdle()) return;
+		const round = activeRound;
+		if (!round) return;
+		finalizeRound(round);
+		renderRound(round);
+	};
+
 	patch.assistantInstalled = function (this: any, message: any, isStreaming?: boolean) {
 		const self = this as any;
 		// 同 compact-thinking：isStreaming 丢失 → mermaid 流式误渲染来回闪。
@@ -2418,6 +2445,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		sync(ctx: any) {
 			if (!patch.active) return;
 			uiRef = ctx?.ui;
+			if (typeof ctx?.isIdle === "function") idleRef = () => ctx.isIdle() === true;
 			resetRounds();
 			// 始终保持补丁在链上：mode=on/off 走 passThrough，仍写入 lastMessage
 			// 与 tracked 集合，这样 /ccstyle 切回 compact 时不必 /reload。
@@ -2426,6 +2454,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			else hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
 			sweepOrphanTails();
+			settleTrailingRound();
 		},
 		refresh() {
 			if (!patch.active) return;
@@ -2434,6 +2463,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			if (config.mode !== "compact") hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
 			sweepOrphanTails();
+			settleTrailingRound();
 		},
 		assertOwnership() {
 			if (!patch.active) return;
@@ -2454,11 +2484,16 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				}
 			}
 		},
-		settleReplayedRound() {
+		settleIdleRound() {
+			if (!patch.active || config.mode !== "compact") return;
+			settleTrailingRound();
+		},
+		settleFinishedRound() {
 			if (!patch.active || config.mode !== "compact") return;
 			const round = activeRound;
 			if (!round) return;
-			finalizeRound(round); // clears activeRound — capture it first
+			// 走静默期：摘要行当场翻成 Ran for，槽位卡多留一拍再收拢。
+			endRound(round, true);
 			renderRound(round);
 		},
 		shutdown() {

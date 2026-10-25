@@ -258,10 +258,9 @@ export default function (
 		syncCompactMode(ctx);
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
+		// 历史回放也在这之后跑完：sync 末尾按 ctx.isIdle() 收尾末尾回合，
+		// 它没有后续消息，不收就会停在 Running。
 		setTimeout(() => syncCompactMode(ctx), 0);
-		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
-		// 否则它没有后续消息，摘要行会停在 Running。
-		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
 		scheduleSessionRender(() => {
 			hooks.toolGrouping.refresh(getToolMouseTui());
 			// /reload、/resume 在 session_start 之前就重建了 transcript：已挂载的通知卡换上本插件的渲染器。
@@ -303,6 +302,8 @@ export default function (
 
 	pi.on("agent_end", async () => {
 		clearLiveToolCalls();
+		// 这轮跑完：末尾回合没有正文收口（纯工具回合）就一直挂着 Running。
+		compactModeHooks?.settleFinishedRound();
 	});
 
 	pi.on("session_shutdown", async () => {

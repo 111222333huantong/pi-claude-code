@@ -589,6 +589,58 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 	}
 });
 
+test("写已完成后官方那次 abort 检查不把写报成失败", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-late-abort-"));
+	const store = new WriteExecutionMetadataStore();
+	let reads = 0;
+	// 第 3 次读（官方写之后那次检查）才报 aborted。
+	const signal = {
+		get aborted() {
+			reads++;
+			return reads >= 3;
+		},
+	} as AbortSignal;
+	try {
+		const result = await executeWriteWithMetadata(
+			store,
+			"late",
+			{ path: "late.txt", content: "bye" },
+			signal,
+			directory,
+		);
+		assert.equal(await readFile(join(directory, "late.txt"), "utf8"), "bye");
+		assert.ok(store.get("late"), "快照保留，摘要行才显示 diff");
+		assert.match(result.content[0]?.text ?? "", /3 bytes/);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("write 走官方路径解析：/mnt/<drive>/ 落到对应盘符而不是影子树", async (t) => {
+	if (process.platform !== "win32") return t.skip("盘符语义只在 Windows 宿主上成立");
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-wsl-"));
+	const store = new WriteExecutionMetadataStore();
+	const drive = directory[0]!.toLowerCase();
+	// WSL 报告给模型的路径：/mnt/c/Users/.../probe.txt
+	const posixPath = `/mnt/${drive}${directory.slice(2).replace(/\\/g, "/")}/probe.txt`;
+	const expected = join(directory, "probe.txt");
+	try {
+		const result = await executeWriteWithMetadata(
+			store,
+			"wsl",
+			{ path: posixPath, content: "hello" },
+			undefined,
+			process.cwd(),
+		);
+		assert.equal(await readFile(expected, "utf8"), "hello", "应落到盘符对应的真实路径");
+		assert.equal(store.get("wsl")?.fileExistedBeforeWrite, false);
+		// 文案仍是参数里的路径，与用户输入一致。
+		assert.match(result.content[0]?.text ?? "", /to \/mnt\//);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test("default-mode write collapsed uses title stats and created hint", () => {
 	const previousMode = config.mode;
 	const store = new WriteExecutionMetadataStore();

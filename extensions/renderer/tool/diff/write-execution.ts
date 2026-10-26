@@ -1,6 +1,5 @@
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { createWriteToolDefinition, type WriteOperations } from "@earendil-works/pi-coding-agent";
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
 
 export const MAX_COMPARABLE_WRITE_BYTES = 512_000;
 export const MAX_WRITE_METADATA_ENTRIES = 100;
@@ -81,33 +80,51 @@ export async function executeWriteWithMetadata(
 	signal: AbortSignal | undefined,
 	cwd: string,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }> {
-	const absolutePath = isAbsolute(params.path) ? params.path : resolve(cwd, params.path);
 	store.delete(toolCallId);
+	// 覆盖层只揽写前快照：路径解析（含 Windows 下 /mnt/<drive>、/cygdrive/<drive> 转换）、
+	// 目录创建、mutation queue 与错误文案全交回 pi 官方 write，参数与官方逐字一致。
+	const definition = createWriteToolDefinition(cwd, {
+		operations: writeSnapshotOperations(store, toolCallId),
+	}) as any;
 	try {
-		return await withFileMutationQueue(absolutePath, async () => {
-			const throwIfAborted = () => {
-				if (signal?.aborted) throw new Error("Operation aborted");
-			};
-			throwIfAborted();
-			const metadata = await capturePreviousContent(absolutePath);
-			throwIfAborted();
-			await mkdir(dirname(absolutePath), { recursive: true });
-			throwIfAborted();
-			await writeFile(absolutePath, params.content, "utf8");
-			// The file is already changed. A later abort must not report failure.
-			store.set(toolCallId, metadata);
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Successfully wrote ${Buffer.byteLength(params.content, "utf8")} bytes to ${params.path}`,
-					},
-				],
-				details: undefined,
-			};
-		});
+		await definition.execute(toolCallId, params, signal, undefined, { cwd });
+		return writeSuccessResult(params);
 	} catch (error) {
+		// 文件已落盘，只是官方写后那次 abort 检查抦了错：保持「文件已改即成功」。
+		if (store.get(toolCallId) && signal?.aborted) return writeSuccessResult(params);
 		store.delete(toolCallId);
 		throw error;
 	}
+}
+
+/** 官方 write 的落盘操作：拿到的是官方解析后的绝对路径，快照才跟真实落盘一致。 */
+function writeSnapshotOperations(
+	store: WriteExecutionMetadataStore,
+	toolCallId: string,
+): WriteOperations {
+	return {
+		mkdir: (dir) => mkdir(dir, { recursive: true }).then(() => {}),
+		writeFile: async (absolutePath, content) => {
+			store.delete(toolCallId);
+			const metadata = await capturePreviousContent(absolutePath);
+			await writeFile(absolutePath, content, "utf8");
+			// 写已生效：后续 abort 不得把这次写报成失败，快照先落下。
+			store.set(toolCallId, metadata);
+		},
+	};
+}
+
+function writeSuccessResult(params: { path: string; content: string }): {
+	content: Array<{ type: "text"; text: string }>;
+	details: undefined;
+} {
+	return {
+		content: [
+			{
+				type: "text",
+				text: `Successfully wrote ${Buffer.byteLength(params.content, "utf8")} bytes to ${params.path}`,
+			},
+		],
+		details: undefined,
+	};
 }

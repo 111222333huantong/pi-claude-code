@@ -340,6 +340,27 @@ export function formatExcludeRenderers(names: readonly string[]): string {
 	return names.length === 0 ? "none" : names.join(", ");
 }
 
+/** excludeRenderers 与运行时工具名按大小写不敏感匹配（如候选 "agent" 对上 pi-subagents 的 "Agent"）。 */
+export function isExcludedRenderer(
+	toolName: string,
+	excludeRenderers: readonly string[] = config.excludeRenderers,
+): boolean {
+	const key = toolName.toLowerCase();
+	return excludeRenderers.some((name) => name.toLowerCase() === key);
+}
+
+/** 写入名单时去掉同名异大小写项，再按 id 写入，避免 agent/Agent 并存。 */
+export function withExcludeRendererToggle(
+	excludeRenderers: readonly string[],
+	id: string,
+	exclude: boolean,
+): string[] {
+	const key = id.toLowerCase();
+	const next = excludeRenderers.filter((name) => name.toLowerCase() !== key);
+	if (exclude) next.push(id);
+	return [...new Set(next)].sort((a, b) => a.localeCompare(b));
+}
+
 export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,

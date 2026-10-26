@@ -62,6 +62,8 @@ import {
 	type FooterGitStatsMode,
 	type FooterTokenRateMode,
 	type ScrollButtonMode,
+	isExcludedRenderer,
+	withExcludeRendererToggle,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -275,7 +277,7 @@ function buildExcludeRenderersSubmenu(
 		id: name,
 		label: name,
 		description: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
-		currentValue: config.excludeRenderers.includes(name) ? "exclude" : "style",
+		currentValue: isExcludedRenderer(name, config.excludeRenderers) ? "exclude" : "style",
 		values: ["style", "exclude"],
 	}));
 	const list = new SettingsList(
@@ -283,10 +285,13 @@ function buildExcludeRenderersSubmenu(
 		Math.min(8, Math.max(4, items.length)),
 		getSettingsListTheme(),
 		(id: string, value: string) => {
-			const excluded = new Set(config.excludeRenderers);
-			if (value === "exclude") excluded.add(id);
-			else excluded.delete(id);
-			updateConfig({ excludeRenderers: [...excluded].sort((a, b) => a.localeCompare(b)) });
+			updateConfig({
+				excludeRenderers: withExcludeRendererToggle(
+					config.excludeRenderers,
+					id,
+					value === "exclude",
+				),
+			});
 			onLiveChange();
 		},
 		() => onClose(),

@@ -9,7 +9,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 type AnyToolDefinition = ToolDefinition<any, any, any>;
-import { config } from "../extensions/config/config.ts";
+import {
+	config,
+	isExcludedRenderer,
+	withExcludeRendererToggle,
+} from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 import claudeCodeStyleExtension, {
@@ -565,6 +569,29 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 		false,
 	);
 	assert.equal(preservesOriginalRenderer(undefined, "Agent"), false);
+	// 设置面板候选是 "agent"；pi-subagents 运行时工具名是 "Agent"。
+	assert.equal(isExcludedRenderer("Agent", ["agent"]), true);
+	assert.equal(isExcludedRenderer("agent", ["Agent"]), true);
+	assert.equal(
+		preservesOriginalRenderer(
+			{ name: "Agent", renderShell: "self", renderCall() {}, renderResult() {} },
+			"Agent",
+			undefined,
+			["agent"],
+		),
+		true,
+	);
+	assert.equal(
+		preservesOriginalRenderer(
+			{ name: "Agent", renderShell: "self", renderCall() {}, renderResult() {} },
+			"Agent",
+			undefined,
+			["bash"],
+		),
+		false,
+	);
+	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", true), ["agent", "bash"]);
+	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", false), ["bash"]);
 });
 
 test("Agent uses the ccstyle renderer under ccstyle", async () => {

@@ -6,7 +6,7 @@
  * 生命周期对齐 compact-mode：installDefaultMode → hooks.shutdown。
  */
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { config, type CompactStyleMode } from "../config/config.ts";
+import { config, isExcludedRenderer, type CompactStyleMode } from "../config/config.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
 	GLOBAL_TOOL_RENDER_PATCH,
@@ -27,7 +27,7 @@ export function preservesOriginalRenderer(
 	builtInToolDefinition?: any,
 	excludeRenderers: readonly string[] = config.excludeRenderers,
 ): boolean {
-	if (!excludeRenderers.includes(toolName)) return false;
+	if (!isExcludedRenderer(toolName, excludeRenderers)) return false;
 	return [extensionDefinition, builtInToolDefinition].some(
 		(definition) =>
 			definition?.renderShell === "self" ||

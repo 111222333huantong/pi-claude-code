@@ -38,7 +38,6 @@ import {
 	DIFF_INDICATOR_MODES,
 	DIFF_SPLIT_MIN_WIDTH_VALUES,
 	DIFF_VIEW_MODES,
-	EXCLUDE_RENDERER_CANDIDATES,
 	EXPANDED_INPUT_MAX_LINES_VALUES,
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
@@ -63,6 +62,7 @@ import {
 	type FooterTokenRateMode,
 	type ScrollButtonMode,
 	isExcludedRenderer,
+	mergeExcludeRendererCandidates,
 	withExcludeRendererToggle,
 } from "./config.ts";
 
@@ -270,9 +270,8 @@ function buildExcludeRenderersSubmenu(
 	invalidate: () => void;
 	handleInput: (data: string) => void;
 } {
-	const candidates = [
-		...new Set([...EXCLUDE_RENDERER_CANDIDATES, ...config.excludeRenderers]),
-	].sort((a, b) => a.localeCompare(b));
+	// 候选与名单按大小写不敏感合并：存过 Agent 时不再多出一行 agent。
+	const candidates = mergeExcludeRendererCandidates(config.excludeRenderers);
 	const items = candidates.map((name) => ({
 		id: name,
 		label: name,

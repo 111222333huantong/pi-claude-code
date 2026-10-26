@@ -11,7 +11,9 @@ import { Text, visibleWidth } from "@earendil-works/pi-tui";
 type AnyToolDefinition = ToolDefinition<any, any, any>;
 import {
 	config,
+	EXCLUDE_RENDERER_CANDIDATES,
 	isExcludedRenderer,
+	mergeExcludeRendererCandidates,
 	withExcludeRendererToggle,
 } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
@@ -592,6 +594,16 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 	);
 	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", true), ["agent", "bash"]);
 	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", false), ["bash"]);
+	// 面板候选按大小写不敏感去重：名单存过 Agent 时 agent 只留一行（候选在前，保留小写写法）。
+	assert.deepEqual(
+		mergeExcludeRendererCandidates(["Agent"]).filter((name) => name.toLowerCase() === "agent"),
+		["agent"],
+	);
+	assert.deepEqual(
+		mergeExcludeRendererCandidates(["bash"]),
+		[...EXCLUDE_RENDERER_CANDIDATES].sort((a, b) => a.localeCompare(b)),
+	);
+	assert.equal(mergeExcludeRendererCandidates(["Custom"]).includes("Custom"), true);
 });
 
 test("Agent uses the ccstyle renderer under ccstyle", async () => {

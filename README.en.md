@@ -46,7 +46,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 {
   // style
   "mode": "on",                            // on / compact / off
-  "excludeRenderers": [],                  // tools keeping the native renderer; Agent always keeps its dedicated renderer
+  "excludeRenderers": [],                  // tools keeping the native renderer, matched case-insensitively; Agent always keeps its dedicated renderer
 
   // features
   "enableSessionReference": true,          // @ session references

@@ -361,6 +361,22 @@ export function withExcludeRendererToggle(
 	return [...new Set(next)].sort((a, b) => a.localeCompare(b));
 }
 
+/** 面板候选：内置候选与用户名单按大小写不敏感合并，保留先出现的写法（候选在前，仍是 agent）。 */
+export function mergeExcludeRendererCandidates(
+	names: readonly string[],
+	candidates: readonly string[] = EXCLUDE_RENDERER_CANDIDATES,
+): string[] {
+	const seen = new Set<string>();
+	const merged: string[] = [];
+	for (const name of [...candidates, ...names]) {
+		const key = name.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(name);
+	}
+	return merged.sort((a, b) => a.localeCompare(b));
+}
+
 export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,

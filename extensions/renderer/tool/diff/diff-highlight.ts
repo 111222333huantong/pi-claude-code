@@ -45,6 +45,41 @@ export function createCodeLineHighlighter(
 	invalidate?: () => void,
 ): CodeLineHighlighter {
 	const codeEntries = entries.filter((entry): entry is DiffLineEntry => entry.kind === "line");
+	const allCode = codeEntries
+		.map((entry) => cleanCodeLine(normalizeCodeWhitespace(entry.content)))
+		.join("\n");
+	const segmentLanguage = shouldHighlightCodeBlock(allCode) ? language : undefined;
+	const highlightByEntry = new WeakMap<DiffLineEntry, CodeLineHighlighter>();
+	let segment: DiffLineEntry[] = [];
+
+	const flushSegment = () => {
+		if (segment.length === 0) return;
+		const highlight = createContiguousCodeLineHighlighter(
+			segmentLanguage,
+			theme,
+			segment,
+			invalidate,
+		);
+		for (const entry of segment) highlightByEntry.set(entry, highlight);
+		segment = [];
+	};
+
+	// Omitted source cannot carry lexer state across a diff discontinuity.
+	for (const entry of entries) {
+		if (entry.kind === "line") segment.push(entry);
+		else flushSegment();
+	}
+	flushSegment();
+
+	return (line, entry) => highlightByEntry.get(entry)?.(line, entry) ?? "";
+}
+
+function createContiguousCodeLineHighlighter(
+	language: string | undefined,
+	theme: DiffTheme,
+	codeEntries: readonly DiffLineEntry[],
+	invalidate?: () => void,
+): CodeLineHighlighter {
 	const cleanLines = codeEntries.map((entry) =>
 		cleanCodeLine(normalizeCodeWhitespace(entry.content)),
 	);

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { createCodeLineHighlighter } from "../extensions/renderer/tool/diff/diff-highlight.ts";
+import { parseDiff, type DiffLineEntry } from "../extensions/renderer/tool/diff/diff-parse.ts";
 import {
 	MAX_HL_CHARS,
 	ShikiHighlightCache,
@@ -8,6 +11,26 @@ import { shouldHighlightCodeBlock } from "../extensions/renderer/tool/diff/diff-
 import { sanitizeToolResultText } from "../extensions/utils/tool-result-sanitize.ts";
 
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+const theme = { fg: (_color: string, text: string) => text };
+
+initTheme("dark");
+
+test("diff omissions do not leak an unclosed comment into later code", () => {
+	const parsed = parseDiff(
+		["  13 /**", "  14  * documentation", "     ...", "  60 const value = 1"].join("\n"),
+	);
+	const codeEntry = parsed.entries.find(
+		(entry): entry is DiffLineEntry => entry.kind === "line" && entry.content === "const value = 1",
+	);
+	assert.ok(codeEntry);
+
+	const highlight = createCodeLineHighlighter("javascript", theme, parsed.entries);
+	const highlightStandalone = createCodeLineHighlighter("javascript", theme, [codeEntry]);
+	assert.equal(
+		highlight(codeEntry.content, codeEntry),
+		highlightStandalone(codeEntry.content, codeEntry),
+	);
+});
 
 test("Shiki cache deduplicates pending work, caches success, and isolates themes", async () => {
 	let loads = 0;

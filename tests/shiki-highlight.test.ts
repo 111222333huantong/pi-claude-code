@@ -13,6 +13,7 @@ import { sanitizeToolResultText } from "../extensions/utils/tool-result-sanitize
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 const theme = { fg: (_color: string, text: string) => text };
 
+// 同步 highlightCode 依赖全局主题；未初始化时返回纯文本，下面的断言会退化成两边相等。
 initTheme("dark");
 
 test("diff omissions do not leak an unclosed comment into later code", () => {
@@ -26,10 +27,35 @@ test("diff omissions do not leak an unclosed comment into later code", () => {
 
 	const highlight = createCodeLineHighlighter("javascript", theme, parsed.entries);
 	const highlightStandalone = createCodeLineHighlighter("javascript", theme, [codeEntry]);
-	assert.equal(
-		highlight(codeEntry.content, codeEntry),
-		highlightStandalone(codeEntry.content, codeEntry),
+	const standalone = highlightStandalone(codeEntry.content, codeEntry);
+	// 主题未生效时两边都是纯文本，相等断言会假通过。
+	assert.notEqual(standalone, codeEntry.content);
+	assert.equal(highlight(codeEntry.content, codeEntry), standalone);
+});
+
+test("segmented Shiki pass matches the standalone pass after the async update", async () => {
+	const parsed = parseDiff(
+		["  7 /*", "  8  * header", "      ...", "  42 const total = items.length"].join("\n"),
 	);
+	const codeEntry = parsed.entries.find(
+		(entry): entry is DiffLineEntry =>
+			entry.kind === "line" && entry.content === "const total = items.length",
+	);
+	assert.ok(codeEntry);
+
+	const highlight = createCodeLineHighlighter("javascript", theme, parsed.entries);
+	const highlightStandalone = createCodeLineHighlighter("javascript", theme, [codeEntry]);
+	const sync = highlight(codeEntry.content, codeEntry);
+	assert.equal(sync, highlightStandalone(codeEntry.content, codeEntry));
+
+	let highlighted = sync;
+	for (let waited = 0; highlighted === sync && waited < 10_000; waited += 10) {
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		highlighted = highlight(codeEntry.content, codeEntry);
+	}
+	// 异步这一遍必须真的落地，否则下面的相等断言没有意义。
+	assert.notEqual(highlighted, sync);
+	assert.equal(highlighted, highlightStandalone(codeEntry.content, codeEntry));
 });
 
 test("Shiki cache deduplicates pending work, caches success, and isolates themes", async () => {

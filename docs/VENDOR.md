@@ -41,7 +41,14 @@
 - **Upstream**: <https://github.com/timvdhoorn/cc-my-pi>（`extensions/claude-header/`、
   `extensions/spinner.ts`、`extensions/pi-agent-settings.ts` 等）
 - **License**: MIT（各文件头均有 `Ported from cc-my-pi ... (MIT, Tim van den Hoorn)`）
-- **Pinned**：未 pin。文件级移植、无整包同步；下次动这些文件时再 pin 当时版本。
+- **Pinned**: `98ad3fc`（v1.4.3）。2026-10-29 按文件级移植吸收 `5c0d05d`（v1.4.1）→
+  `98ad3fc` 的相关修复：`ef749f0`（git-info 轮询在 `ExtensionContext` 失效后自停，
+  嵌入式会话 `dispose()` 不发 `session_shutdown`）、`e4af1d6`（延迟安装器吞掉
+  stale-ctx 异常，并在 switch/fork/tree/shutdown 前取消）、`ea9559c`（延迟 header
+  安装取消）。`6bcedcb`（thinking 跨工具分组保留）本 fork 无对应实现——
+  `grouping.ts` 的 `isIgnorable` 只跳空 assistant 组件，不搬 thinking，
+  不适用。
+
 - **涉及文件**：`mascot.ts`、`loaded-stats.ts`、`startup-header.ts`、
   `quiet-startup.ts`、`spinner-color.ts`、`spinner-settings.ts`、
   `spinner-shimmer.ts`、`spinner-ticker.ts`、`spinner-verbs.ts`、
@@ -219,7 +226,7 @@
 
 ## 待办
 
-- [ ] §2 pin 一个 cc-my-pi 版本（git tag/commit）
+- [x] §2 pin 一个 cc-my-pi 版本（2026-10-29 pin `98ad3fc` v1.4.3）
 - [ ] §4 找到 `pi-compact-thinking` 后继或宣告 FORKED
 - [x] §6 上游 pending BOM/换行归一可选抄入（2026-09-16 P2.3 已做：BOM 去除 + CRLF 经
   `splitWriteContentLines` 归一 + `~` 展开 + `realpath` 工作区逃逸检查，见

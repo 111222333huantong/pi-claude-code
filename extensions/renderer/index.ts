@@ -146,6 +146,35 @@ export default function (
 		  }
 		| undefined;
 
+	// 延迟安装跑在任何 handler 之外：Pi 在 switch/fork/tree/shutdown 时会作废
+	// 捕获的 ctx，回调里再读旧 ctx 会抛未捕获异常。统一登记、取消并吞错
+	// （cc-my-pi `e4af1d6` #10 口径）。
+	const deferredSessionWork = new Set<ReturnType<typeof setTimeout>>();
+	const scheduleDeferred = (work: () => void): void => {
+		const timer = setTimeout(() => {
+			deferredSessionWork.delete(timer);
+			try {
+				work();
+			} catch {
+				/* stale ctx after session lifecycle change */
+			}
+		}, 0);
+		deferredSessionWork.add(timer);
+	};
+	const cancelDeferredSessionWork = (): void => {
+		for (const timer of deferredSessionWork) clearTimeout(timer);
+		deferredSessionWork.clear();
+	};
+	pi.on("session_before_switch", () => {
+		cancelDeferredSessionWork();
+	});
+	pi.on("session_before_fork", () => {
+		cancelDeferredSessionWork();
+	});
+	pi.on("session_before_tree", () => {
+		cancelDeferredSessionWork();
+	});
+
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
 		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
@@ -261,9 +290,9 @@ export default function (
 		if (config.mode !== "compact") return;
 		// Agent 等工具收尾后延迟刷新，让 compact-thinking 先落最终态。
 		const toolCallId: string | undefined = event?.toolCallId;
-		setTimeout(() => {
+		scheduleDeferred(() => {
 			compactModeHooks?.refreshToolCallMessage(toolCallId);
-		}, 0);
+		});
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -279,7 +308,7 @@ export default function (
 		// 延后一拍再确认 write 归属：其他扩展同样在各自的 session_start 里注册工具，
 		// 本 handler 执行时可能还看不到对方，此时注册会与对方撞名（注册表先到先得），
 		// 对方的 write 会被静默丢弃。等所有 session_start 跑完，检测结果才是权威的。
-		setTimeout(() => {
+		scheduleDeferred(() => {
 			installWriteOverride(pi, writeExecutionMetadata, (owner) => {
 				// 冲突可见：对方接管 write 后本插件不再提供富 diff。
 				ctx.ui?.notify?.(
@@ -287,7 +316,7 @@ export default function (
 					"warning",
 				);
 			});
-		}, 0);
+		});
 		const hooks = ensureTuiInstallation(ctx);
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
@@ -307,10 +336,10 @@ export default function (
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
 		// 历史回放也在这之后跑完：sync 末尾按 ctx.isIdle() 收尾末尾回合，
 		// 它没有后续消息，不收就会停在 Running。
-		setTimeout(() => syncCompactMode(ctx), 0);
+		scheduleDeferred(() => syncCompactMode(ctx));
 		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
 		// 否则它没有后续消息，摘要行会停在 Running。
-		setTimeout(() => compactModeHooks?.settleIdleRound(), 0);
+		scheduleDeferred(() => compactModeHooks?.settleIdleRound());
 		scheduleSessionRender(() => {
 			hooks.toolGrouping.refresh(getToolMouseTui());
 			refreshTranscriptGutter(getToolMouseTui());
@@ -366,6 +395,7 @@ export default function (
 	});
 
 	pi.on("session_shutdown", async () => {
+		cancelDeferredSessionWork();
 		writeExecutionMetadata.clear();
 		// 会话结束就清空，不能等 installation 早退判断；残留的 id 会让下一会话误转。
 		clearLiveToolCalls();

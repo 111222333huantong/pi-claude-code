@@ -168,12 +168,27 @@ export function startGitPoller(
 	cwd: string,
 	onUpdate: (snapshot: GitSnapshot) => void,
 	intervalMs = 3000,
+	/**
+	 * 会话存活探针：`session.dispose()`（pi-subagents 等嵌入式会话）不会发
+	 * `session_shutdown`，轮询必须自己发现 ctx 已失效并安静停表
+	 * （cc-my-pi `ef749f0` #4 同口径）。
+	 */
+	isAlive?: () => boolean,
 ): GitPoller {
 	let stopped = false;
 	let inFlight = false;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let delay = intervalMs;
 	let lastKey = "";
+
+	const probeAlive = (): boolean => {
+		if (!isAlive) return true;
+		try {
+			return isAlive();
+		} catch {
+			return false;
+		}
+	};
 
 	const schedule = () => {
 		if (stopped) return;
@@ -187,10 +202,20 @@ export function startGitPoller(
 			schedule();
 			return;
 		}
+		if (!probeAlive()) {
+			stopped = true;
+			if (timer) clearTimeout(timer);
+			timer = null;
+			return;
+		}
 		inFlight = true;
 		try {
 			const snapshot = await collectGitStatus(cwd);
 			if (stopped) return;
+			if (!probeAlive()) {
+				stopped = true;
+				return;
+			}
 			const key = JSON.stringify(snapshot);
 			// 采集失败（空快照）或快照无变化：退避，不打扰渲染。
 			if (snapshot.branch === null || key === lastKey) {

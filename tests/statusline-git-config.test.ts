@@ -146,6 +146,40 @@ test("git poller: 变化即推、无变化退避不扰", async () => {
 	}
 });
 
+test("git poller: ctx 失效（嵌入式会话 dispose）后安静停表", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-git-stale-"));
+	execFileSync("git", ["init", "-b", "main"], { cwd: dir });
+	execFileSync("git", ["config", "user.email", "test@test"], { cwd: dir });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: dir });
+	writeFileSync(join(dir, "a.txt"), "hi\n");
+	execFileSync("git", ["add", "."], { cwd: dir });
+	execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+
+	let alive = true;
+	let pushed = 0;
+	const stop = startGitPoller(
+		dir,
+		() => {
+			pushed++;
+		},
+		20,
+		() => {
+			if (!alive) throw new Error("stale ctx");
+			return true;
+		},
+	);
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 80));
+		assert.ok(pushed >= 1, "live ctx keeps polling");
+		alive = false;
+		const before = pushed;
+		await new Promise((resolve) => setTimeout(resolve, 160));
+		assert.equal(pushed, before, "stale ctx stops polling without pushing");
+	} finally {
+		stop();
+	}
+});
+
 test("parsePrNumber: gh 输出转 PR 号", () => {
 	assert.equal(parsePrNumber("12\n"), 12);
 	assert.equal(parsePrNumber(" 7 "), 7);

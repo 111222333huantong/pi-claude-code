@@ -128,10 +128,20 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			// keep empty snapshot
 		}
 		stopPoller?.();
-		stopPoller = startGitPoller(ctx.cwd, (snapshot) => {
-			git = snapshot;
-			rerender();
-		});
+		stopPoller = startGitPoller(
+			ctx.cwd,
+			(snapshot) => {
+				git = snapshot;
+				rerender();
+			},
+			undefined,
+			// 嵌入式会话 dispose 不发 session_shutdown：读一次 ctx 探活，
+			// 失效即停表，避免拿旧 cwd 每 3s 起 git 进程（cc-my-pi #4）。
+			() => {
+				void ctx.mode;
+				return true;
+			},
+		);
 		activePoller = stopPoller;
 
 		// 扩展/mcp 计数：复用 loaded-stats 单例，无额外扫描。

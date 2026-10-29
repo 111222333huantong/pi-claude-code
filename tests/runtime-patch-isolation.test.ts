@@ -254,3 +254,30 @@ test("headless runtimes do not replace or shut down main TUI patches", async () 
 		toolPrototype.getCallRenderer = originalToolCallRenderer;
 	}
 });
+
+test("deferred session work swallows a ctx invalidated without session_shutdown", async () => {
+	const { pi, events } = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	};
+	let stale = false;
+	const target = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme, setStatus() {}, requestRender() {} },
+	} as any;
+	const ctx = new Proxy(target, {
+		get(object, property, receiver) {
+			if (stale) throw new Error("stale ExtensionContext");
+			return Reflect.get(object, property, receiver);
+		},
+	});
+	claudeCodeStyleExtension(pi as any, { mode: "on" });
+	await events.get("session_start")?.({}, ctx);
+	// pi-subagents 直接 session.dispose()：不发 session_shutdown，
+	// 0ms 延迟安装必须自己吞掉失效 ctx（cc-my-pi e4af1d6 同口径），
+	// 否则定时器里抛出的异常会变成进程级未捕获异常。
+	stale = true;
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	await events.get("session_shutdown")?.({}, target);
+});

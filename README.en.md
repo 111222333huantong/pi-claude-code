@@ -1,28 +1,33 @@
 <p align="center">
   <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
+  <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm downloads" src="https://img.shields.io/npm/dm/pi-claude-code?style=flat-square&color=58B7FF"></a>
   <a href="#compatibility"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
-</p>
-
-<p align="center">
-  Claude Code-style TUI output with some personal touches and handy utilities.
 </p>
 
 <p align="center">
   <a href="./README.md">简体中文</a> · <strong>English</strong>
 </p>
 
-# pi-cc-extensions
+# pi-claude-code
 
-> Claude Code-style TUI output with some personal touches and handy utilities (no extra built-in tools).
+> Claude Code's terminal feel, inside Pi: tool cards and collapsing, rich diffs,
+> a compact turn view, a two-line statusline and four themes. No extra built-in
+> tools — install and `/reload`.
 
-## Preview
+**Why install it**
 
-<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-cc-extensions UI preview" width="100%"></a>
+- **Tool output stops flooding the screen**: Read / Bash / Edit / Write collapse to
+  a one-line summary; long output shows `… +N more lines` and expands on click.
+- **Diffs you can actually read**: inline highlights for edit / write, side-by-side
+  layout, word wrap and `⋮ N lines` gaps; WSL and Windows paths resolve the same
+  way as the official tools.
+- **Two densities**: `on` for roomy cards, `compact` for dense turns, `off` to hand
+  rendering back to Pi.
+- **Small conveniences**: `/context` breakdown, `/loaded` resource inventory,
+  `@` references to past sessions / subagents, clipboard image paste.
 
-Click the cover to play the demo video
-
-## Quick start
+## Install
 
 ```bash
 pi install npm:pi-claude-code
@@ -32,6 +37,12 @@ pi install git:github.com/111222333huantong/pi-claude-code
 ```
 
 Run `/reload` after installation.
+
+## Preview
+
+<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-claude-code terminal screenshot: mascot header, two-line statusline and the fullscreen back-to-bottom button" width="100%"></a>
+
+Click the cover to play the demo video
 
 ## Features
 

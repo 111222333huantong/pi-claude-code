@@ -1,28 +1,30 @@
 <p align="center">
   <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
+  <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm downloads" src="https://img.shields.io/npm/dm/pi-claude-code?style=flat-square&color=58B7FF"></a>
   <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
-</p>
-
-<p align="center">
-  类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
 </p>
 
 <p align="center">
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
-# pi-cc-extensions
+# pi-claude-code
 
-> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能（无额外内置工具）。
+> 把 Claude Code 的终端观感搬进 Pi：工具卡与折叠、rich diff、compact 紧凑模式、
+> 两行状态栏和四套主题。不新增内置工具，装完 `/reload` 即用。
 
-## 界面预览
+**为什么装它**
 
-<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-cc-extensions 界面预览" width="100%"></a>
+- **工具输出不再刷屏**：Read / Bash / Edit / Write 收敛成一行摘要，长输出显示
+  `… +N more lines`，单击展开看全量。
+- **diff 看得清**：edit / write 行内高亮、左右分栏、自动换行、`⋮ N lines` 省略；
+  WSL 与 Windows 路径都按官方语义解析。
+- **两种密度**：`on` 宽松卡片、`compact` 紧凑回合视图，`off` 一键还原原生渲染。
+- **顺手的小工具**：`/context` 上下文分解、`/loaded` 资源盘点、`@` 引用历史
+  session / subagent、剪贴板图片粘贴。
 
-点击封面播放演示视频
-
-## 快速开始
+## 安装
 
 ```bash
 pi install npm:pi-claude-code
@@ -31,7 +33,13 @@ pi install npm:pi-claude-code
 pi install git:github.com/111222333huantong/pi-claude-code
 ```
 
-安装后执行 `/reload`
+安装后执行 `/reload`。
+
+## 界面预览
+
+<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-claude-code 终端截图：mascot 启动头、两行状态栏与 fullscreen 回到底部按钮" width="100%"></a>
+
+点击封面播放演示视频
 
 ## 功能
 

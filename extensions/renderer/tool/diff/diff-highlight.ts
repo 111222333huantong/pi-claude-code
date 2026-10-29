@@ -46,11 +46,52 @@ export function createCodeLineHighlighter(
 	invalidate?: () => void,
 ): CodeLineHighlighter {
 	const codeEntries = entries.filter((entry): entry is DiffLineEntry => entry.kind === "line");
+	const allCode = codeEntries
+		.map((entry) => cleanCodeLine(normalizeCodeWhitespace(entry.content)))
+		.join("\n");
+	// Budget check stays on the whole visible code: over the limit nothing is highlighted.
+	// Per-segment checks would let a huge diff highlight itself one segment at a time.
+	const segmentLanguage = shouldHighlightCodeBlock(allCode) ? language : undefined;
+	const highlightByEntry = new WeakMap<DiffLineEntry, CodeLineHighlighter>();
+	let segment: DiffLineEntry[] = [];
+
+	const flushSegment = () => {
+		if (segment.length === 0) return;
+		const highlight = createContiguousCodeLineHighlighter(
+			segmentLanguage,
+			theme,
+			segment,
+			invalidate,
+		);
+		for (const entry of segment) highlightByEntry.set(entry, highlight);
+		segment = [];
+	};
+
+	// Omitted source cannot carry lexer state across a diff discontinuity.
+	// Each segment is highlighted and cached on its own; the budget above still bounds one diff.
+	for (const entry of entries) {
+		if (entry.kind === "line") segment.push(entry);
+		else flushSegment();
+	}
+	flushSegment();
+
+	// 未注册条目只有渲染期物化的 omission（新对象）：回原文而非空行。
+	return (line, entry) => highlightByEntry.get(entry)?.(line, entry) ?? line;
+}
+
+function createContiguousCodeLineHighlighter(
+	language: string | undefined,
+	theme: DiffTheme,
+	codeEntries: readonly DiffLineEntry[],
+	invalidate?: () => void,
+): CodeLineHighlighter {
 	const cleanLines = codeEntries.map((entry) =>
 		cleanCodeLine(normalizeCodeWhitespace(entry.content)),
 	);
 	const code = cleanLines.join("\n");
-	const shouldHighlight = !!language && shouldHighlightCodeBlock(code);
+	// A segment is a subset of the visible code, so `segmentLanguage` already carries
+	// the total budget decision; only the per-segment highlight is left to decide here.
+	const shouldHighlight = language !== undefined;
 	const fallbackLines = shouldHighlight
 		? (() => {
 				try {

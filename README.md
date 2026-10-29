@@ -63,7 +63,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 {
   // style
   "mode": "on",                            // on / compact / off
-  "excludeRenderers": [],                  // 走原生渲染的工具名；Agent 始终保留专用渲染器
+  "excludeRenderers": [],                  // 走原生渲染的工具名，匹配忽略大小写；Agent 始终保留专用渲染器
 
   // features
   "enableSessionReference": true,          // @ session 引用
@@ -129,7 +129,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
-  "footerLine2Keys": ["cwd", "git"],        // cwd：目录和会话名；git：分支和改动。可换到任意行
+  "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
   "footerLine3Keys": []                    // 有可见芯片才占行
 }
 ```

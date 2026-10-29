@@ -48,7 +48,6 @@ import {
 	type DiffIndicatorMode,
 	type DiffPaletteMode,
 	type DiffViewMode,
-	EXCLUDE_RENDERER_CANDIDATES,
 	EXPANDED_INPUT_MAX_LINES_VALUES,
 	EXPANDED_OUTPUT_MAX_LINES_VALUES,
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
@@ -58,8 +57,10 @@ import {
 	type FooterTokenRateMode,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
+	isExcludedRenderer,
 	LIVE_TOOL_PREVIEW_LINES_VALUES,
 	MAX_STARTUP_SLOGAN_LENGTH,
+	mergeExcludeRendererCandidates,
 	pickPositiveInt,
 	pickPositiveNumber,
 	pickToolLabelClip,
@@ -74,6 +75,7 @@ import {
 	TOOL_LABEL_CLIP_VALUES,
 	updateConfig,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
+	withExcludeRendererToggle,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -94,8 +96,8 @@ function modeSettingDescription(mode: CompactStyleMode): string {
 
 function excludeRenderersDescription(names: readonly string[]): string {
 	return names.length === 0
-		? "No tools excluded. Agent always keeps its dedicated renderer. Enter to toggle common tools."
-		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
+		? "No tools excluded. Enter to toggle common tools."
+		: `Native renderer for: ${names.join(", ")}. Enter to toggle.`;
 }
 
 function customFooterDescription(enabled: boolean): string {
@@ -286,17 +288,13 @@ function buildExcludeRenderersSubmenu(
 	invalidate: () => void;
 	handleInput: (data: string) => void;
 } {
-	const candidates = [
-		...new Set([...EXCLUDE_RENDERER_CANDIDATES, ...config.excludeRenderers]),
-	].sort((a, b) => a.localeCompare(b));
+	// 候选与名单按大小写不敏感合并：存过 Agent 时不再多出一行 agent。
+	const candidates = mergeExcludeRendererCandidates(config.excludeRenderers);
 	const items = candidates.map((name) => ({
 		id: name,
 		label: name,
-		description:
-			name === "Agent"
-				? "Agent always uses its dedicated renderer and cannot be forced through ccstyle."
-				: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
-		currentValue: config.excludeRenderers.includes(name) ? "exclude" : "style",
+		description: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
+		currentValue: isExcludedRenderer(name, config.excludeRenderers) ? "exclude" : "style",
 		values: ["style", "exclude"],
 	}));
 	const list = new SettingsList(
@@ -304,10 +302,13 @@ function buildExcludeRenderersSubmenu(
 		Math.min(8, Math.max(4, items.length)),
 		getSettingsListTheme(),
 		(id: string, value: string) => {
-			const excluded = new Set(config.excludeRenderers);
-			if (value === "exclude") excluded.add(id);
-			else excluded.delete(id);
-			updateConfig({ excludeRenderers: [...excluded].sort((a, b) => a.localeCompare(b)) });
+			updateConfig({
+				excludeRenderers: withExcludeRendererToggle(
+					config.excludeRenderers,
+					id,
+					value === "exclude",
+				),
+			});
 			onLiveChange();
 		},
 		() => onClose(),

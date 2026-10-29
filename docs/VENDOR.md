@@ -14,7 +14,8 @@
 - **关系**：全仓 fork；`origin` = `111222333huantong/pi-claude-code`。
   上游同步以 merge 方式进行（如 `8f1ac5d merge upstream/main 0d6f162`；
   2026-10-14 merge `upstream/main 281d23f`（v1.0.3），本包升版 1.1.0；
-  2026-10-23 merge `upstream/main 6519fad`（v1.0.9））。
+  2026-10-23 merge `upstream/main 6519fad`（v1.0.9）；
+  2026-10-29 merge `upstream/main 90957cd`（v1.0.12），本包升版 1.4.0）。
 - **Local delta**（fork 后自有部分，持续增长）：状态栏、后续全部改动由本 fork 维护
   （README 已声明）。1.1.0 合并要点见本文件 §8。
 
@@ -192,6 +193,29 @@
 - **测试**：移植上游 `ccstyle-panel-editor-prefix.test.ts` 与 prompt-editor
   reset/重复安装用例；面板导航改为向上回绕到 UI 页最后一项（本 fork 设置项更多）。
 - **结果**：`npm run lint`、`npm run typecheck`、`npm test` 全绿（694/694）。
+
+## 11. 1.4.0 合并记录（2026-10-29，`upstream/main 90957cd` v1.0.12）
+
+- **基线**：`6519fad`（v1.0.9）→ `90957cd`（v1.0.12），37 个上游提交。主线：
+  子代理完成通知渲染（#77）、`excludeRenderers` 决定 Agent 渲染、会话空闲收尾、
+  `/context` 用量数字列贴右、diff 分段高亮与 omission 高亮重置（#90）、
+  write 覆盖层交回官方路径解析（WSL `/mnt/<drive>/` 不再落影子树）。
+- **以上游为准**：`default-mode` 删除 `DEDICATED_RENDERER_TOOLS`，Agent 是否走
+  ccstyle 只看 `excludeRenderers`；分组用 `groupItems` 判断「至少两项」，一个通知
+  组件可包含多个 agent；`settleReplayedRound` 更名 `settleIdleRound`（按会话空闲
+  收尾，回放/重建后不再停在 Running）；diff 高亮按 omission 分段缓存。
+- **本地保留**：frame 弹框（标题嵌框 + health 行）、P3 三段式标题、OSC8 路径、
+  spinner/shimmer、statusline、`elapsedMs` 计时（`write-execution` 走官方写路径，
+  外层仍包 `noteElapsed()`）、8 位短 `agent_id` 回落（§7 垫片；上游两处按全 ID
+  断言的新用例改回短 ID 口径）、`formatTokens` 紧凑口径（`36k`，上游 `35.5k`）。
+- **合并适配**：`/context` 沿用 fork 的 `frameHeader`/`frameRow` 几何，把上游右对齐
+  数字列折进 `frameRow` 内容预算（`inner - 3` gap、`inner - 2` pad）；4 个上游新
+  用例按 frame 几何改写断言（顶边嵌标题、`│ ›` 选中行、`%  │` 收尾）。
+- **合并后修复**：`createCodeLineHighlighter` 外层对未注册条目回 `line` 而非 `""`
+  ——渲染期物化的 omission 是新对象，否则 `⋮ N lines` 的计数被清空。
+- **版本**：`pi-claude-code` 1.3.0 → 1.4.0。
+- **结果**：`npm run lint`、`npm run typecheck`、`npm test` 全绿
+  （785 例：784 过 / 1 跳过）。
 
 ## 待办
 

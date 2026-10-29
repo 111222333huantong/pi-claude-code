@@ -5,6 +5,7 @@
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type CompactStyleMode, config, getToolDisplayConfig } from "../../config/config.ts";
 import { fitSegmentsByPriority } from "../../utils/fit-segments.ts";
+import { oneLine } from "../../utils/format.ts";
 import { isToolCallHovered } from "../mouse/hover.ts";
 import {
 	ASK_USER_QUESTION_TOOL_NAME,
@@ -44,10 +45,16 @@ import {
 	failureSummaryText,
 	formatToolDuration,
 	insetComponent,
+	renderCollapsedToolResult,
 	renderCollapsedToolResultToWidth,
 	textFromResult,
 	toolViewportWidth,
 } from "./result.ts";
+import {
+	agentStatusLabel,
+	isFailedSubagentStatus,
+	measuredStats,
+} from "./subagent-notification.ts";
 import { hasExpandableDetail, isExpandedToolIoView, renderExpandedToolResult } from "./tool-io.ts";
 import {
 	isLiveToolCall,
@@ -116,6 +123,8 @@ function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any
 	}
 	return new Text(fallback, 0, 0);
 }
+
+export const AGENT_TOOL_NAME = "Agent";
 
 type ParsedTask = { id: string; status: string; subject: string };
 
@@ -220,6 +229,92 @@ function shellDurationText(toolName: string, context: any, isPartial: boolean): 
 	if (!SHELL_TOOL_NAMES.has(toolName)) return "";
 	const elapsed = toolElapsedMs(context, isPartial);
 	return elapsed === undefined ? "" : formatToolDuration(elapsed);
+}
+
+/**
+ * Agent 的 renderResult：与 pi-subagents 保持同样的分支，但收敛成 ccstyle 的 ↳ 行。
+ * running/partial 转交原渲染器（只有它有 spinner frame 和 activity 文案）；
+ * background/completed/stopped/error 画单行摘要，展开态结果正文交给通用展开视图。
+ */
+function renderAgentResult(
+	originalTool: any,
+	result: any,
+	options: any,
+	theme: any,
+	context: any,
+	expanded: boolean,
+	isError: boolean,
+): any | undefined {
+	const details = result?.details;
+	const text = textFromResult(result);
+	// 没拿到子代理状态（pi-subagents 原始路径的兜底）就沿用通用渲染。
+	if (!details?.status) return undefined;
+
+	const isPartial = Boolean(options?.isPartial);
+	const status = String(details.status);
+
+	// running：pi-subagents 的 spinner/activity 组件才能实时动，原样转交。
+	if (isPartial || status === "running") {
+		return renderDefault(originalTool, "renderResult", [result, options, theme, context], text);
+	}
+
+	const stats = measuredStats(details).join(" · ");
+
+	const agentId = details.agentId ? `ID: ${details.agentId}` : "";
+	const tail = (body: string) => (stats ? `${body} · ${stats}` : body);
+
+	if (status === "background") {
+		if (!expanded) {
+			const body = tail(`Running in background${agentId ? ` · ${agentId}` : ""}`);
+			return new Text(theme.fg("muted", renderCollapsedToolResult(body, "")), 0, 0);
+		}
+		const view = renderExpandedToolResult(
+			`Running in background${agentId ? ` · ${agentId}` : ""}`,
+			theme,
+			false,
+			context?.lastComponent,
+			context?.args,
+			context,
+			true,
+		);
+		return view;
+	}
+
+	if (status === "completed" || status === "steered") {
+		if (!expanded) {
+			const label = status === "steered" ? "Wrapped up (turn limit)" : "Done";
+			const body = [label, stats].filter(Boolean).join(" · ");
+			return new Text(theme.fg("muted", renderCollapsedToolResult(body, "")), 0, 0);
+		}
+		const view = renderExpandedToolResult(
+			text || "Done",
+			theme,
+			Boolean(isError),
+			context?.lastComponent,
+			context?.args,
+			context,
+			true,
+		);
+		return view;
+	}
+
+	if (status === "stopped") {
+		const body = tail("Stopped");
+		return new Text(theme.fg("muted", renderCollapsedToolResult(body, "")), 0, 0);
+	}
+
+	// error / aborted：首行错误文案 + 统计，与通用失败行口径一致。
+	const label = agentStatusLabel(status);
+	const firstLine = text.split("\n").find((line) => line.trim()) ?? label;
+	const body = tail(oneLine(firstLine, 72));
+	return new Text(
+		theme.fg(
+			isFailedSubagentStatus(status) ? "error" : "muted",
+			renderCollapsedToolResult(body, ""),
+		),
+		0,
+		0,
+	);
 }
 
 /** 用 ccstyle call/result 包装任意工具定义。 */
@@ -442,6 +537,20 @@ export function createCcstyleTool(
 
 			const expanded = isToolExpanded(options, context);
 			const isError = Boolean(options?.isError || context?.isError);
+			// Agent：running 转交原渲染器（spinner/activity 只有它有）；其余画 ↳ 摘要行。
+			// toolName 大小写宽松匹配：上游改名也不静默失效。
+			if (toolName.toLowerCase() === AGENT_TOOL_NAME.toLowerCase()) {
+				const agentResult = renderAgentResult(
+					originalTool,
+					result,
+					options,
+					theme,
+					context,
+					expanded,
+					isError,
+				);
+				if (agentResult) return agentResult;
+			}
 			// codemode：折叠态自己画子调用树，展开态给全部子调用与去掉脚本头的输出
 			if (toolName === CODEMODE_TOOL_NAME) {
 				if (!options?.isPartial) setToolVisualState(context, isError ? "error" : "success");

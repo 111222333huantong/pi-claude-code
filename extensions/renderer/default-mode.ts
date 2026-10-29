@@ -6,7 +6,7 @@
  * 生命周期对齐 compact-mode：installDefaultMode → hooks.shutdown。
  */
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { type CompactStyleMode, config } from "../config/config.ts";
+import { type CompactStyleMode, config, isExcludedRenderer } from "../config/config.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
 	GLOBAL_TOOL_RENDER_PATCH,
@@ -21,17 +21,14 @@ import { isLiveToolCall, toolCardBgSlot } from "./tool/tool-state.ts";
 
 export { shouldRenderRichDiff } from "./tool/ccstyle-tool.ts";
 
-// pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
-const DEDICATED_RENDERER_TOOLS = new Set(["Agent", "subagent"]);
-
-/** 排除名单内且自带 renderer 的工具保留原渲染。 */
+/** 排除名单内且自带 renderer 的工具保留原渲染；excludeRenderers 里的工具也交给原生渲染器。 */
 export function preservesOriginalRenderer(
 	extensionDefinition: any,
 	toolName: string,
 	builtInToolDefinition?: any,
 	excludeRenderers: readonly string[] = config.excludeRenderers,
 ): boolean {
-	if (!excludeRenderers.includes(toolName)) return false;
+	if (!isExcludedRenderer(toolName, excludeRenderers)) return false;
 	return [extensionDefinition, builtInToolDefinition].some(
 		(definition) =>
 			definition?.renderShell === "self" ||
@@ -118,7 +115,6 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	// compact 也复用同一套 ccstyle call/result，避免折叠态工具卡回落到 Pi 原生样式。
 	const useCcstyle =
 		patch.mode() !== "off" &&
-		!DEDICATED_RENDERER_TOOLS.has(toolName) &&
 		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
 	return useCcstyle;

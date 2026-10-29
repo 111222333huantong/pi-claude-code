@@ -11,12 +11,20 @@ import { Text, visibleWidth } from "@earendil-works/pi-tui";
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
 
-import { config } from "../extensions/config/config.ts";
+import {
+	config,
+	EXCLUDE_RENDERER_CANDIDATES,
+	isExcludedRenderer,
+	mergeExcludeRendererCandidates,
+	withExcludeRendererToggle,
+} from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/renderer/index.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/index.ts";
 
 initTheme("dark");
 
@@ -458,7 +466,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		);
 
 		for (const [name, args, expected] of [
-			["Agents", { description: "review changes" }, "Agents review changes"],
+			["Agents", { description: "review changes" }, "Subagents review changes"],
 			["Skill", { name: "deploy" }, "Skill deploy"],
 			["EnterPlanMode", {}, "Enter Plan Mode enable read-only planning"],
 			["ExitPlanMode", {}, "Exit Plan Mode present plan"],
@@ -582,9 +590,42 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 		false,
 	);
 	assert.equal(preservesOriginalRenderer(undefined, "Agent"), false);
+	// 设置面板候选是 "agent"；pi-subagents 运行时工具名是 "Agent"。
+	assert.equal(isExcludedRenderer("Agent", ["agent"]), true);
+	assert.equal(isExcludedRenderer("agent", ["Agent"]), true);
+	assert.equal(
+		preservesOriginalRenderer(
+			{ name: "Agent", renderShell: "self", renderCall() {}, renderResult() {} },
+			"Agent",
+			undefined,
+			["agent"],
+		),
+		true,
+	);
+	assert.equal(
+		preservesOriginalRenderer(
+			{ name: "Agent", renderShell: "self", renderCall() {}, renderResult() {} },
+			"Agent",
+			undefined,
+			["bash"],
+		),
+		false,
+	);
+	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", true), ["agent", "bash"]);
+	assert.deepEqual(withExcludeRendererToggle(["Agent", "bash"], "agent", false), ["bash"]);
+	// 面板候选按大小写不敏感去重：名单存过 Agent 时 agent 只留一行（候选在前，保留小写写法）。
+	assert.deepEqual(
+		mergeExcludeRendererCandidates(["Agent"]).filter((name) => name.toLowerCase() === "agent"),
+		["agent"],
+	);
+	assert.deepEqual(
+		mergeExcludeRendererCandidates(["bash"]),
+		[...EXCLUDE_RENDERER_CANDIDATES].sort((a, b) => a.localeCompare(b)),
+	);
+	assert.equal(mergeExcludeRendererCandidates(["Custom"]).includes("Custom"), true);
 });
 
-test("Agent keeps its dedicated renderer under ccstyle", async () => {
+test("Agent uses the ccstyle renderer under ccstyle", async () => {
 	const events = new Map<string, Function>();
 	const pi = {
 		registerCommand() {},
@@ -611,62 +652,64 @@ test("Agent keeps its dedicated renderer under ccstyle", async () => {
 	const component = new ToolExecutionComponent(
 		"Agent",
 		"agent-renderer",
-		{ description: "review changes" },
+		{ description: "review changes", subagent_type: "explorer" },
 		{},
 		definition,
 		ui as any,
 		process.cwd(),
 	) as any;
 	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
-	assert.equal(component.children.includes(component.contentBox), true);
-	assert.equal(component.children.includes(component.selfRenderContainer), false);
 	const output = component.render(100).join("\n");
-	assert.match(output, /agent dedicated/);
-	assert.doesNotMatch(output, /Agent review changes/);
+	// ccstyle 接管后：标题写 `Subagent explorer`，描述进 payload；原渲染器的文本不出现。
+	assert.doesNotMatch(output, /agent dedicated/);
+	assert.match(output, /Subagent explorer/);
+	assert.match(output, /review changes/);
 	await events.get("session_shutdown")?.({}, ctx);
 });
 
-test("subagent keeps its dedicated renderer under ccstyle", async () => {
-	const events = new Map<string, Function>();
-	const pi = {
-		registerCommand() {},
-		registerShortcut() {},
-		on(name: string, handler: Function) {
-			events.set(name, handler);
-		},
-	};
-	claudeCodeStyleExtension(pi as any);
-	const extensionTheme = { fg: (_color: string, text: string) => text };
-	const ui = {
-		theme: extensionTheme,
-		setStatus() {},
-		requestRender() {},
-	};
-	const ctx = { mode: "tui", hasUI: true, ui };
-	await events.get("session_start")?.({}, ctx);
-	const definition = {
-		name: "subagent",
-		renderShell: "default",
-		renderCall: () => new Text("subagent dedicated call", 0, 0),
-		renderResult: () => new Text("subagent dedicated result", 0, 0),
-	} as unknown as AnyToolDefinition;
-	const component = new ToolExecutionComponent(
-		"subagent",
-		"subagent-renderer",
-		{ agent: "api-reviewer", task: "Review auth" },
-		{},
-		definition,
-		ui as any,
-		process.cwd(),
-	) as any;
-	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
-	assert.equal(component.children.includes(component.contentBox), true);
-	assert.equal(component.children.includes(component.selfRenderContainer), false);
-	const output = component.render(100).join("\n");
-	assert.match(output, /subagent dedicated/);
-	assert.doesNotMatch(output, /Subagent single api-reviewer/);
-	await events.get("session_shutdown")?.({}, ctx);
-});
+for (const [status, label] of [
+	["completed", "Done"],
+	["steered", "Wrapped up (turn limit)"],
+] as const) {
+	test(`Agent ${status} collapsed results show statistics once`, () => {
+		const previousMode = config.mode;
+		config.mode = "on";
+		const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+		try {
+			const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} };
+			const component = new ToolExecutionComponent(
+				"Agent",
+				`agent-stats-${status}`,
+				{ description: "review changes", subagent_type: "explorer" },
+				{},
+				undefined,
+				ui as any,
+				process.cwd(),
+			);
+			component.updateResult({
+				content: [{ type: "text", text: "Reviewed the changes." }],
+				isError: false,
+				details: {
+					status,
+					turnCount: 3,
+					toolUses: 8,
+					totalTokens: 12400,
+					durationMs: 12300,
+				},
+			});
+			const rows = component
+				.render(240)
+				.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trimEnd());
+			assert.deepEqual(
+				rows.filter((line) => line.includes("↳")),
+				[`   ↳ ${label} · 3 turns · 8 tool uses · 12.4k token · 12.3s`],
+			);
+		} finally {
+			hooks.shutdown();
+			config.mode = previousMode;
+		}
+	});
+}
 
 test("global renderer reload chains external wrappers and shutdown restores them", async () => {
 	const prototype = ToolExecutionComponent.prototype as any;

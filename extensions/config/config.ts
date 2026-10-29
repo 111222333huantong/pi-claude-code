@@ -172,6 +172,7 @@ export const COMPLETION_BELL_AFTER_SEC_VALUES = ["0", "10", "30", "60", "120"];
 export const LIVE_TOOL_PREVIEW_LINES_VALUES = ["3", "5", "8", "12"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
+	"agent",
 	"bash",
 	"powershell",
 	"read",
@@ -455,6 +456,43 @@ export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig
 
 export function formatExcludeRenderers(names: readonly string[]): string {
 	return names.length === 0 ? "none" : names.join(", ");
+}
+
+/** excludeRenderers 与运行时工具名按大小写不敏感匹配（如候选 "agent" 对上 pi-subagents 的 "Agent"）。 */
+export function isExcludedRenderer(
+	toolName: string,
+	excludeRenderers: readonly string[] = config.excludeRenderers,
+): boolean {
+	const key = toolName.toLowerCase();
+	return excludeRenderers.some((name) => name.toLowerCase() === key);
+}
+
+/** 写入名单时去掉同名异大小写项，再按 id 写入，避免 agent/Agent 并存。 */
+export function withExcludeRendererToggle(
+	excludeRenderers: readonly string[],
+	id: string,
+	exclude: boolean,
+): string[] {
+	const key = id.toLowerCase();
+	const next = excludeRenderers.filter((name) => name.toLowerCase() !== key);
+	if (exclude) next.push(id);
+	return [...new Set(next)].sort((a, b) => a.localeCompare(b));
+}
+
+/** 面板候选：内置候选与用户名单按大小写不敏感合并，保留先出现的写法（候选在前，仍是 agent）。 */
+export function mergeExcludeRendererCandidates(
+	names: readonly string[],
+	candidates: readonly string[] = EXCLUDE_RENDERER_CANDIDATES,
+): string[] {
+	const seen = new Set<string>();
+	const merged: string[] = [];
+	for (const name of [...candidates, ...names]) {
+		const key = name.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(name);
+	}
+	return merged.sort((a, b) => a.localeCompare(b));
 }
 
 export function formatConfigStatus(source: Config = config): string {

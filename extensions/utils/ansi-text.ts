@@ -33,6 +33,56 @@ export function hasVisibleText(line: string): boolean {
 	return line.replace(CSI_SEQUENCE_RE, "").replace(OSC_SEQUENCE_STRICT_RE, "").trim().length > 0;
 }
 
+const KITTY_IMAGE_PREFIX = "\x1b_G";
+const ITERM2_IMAGE_PREFIX = "\x1b]1337;File=";
+
+/** 行内是否带内联图片序列（kitty APC 或 iTerm2 OSC 1337）。 */
+export function isImageLine(line: string): boolean {
+	return line.includes(KITTY_IMAGE_PREFIX) || line.includes(ITERM2_IMAGE_PREFIX);
+}
+
+/**
+ * 内联图片在终端里占用的行数，以及它相对锚点行的铺开方向。
+ * kitty 的锚点在首行、向下铺（`r=N`）；iTerm2 的锚点在末行、先上移再画（`\x1b[NA`）。
+ */
+export function imagePlacement(line: string): { rows: number; grows: "down" | "up" } | undefined {
+	const kittyControls = /\x1b_G([^;]*);/.exec(line)?.[1];
+	if (kittyControls !== undefined) {
+		const rows = Number(/(?:^|,)r=(\d+)/.exec(kittyControls)?.[1]);
+		return { rows: rows >= 1 ? rows : 1, grows: "down" };
+	}
+	if (line.includes(ITERM2_IMAGE_PREFIX)) {
+		const up = Number(/\x1b\[(\d+)A/.exec(line)?.[1]);
+		return { rows: up >= 1 ? up + 1 : 1, grows: "up" };
+	}
+	return undefined;
+}
+
+/**
+ * 行区里必须保留的范围（首行/末行下标；没有内容时 first 为 -1）。
+ * 内联图片的行要按 placement 整体算进来：锚点前后那些空行是图片自己占的位置，
+ * 当首尾空行裁掉后终端里图片照样铺开，后面画的内容会被盖住。
+ */
+export function contentRowRange(rows: string[]): { first: number; last: number } {
+	let first = -1;
+	let last = -1;
+	const keep = (start: number, end: number) => {
+		const boundedStart = Math.max(0, start);
+		first = first < 0 ? boundedStart : Math.min(first, boundedStart);
+		last = Math.max(last, Math.min(rows.length - 1, end));
+	};
+	for (let index = 0; index < rows.length; index++) {
+		const placement = imagePlacement(rows[index]);
+		if (placement) {
+			if (placement.grows === "down") keep(index, index + placement.rows - 1);
+			else keep(index - placement.rows + 1, index);
+			continue;
+		}
+		if (hasVisibleText(rows[index])) keep(index, index);
+	}
+	return { first, last };
+}
+
 /** 剥离背景色 ANSI（用于重新铺背景行）。 */
 export function stripBackgroundAnsi(line: string): string {
 	return line.replace(/\x1b\[(?:4[0-9]|10[0-7]|48(?:(?:;|:)[0-9]+)+|49)m/g, "");

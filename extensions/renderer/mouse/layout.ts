@@ -3,6 +3,7 @@ import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isMessageDisplayComponent } from "../tool/message-display.ts";
+import { isSubagentNotificationView } from "../tool/subagent-notification.ts";
 import { transcriptMappingWidth } from "../transcript-gutter.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
 import { getScrollButtonWidget } from "./scroll.ts";
@@ -16,6 +17,14 @@ export type ComponentRowHit = {
 	owner?: any;
 };
 
+/**
+ * 消息类卡片：skill/压缩/分支摘要三种消息组件，以及单独出现的 subagent 通知行。
+ * 点击、悬停与 single-expand 规则相同。
+ */
+export function isMessageCard(component: any): boolean {
+	return isMessageDisplayComponent(component) || isSubagentNotificationView(component);
+}
+
 /** hitbox 左右留白列数：触控板点偏 1~2 列仍能命中。 */
 export const HINT_HITBOX_PAD_COLS = 2;
 
@@ -26,7 +35,7 @@ export function collapsedHintHitbox(
 ): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);
 	const match =
-		/(\([^()\n]* \/ click\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
+		/(\([^()\n]*(?: \/ click|, (?:[\w/+]+\s+)?to (?:expand|show more))\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
 			plain,
 		);
 	if (!match?.[1]) return null;
@@ -190,7 +199,7 @@ export function componentAtLocalRow(
 	if (component instanceof ThinkingPreviewBlock) {
 		return { component, row: localRow };
 	}
-	if (isMessageDisplayComponent(component)) {
+	if (isMessageCard(component)) {
 		return { component, row: localRow };
 	}
 	if (component === getScrollButtonWidget()) {
@@ -232,7 +241,7 @@ export function collectFullscreenToolCards(
 		component instanceof ToolGroupComponent ||
 		isCompactAssistantComponent(component) ||
 		component instanceof ThinkingPreviewBlock ||
-		isMessageDisplayComponent(component)
+		isMessageCard(component)
 	) {
 		out.push(component);
 		return;

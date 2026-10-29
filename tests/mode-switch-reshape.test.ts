@@ -161,6 +161,8 @@ test("panel empty-root scan keeps live tracking (no /reload required)", () => {
 			getMessageThinkingDurationMs: () => 4000,
 			isMessageThinkingActive: () => false,
 		},
+		// agent 还在跑：重建不得把当前回合收尾。
+		isIdle: () => false,
 		writeMetadata: new WriteExecutionMetadataStore(),
 	});
 	try {
@@ -251,6 +253,69 @@ test("messages created while mode=on stay tracked for later compact switch", () 
 
 		assert.match(renderText(a1).join("\n"), /1s, grep×1/);
 		assert.deepEqual(renderText(grep), []);
+	} finally {
+		config.mode = previous;
+		hooks.shutdown();
+	}
+});
+
+test("idle 时切到 compact：末尾无正文的回合当场收尾，不再显示 Running", () => {
+	const previous = config.mode;
+	config.mode = "on";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => 9000,
+			isMessageThinkingActive: () => false,
+		},
+		// 会话空闲：goal 已结束再切样式（issue #88）。
+		isIdle: () => true,
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	try {
+		const msg = toolCallMsg(1, [{ id: "b1", name: "bash", args: { command: "echo" } }]);
+		const a1 = new AssistantMessageComponent(msg, true) as any;
+		a1.updateContent(msg);
+		const bash = tool("bash", "b1", { command: "echo" });
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		const root = { children: [a1, bash] };
+
+		switchMode("compact", hooks, root);
+		const line = renderText(a1).join("\n");
+		assert.doesNotMatch(line, /Running\.\.\./, `空闲切模式不该停在 Running: ${line}`);
+		assert.match(line, /Ran for 9s, bash×1/, `应直接落成已结束: ${line}`);
+		assert.deepEqual(renderText(bash), []);
+	} finally {
+		config.mode = previous;
+		hooks.shutdown();
+	}
+});
+
+test("流式中切到 compact 仍显示 Running，agent 结束后才收尾", () => {
+	const previous = config.mode;
+	config.mode = "on";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => 9000,
+			isMessageThinkingActive: () => false,
+		},
+		isIdle: () => false,
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	try {
+		const msg = toolCallMsg(1, [{ id: "b1", name: "bash", args: { command: "echo" } }]);
+		const a1 = new AssistantMessageComponent(msg, true) as any;
+		a1.updateContent(msg);
+		const bash = tool("bash", "b1", { command: "echo" });
+		const root = { children: [a1, bash] };
+
+		switchMode("compact", hooks, root);
+		assert.match(renderText(a1).join("\n"), /Running\.\.\./, "流式中重建应保持 Running");
+
+		// agent_end：这轮跑完，末尾回合没有正文收口，由渲染层收尾。
+		hooks.settleFinishedRound();
+		const line = renderText(a1).join("\n");
+		assert.doesNotMatch(line, /Running\.\.\./, `agent_end 后不该再 Running: ${line}`);
+		assert.match(line, /Ran for 9s, bash×1/, `应落成已结束: ${line}`);
 	} finally {
 		config.mode = previous;
 		hooks.shutdown();

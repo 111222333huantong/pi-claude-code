@@ -50,6 +50,10 @@ import {
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
 import {
+	installSubagentNotificationRenderer,
+	refreshSubagentNotifications,
+} from "./tool/subagent-notification.ts";
+import {
 	clearAllAnimations,
 	clearLiveToolCalls,
 	noteStreamingToolCalls,
@@ -63,7 +67,7 @@ import { installUserMessageRender, refreshUserMessages } from "./user-message.ts
  *
  * mode=on      → default-mode（工具卡样式 + 展开背景）
  * mode=compact → compact-mode（消息折叠摘要）
- * 共用        → tool-grouping / message-display / mouse / write override
+ * 共用        → tool-grouping / message-display / subagent-notification / mouse / write override
  */
 
 let compactModeHooks: CompactModeHooks | undefined;
@@ -73,6 +77,7 @@ function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): 
 	refreshTranscriptGutter(tui);
 	toolGrouping?.refresh(tui);
 	refreshMessageDisplays(tui);
+	refreshSubagentNotifications(tui);
 	refreshUserMessages(tui);
 	refreshDottedParagraphs(tui);
 	refreshCompactModeComponents(tui);
@@ -134,6 +139,7 @@ export default function (
 				toolGrouping: ToolGroupingHooks;
 				compactMode: CompactModeHooks;
 				disposeMessageDisplay: () => void;
+				disposeSubagentNotificationRenderer: () => void;
 				disposeToolExpandedBackground: () => void;
 				disposeDottedParagraphs: () => void;
 				disposeUserMessage: () => void;
@@ -157,6 +163,8 @@ export default function (
 		});
 		compactModeHooks = compactMode;
 		const disposeMessageDisplay = installMessageDisplayRendering();
+		// pi-subagents 的结束通知：换查找结果而不注册，加载先后都归本插件，off 还给原生。
+		const disposeSubagentNotificationRenderer = installSubagentNotificationRenderer();
 		const disposeUserMessage = installUserMessageRender();
 		// 展开背景必须在 compact-mode 之后装，shutdown 时先于 compact 释放。
 		const disposeToolExpandedBackground = installToolExpandedBackground();
@@ -174,6 +182,7 @@ export default function (
 			toolGrouping,
 			compactMode,
 			disposeMessageDisplay,
+			disposeSubagentNotificationRenderer,
 			disposeToolExpandedBackground,
 			disposeDottedParagraphs,
 			disposeUserMessage,
@@ -296,13 +305,17 @@ export default function (
 		refreshTranscriptGutter(getToolMouseTui());
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
+		// 历史回放也在这之后跑完：sync 末尾按 ctx.isIdle() 收尾末尾回合，
+		// 它没有后续消息，不收就会停在 Running。
 		setTimeout(() => syncCompactMode(ctx), 0);
 		// 历史回放发生在 session_start 之后，延迟到回放结束再收尾最后一个回合，
 		// 否则它没有后续消息，摘要行会停在 Running。
-		setTimeout(() => compactModeHooks?.settleReplayedRound(), 0);
+		setTimeout(() => compactModeHooks?.settleIdleRound(), 0);
 		scheduleSessionRender(() => {
 			hooks.toolGrouping.refresh(getToolMouseTui());
 			refreshTranscriptGutter(getToolMouseTui());
+			// /reload、/resume 在 session_start 之前就重建了 transcript：已挂载的通知卡换上本插件的渲染器。
+			refreshSubagentNotifications(getToolMouseTui());
 		});
 	});
 
@@ -348,6 +361,8 @@ export default function (
 
 	pi.on("agent_end", async () => {
 		clearLiveToolCalls();
+		// 这轮跑完：末尾回合没有正文收口（纯工具回合）就一直挂着 Running。
+		compactModeHooks?.settleFinishedRound();
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -370,6 +385,7 @@ export default function (
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
 		current.disposeUserMessage();
+		current.disposeSubagentNotificationRenderer();
 		disposeStickyPromptPatches();
 		clearAllAnimations();
 		installation = undefined;

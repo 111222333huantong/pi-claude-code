@@ -16,7 +16,13 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Container,
+	resetCapabilitiesCache,
+	setCapabilities,
+	setCellDimensions,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 
 import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
@@ -50,6 +56,7 @@ import {
 import { renderToolSummary, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/tool-io.ts";
 import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
+import { solidPngBase64 } from "./helpers/png.ts";
 
 initTheme("dark");
 
@@ -125,10 +132,13 @@ function extensionRuntime() {
 }
 
 /** 安装 compact 补丁并把全局 mode 设为 compact；restore 恢复原模式并卸载。 */
-function installHooks() {
+function installHooks(options: { isIdle?: () => boolean } = {}) {
 	const previousMode = config.mode;
 	config.mode = "compact";
-	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const hooks = installCompactMode({
+		writeMetadata: new WriteExecutionMetadataStore(),
+		isIdle: options.isIdle,
+	});
 	return {
 		hooks,
 		restore() {
@@ -1492,7 +1502,7 @@ test("compact 尾行：只有 edit/write 的回合不挂摘要行", async () => 
 });
 
 test("compact resume：重放已结束的回合直接落成 Ran for，不停留在 Running", () => {
-	const { hooks, restore } = installHooks();
+	const { hooks, restore } = installHooks({ isIdle: () => true });
 	const chat = new Container() as any;
 	setToolMouseTui({ children: [chat] });
 	try {
@@ -1513,8 +1523,8 @@ test("compact resume：重放已结束的回合直接落成 Ran for，不停留�
 		anchor.updateContent(message);
 		// 回放进行中不收尾：还有后续消息要并进同一回合。
 		assert.match(renderText(chat).join("\n"), /Running\.\.\..*bash×1/);
-		// 回放结束（session_start 延迟一拍）才收尾最后一条。
-		hooks.settleReplayedRound();
+		// 回放结束（session_start 延迟一拍）：会话已空闲，末尾回合当场收尾。
+		hooks.settleIdleRound();
 		const rendered = renderText(chat).join("\n");
 		assert.doesNotMatch(rendered, /Running\.\.\./, `重放不该停在进行中: ${rendered}`);
 		assert.match(rendered, /Ran for .+bash×1/, `重放应直接落成已结束: ${rendered}`);
@@ -1540,7 +1550,7 @@ test("compact resume：重放已结束的回合直接落成 Ran for，不停留�
 });
 
 test("compact：同一 turn 内 text+toolCall 消息不拆回合，用户消息才切断", () => {
-	const { hooks, restore } = installHooks();
+	const { hooks, restore } = installHooks({ isIdle: () => true });
 	const chat = new Container() as any;
 	setToolMouseTui({ children: [chat] });
 	try {
@@ -1571,7 +1581,7 @@ test("compact：同一 turn 内 text+toolCall 消息不拆回合，用户消息�
 		chat.addChild(tool("bash", "b2", { command: "pwd" }));
 		follow.updateContent(second);
 
-		hooks.settleReplayedRound();
+		hooks.settleIdleRound();
 		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
 		// 同一 agent turn 里不带用户消息隔断的 text+toolCall 仍归同一回合。
 		assert.deepEqual(summaries.length, 1, `不应因正文拆回合: ${summaries}`);
@@ -1583,7 +1593,7 @@ test("compact：同一 turn 内 text+toolCall 消息不拆回合，用户消息�
 });
 
 test("compact：同一组件流式切换 text/toolCall 形态不拆回合", () => {
-	const { hooks, restore } = installHooks();
+	const { hooks, restore } = installHooks({ isIdle: () => true });
 	const chat = new Container() as any;
 	setToolMouseTui({ children: [chat] });
 	try {
@@ -1617,7 +1627,7 @@ test("compact：同一组件流式切换 text/toolCall 形态不拆回合", () =
 			],
 		});
 
-		hooks.settleReplayedRound();
+		hooks.settleIdleRound();
 		const summaries = renderText(chat).filter((line) => /Ran for/.test(line));
 		assert.equal(summaries.length, 1, `同一组件形态变化不拆回合: ${summaries}`);
 		assert.match(summaries[0] ?? "", /bash×1, grep×1/, `两次工具都计入: ${summaries}`);
@@ -3467,5 +3477,84 @@ test("compact：custom 通知不打断摘要段，原地留在成员之间", () 
 	} finally {
 		setToolMouseTui(null);
 		restore();
+	}
+});
+
+test("compact 展开卡为内联图片留出全部占位行", () => {
+	// kitty 协议的图片序列只写在锚点行，其余行是空占位行：
+	// 组合展开卡时按「首尾空行」裁掉它们，终端里图片仍会铺开盖住后面的内容。
+	setCellDimensions({ widthPx: 9, heightPx: 18 });
+	setCapabilities({ images: "kitty", trueColor: true, hyperlinks: false });
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-image-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const writeMetadata = new WriteExecutionMetadataStore();
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+		thinkingExpandedMaxLines: 200,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata });
+	try {
+		const message = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{
+					type: "toolCall",
+					id: "r1",
+					name: "read",
+					arguments: { path: "shot.png" },
+				},
+			],
+		};
+		const readTool = tool("read", "r1", { path: "shot.png" });
+		readTool.executionStarted = true;
+		readTool.updateDisplay?.();
+		const anchor = new AssistantMessageComponent(message as any, true) as any;
+		anchor.updateContent(message);
+		readTool.updateResult({
+			content: [
+				{ type: "text", text: "shot.png" },
+				{ type: "image", data: solidPngBase64(), mimeType: "image/png" },
+			],
+			isError: false,
+		});
+		anchor.setExpanded(true);
+		markCompactRoundToolExpanded(readTool);
+		readTool.setExpanded(true);
+
+		const lines: string[] = anchor.render(120);
+		const plain = (line: string): string =>
+			line
+				.replace(/\x1b_G[^\x1b]*\x1b\\/g, "")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+				.replace(/\x1b\][^\x07]*\x07/g, "");
+		const imageRow = lines.findIndex((line) => line.includes("\x1b_G"));
+		assert.ok(imageRow >= 0, `展开卡里应保留图片锚点行: ${lines.map(plain).join("\n")}`);
+		const rows = Number(
+			/(?:^|,)r=(\d+)/.exec(/\x1b_G([^;]*);/.exec(lines[imageRow])?.[1] ?? "")?.[1],
+		);
+		assert.ok(rows > 1, `测试图片应占多行，实际 r=${rows}`);
+		assert.ok(
+			imageRow + rows <= lines.length,
+			`图片占 ${rows} 行，卡里只剩 ${lines.length - imageRow} 行（后面的内容会被盖住）`,
+		);
+		for (let index = imageRow + 1; index < imageRow + rows; index++) {
+			assert.equal(plain(lines[index]).trim(), "", `图片占位行不该有文本: 第 ${index} 行`);
+		}
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		resetCapabilitiesCache();
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
 	}
 });

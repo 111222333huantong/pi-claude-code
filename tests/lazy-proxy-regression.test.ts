@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	AssistantMessageComponent,
+	CustomMessageComponent,
 	getMarkdownTheme,
 	initTheme,
 	type ParsedSkillBlock,
@@ -23,19 +24,22 @@ import claudeCodeStyleExtension, {
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
 import { isToolCallHovered, sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
+import { resetToolHoverState } from "../extensions/renderer/mouse/interaction.ts";
 import { getScrollButtonVisible } from "../extensions/renderer/mouse/scroll.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	renderRichToolResult,
 } from "../extensions/renderer/tool/diff/index.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
-import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import {
 	getMessageDisplayTheme,
 	installMessageDisplayRendering,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { insetComponent } from "../extensions/renderer/tool/result.ts";
+import { renderSubagentNotification } from "../extensions/renderer/tool/subagent-notification.ts";
+import { patchRegistry, TOOL_HOVER_STATE_KEY } from "../extensions/utils/patch-keys.ts";
 import { createLazyProxy } from "./fixtures/lazy-tui.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
@@ -1006,7 +1010,7 @@ test("lazy-proxy tui: expanding a tool keeps every message of the same round ope
 	}
 });
 
-test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", async () => {
+test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width", () => {
 	const wrap = (label: string) => ({
 		render: (width: number) => (width === 80 ? [label] : [label, `${label}-2`]),
 		invalidate() {},
@@ -1055,14 +1059,13 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 	tui.handleViewportInput(`\x1b[<35;${hintCol};8M`);
 	assert.equal(sharedToolHoverState().toolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
-	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）；
-	// reload 语义不变：reset 走 interaction.ts 原生导出，状态读 globalThis 槽。
+	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）。
 	assert.equal(isToolCallHovered("width-tool-b"), true);
-	const reloadSpecifier = `../extensions/renderer/mouse/interaction.ts?reload=${Date.now()}`;
-	const reloadedMouse: typeof import("../extensions/renderer/mouse/interaction.ts") = await import(
-		reloadSpecifier
-	);
-	reloadedMouse.resetToolHoverState();
+	// /reload 会重新求值模块，hover 状态因此挂在 globalThis 的注册表槽里。
+	// 断言槽与当前状态是同一对象，就等价于「另一份模块实例读到的是同一份」，
+	// 不必真的再加载一份文件（那会让覆盖率报表把同文件的两份数据合并错）。
+	assert.equal(patchRegistry.get(TOOL_HOVER_STATE_KEY), sharedToolHoverState());
+	resetToolHoverState();
 	assert.equal(isToolCallHovered("width-tool-b"), false, "hover state is shared across reloads");
 	installToolMouseInteraction({});
 });
@@ -1104,6 +1107,60 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", async 
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2m`);
 	assert.equal((group as any).expanded, false, "single click collapses all children");
 	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: notification-only groups share hover, click and selection handling", () => {
+	for (const batched of [false, true]) {
+		const hooks = installToolGrouping(() => true);
+		try {
+			const details = (id: string) => ({ id, status: "completed", resultPreview: "saved preview" });
+			const note = (data: object) =>
+				new CustomMessageComponent(
+					{
+						role: "custom",
+						customType: "subagent-notification",
+						content: "saved notification",
+						display: true,
+						timestamp: 1,
+						details: data,
+					} as any,
+					renderSubagentNotification,
+				);
+			const notes = batched
+				? [note({ ...details("first"), others: [details("second")] })]
+				: [note(details("first")), note(details("second"))];
+			const parent = new Container();
+			for (const notification of notes) parent.addChild(notification);
+			const group = parent.children[0];
+			assert.ok(group instanceof ToolGroupComponent);
+			const { terminal } = createTerminalFixture();
+			const renderer = new FullscreenRenderer(group, null, terminal);
+			const tui = createLazyProxy(() => renderer);
+			const ui = createUi(tui);
+			installToolMouseInteraction(ui.ctx);
+			renderer.currentLayout = fullscreenLayout(group, ui.widget);
+			const hintCol = group.render(80)[1]!.indexOf("click to show more") + 1;
+			assert.ok(hintCol > 0);
+			tui.handleViewportInput(`\x1b[<35;${hintCol};2M`);
+			assert.equal((group as any).hintHovered, true);
+			tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+			assert.equal(group.expanded, true);
+			for (const notification of notes) assert.equal((notification as any)._expanded, true);
+			renderer.currentLayout = fullscreenLayout(group, ui.widget);
+			tui.handleViewportInput("\x1b[<0;4;4M");
+			tui.handleViewportInput("\x1b[<32;10;5M");
+			tui.handleViewportInput("\x1b[<0;10;5m");
+			assert.equal(group.expanded, true, "selection drags do not collapse the group");
+			tui.handleViewportInput("\x1b[<0;1;2M");
+			assert.equal(group.expanded, true, "collapse waits for release");
+			tui.handleViewportInput("\x1b[<0;1;2m");
+			assert.equal(group.expanded, false);
+			for (const notification of notes) assert.equal((notification as any)._expanded, false);
+		} finally {
+			installToolMouseInteraction({});
+			hooks.shutdown();
+		}
+	}
 });
 
 test("lazy-proxy tui: official tool cards collapse on release", () => {
@@ -1319,6 +1376,122 @@ test("lazy-proxy tui: fullscreen skill hint click expands like other cards", asy
 	} finally {
 		installToolMouseInteraction({});
 		dispose();
+		config.mode = previousMode;
+	}
+});
+
+test("lazy-proxy tui: fullscreen standalone subagent hint highlights on hover", async () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	// 真实 ANSI：鼠标层按剥掉终端序列后的行尾识别提示，text 与 dim 用不同色号区分。
+	const ansiTheme = {
+		fg: (color: string, text: string) =>
+			`\x1b[${color === "text" ? "97" : color === "dim" ? "90" : "37"}m${text}\x1b[39m`,
+	};
+	const notification = new CustomMessageComponent(
+		{
+			role: "custom",
+			customType: "subagent-notification",
+			content: "<task-notification>…</task-notification>",
+			display: true,
+			details: { id: "a43b4a9d-fcf9-4b9", status: "completed", toolUses: 2 },
+			timestamp: 1,
+		} as any,
+		(message, options) => renderSubagentNotification(message, options, ansiTheme as any),
+	);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(notification, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const lines = notification.render(80);
+		const row = lines.findIndex((line: string) => line.includes("click to show more"));
+		assert.ok(row >= 0, "standalone row carries the hint");
+		const plain = lines[row]!.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const hintCol = plain.indexOf("click to show more") + 1;
+		const hint = () => notification.render(80)[row] ?? "";
+		assert.ok(hint().includes("\x1b[90mclick to show more"), "the hint starts dim");
+		tui.handleViewportInput(`\x1b[<35;${hintCol + 2};${row + 1}M`);
+		assert.ok(hint().includes("\x1b[97mclick to show more"), "hovering the hint highlights it");
+		tui.handleViewportInput(`\x1b[<35;3;${row + 1}M`);
+		assert.ok(hint().includes("\x1b[90mclick to show more"), "the row text is not a hover target");
+	} finally {
+		installToolMouseInteraction({});
+		config.mode = previousMode;
+	}
+});
+
+test("lazy-proxy tui: fullscreen standalone subagent rows click like other message cards", async () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const notification = (id: string) =>
+		new CustomMessageComponent(
+			{
+				role: "custom",
+				customType: "subagent-notification",
+				content: "<task-notification>…</task-notification>",
+				display: true,
+				details: { id, status: "completed", toolUses: 2, resultPreview: "Done." },
+				timestamp: 1,
+			} as any,
+			(message, options) =>
+				renderSubagentNotification(message, options, {
+					fg: (_color: string, text: string) => text,
+					bg: (_slot: string, text: string) => text,
+				} as any),
+		);
+	const first = notification("first-agent");
+	const second = notification("second-agent");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(first, null, terminal);
+	const relayout = () => {
+		renderer.currentLayout = fullscreenLayout([first, second], null);
+	};
+	relayout();
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	const expanded = (component: any) =>
+		component.render(80).join("\n").includes("Saved result preview");
+	const hintAt = (component: any, offset: number) => {
+		const lines = component.render(80);
+		const row = lines.findIndex((line: string) => line.includes("click to show more"));
+		return { row: offset + row + 1, col: lines[row].indexOf("click to show more") + 3 };
+	};
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const firstHint = hintAt(first, 0);
+		tui.handleViewportInput(`\x1b[<0;3;${firstHint.row}M`);
+		assert.equal(expanded(first), false, "clicking the row text is not a toggle");
+		tui.handleViewportInput(`\x1b[<0;${firstHint.col};${firstHint.row}M`);
+		assert.equal(expanded(first), true, "clicking the hint expands it");
+
+		first.invalidate();
+		assert.equal(expanded(first), true, "a rebuild keeps the clicked state");
+
+		relayout();
+		const secondHint = hintAt(second, first.render(80).length);
+		tui.handleViewportInput(`\x1b[<0;${secondHint.col};${secondHint.row}M`);
+		assert.equal(expanded(second), true);
+		assert.equal(expanded(first), false, "expanding one card collapses the others");
+
+		relayout();
+		const cardRow = first.render(80).length + 3;
+		tui.handleViewportInput(`\x1b[<0;5;${cardRow}M`);
+		assert.equal(expanded(second), true, "press alone does not collapse");
+		tui.handleViewportInput(`\x1b[<0;5;${cardRow}m`);
+		assert.equal(expanded(second), false, "a full click on the expanded card collapses it");
+
+		// 全局切换（Ctrl+O 经 setExpanded 下发）之后以全局为准。
+		relayout();
+		const again = hintAt(first, 0);
+		tui.handleViewportInput(`\x1b[<0;${again.col};${again.row}M`);
+		assert.equal(expanded(first), true);
+		first.setExpanded(true);
+		first.setExpanded(false);
+		assert.equal(expanded(first), false);
+	} finally {
+		installToolMouseInteraction({});
 		config.mode = previousMode;
 	}
 });

@@ -909,22 +909,39 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 											return theme.style("█".repeat(Math.max(0, cells)), { fg: part.color });
 										})
 										.join("");
+									const amountCells = allParts.map((part) => {
+										const pct = contextWindow > 0 ? (part.tokens / contextWindow) * 100 : 0;
+										const tokens = formatTokens(part.tokens).padStart(7);
+										const percent = `${pct.toFixed(1).padStart(5)}%`;
+										return { tokens, percent, plain: `${tokens}  ${percent}` };
+									});
+									// 数字列整体贴右：label 最多占到「行宽 - 数字列宽 - 前缀 - 边距」为止。
+									const amountWidth = Math.max(
+										...amountCells.map((cell) => visibleWidth(cell.plain)),
+									);
 									const labelWidth = Math.min(
 										24,
 										Math.max(...allParts.map((part) => part.label.length)),
+										Math.max(1, inner - amountWidth - 5),
 									);
 									const selectedLabel = visiblePreviews[selectedPreviewIndex]?.label;
-									const partRows = allParts.map((part) => {
-										const pct = contextWindow > 0 ? (part.tokens / contextWindow) * 100 : 0;
+									const partRows = allParts.map((part, index) => {
 										const swatch = theme.style("■", { fg: part.color });
 										const label = part.label.padEnd(labelWidth);
-										const amount = `${formatTokens(part.tokens).padStart(7)}  ${pct.toFixed(1).padStart(5)}%`;
+										const amount = amountCells[index];
 										const selected = part.label === selectedLabel;
 										const hoverLabel = visiblePreviews.find((p) => p.key === hoveredKey)?.label;
 										const prefix = selected ? "› " : "  ";
-										// frameRow 内容预算 width-4（= inner-2）；先 pad 再上底色，高亮铺满整段。
+										// frameRow 内容预算 width-4（= inner-2）；数字列贴右（上游 b3c8c4a 口径），
+										// token 用次级色、百分比保持正文色，先 pad 再上底色让高亮铺满整段。
+										const left = `${prefix}${swatch} ${label}`;
+										const gap = Math.max(
+											1,
+											inner - 3 - visibleWidth(left) - visibleWidth(amount?.plain ?? ""),
+										);
+										const right = `${theme.fg("dim", amount?.tokens ?? "")}  ${amount?.percent ?? ""}`;
 										const row = padLine(
-											`${prefix}${swatch} ${label} ${amount}`,
+											`${left}${" ".repeat(gap)}${right}`,
 											Math.max(0, inner - 2),
 										);
 										const painted = selected

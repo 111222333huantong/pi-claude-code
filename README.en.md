@@ -44,6 +44,18 @@ Run `/reload` after installation.
 
 Click the cover to play the demo video
 
+**Tool cards and collapsing**: Read / Bash calls in one turn merge into a group; `click to show more` expands it.
+
+<img src="./assets/readme/tool-cards.webp" alt="Tool group: Multiple Tools: 4 done · Read×3, Bash×1, with one collapsed summary row per call" width="100%">
+
+**Compact mode**: at turn end, one line summarising commands, files, failures, time, tok/s and TTFT.
+
+<img src="./assets/readme/compact-mode.webp" alt="Compact mode: Ran 4 commands, read 4 files, 1 failed · 31.9s · 47.2 tok/s · TTFT 2.7s, followed by the prompt and the two-line statusline" width="100%">
+
+**`/context`**: usage breakdown with right-aligned token and percentage columns; Enter previews the selected row.
+
+<p align="center"><img src="./assets/readme/context-dialog.webp" alt="Context Usage dialog: eight part rows with right-aligned token/percentage columns and the footer hint ↑↓ select · Click / Enter to preview · [esc] close" width="70%"></p>
+
 ## Features
 
 | Feature                     | Description                                                                               | Entry point                                     |

@@ -41,6 +41,18 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 点击封面播放演示视频
 
+**工具卡与折叠**：一个回合里的 Read / Bash 自动并组，`click to show more` 展开。
+
+<img src="./assets/readme/tool-cards.webp" alt="工具卡分组：Multiple Tools: 4 done · Read×3, Bash×1，逐行折叠摘要" width="100%">
+
+**紧凑模式**：回合结束时一行汇总命令数、文件数、失败数、耗时、tok/s 与 TTFT。
+
+<img src="./assets/readme/compact-mode.webp" alt="compact 模式：Ran 4 commands, read 4 files, 1 failed · 31.9s · 47.2 tok/s · TTFT 2.7s，下方为输入框与两行状态栏" width="100%">
+
+**`/context`**：上下文占用分解，token 与百分比两列贴右，回车预览选中项。
+
+<p align="center"><img src="./assets/readme/context-dialog.webp" alt="Context Usage 弹框：8 个 part 行，token/百分比右对齐，底部提示 ↑↓ select · Click / Enter to preview · [esc] close" width="70%"></p>
+
 ## 功能
 
 | 功能                  | 说明                                                                            | 入口                                            |

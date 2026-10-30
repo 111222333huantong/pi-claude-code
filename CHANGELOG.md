@@ -3,6 +3,16 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## 1.4.3 — 2026-10-30
+
+- README：新增中英 FAQ（互斥安装、fullscreen、状态栏、Windows/WSL、回退原生），
+  修正兼容性描述为 Pi `>=1.2.0`。
+- 新增本 `CHANGELOG.md`。
+- CI：拆成 Lint / Typecheck / Test 三步，固定 `init.defaultBranch`；
+  coverage 报告改为非阻塞。
+- 测试：`COLORTERM` 固定为 truecolor，修复 CI（无终端环境）上的语法色断言。
+- 无运行时行为变更。
+
 ## 1.4.2 — 2026-10-29
 
 - README：新增工具卡分组、compact 汇总、`/context` 三张真实终端截图（中英同步）。

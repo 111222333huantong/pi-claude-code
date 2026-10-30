@@ -1,6 +1,6 @@
 {
 	"name": "pi-claude-code",
-	"version": "1.4.2",
+	"version": "1.4.3",
 	"license": "MIT",
 	"description": "Claude Code-style TUI for Pi: tool cards, rich diffs, compact mode, statusline and themes.",
 	"type": "module",

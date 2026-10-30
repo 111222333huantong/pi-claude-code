@@ -53,9 +53,89 @@ jobs:
         shell: bash
         run: node --test tests/[g-l]*.test.ts
 
-      - name: Test (m–r)
+      - name: Test main-screen-prefix
         shell: bash
-        run: node --test tests/[m-r]*.test.ts
+        run: node --test tests/main-screen-prefix.test.ts
+
+      - name: Test markdown-enhance
+        shell: bash
+        run: node --test tests/markdown-enhance.test.ts
+
+      - name: Test mascot
+        shell: bash
+        run: node --test tests/mascot.test.ts
+
+      - name: Test mcp-chip
+        shell: bash
+        run: node --test tests/mcp-chip.test.ts
+
+      - name: Test mcp-title
+        shell: bash
+        run: node --test tests/mcp-title.test.ts
+
+      - name: Test message-display
+        shell: bash
+        run: node --test tests/message-display.test.ts
+
+      - name: Test mode-switch-reshape
+        shell: bash
+        run: node --test tests/mode-switch-reshape.test.ts
+
+      - name: Test mouse-interaction
+        shell: bash
+        run: node --test tests/mouse-interaction.test.ts
+
+      - name: Test mouse-scroll-native
+        shell: bash
+        run: node --test tests/mouse-scroll-native.test.ts
+
+      - name: Test mouse-scroll
+        shell: bash
+        run: node --test tests/mouse-scroll.test.ts
+
+      - name: Test paint-cache
+        shell: bash
+        run: node --test tests/paint-cache.test.ts
+
+      - name: Test patch-registry
+        shell: bash
+        run: node --test tests/patch-registry.test.ts
+
+      - name: Test pending-animation-perf
+        shell: bash
+        run: node --test tests/pending-animation-perf.test.ts
+
+      - name: Test pending-dot
+        shell: bash
+        run: node --test tests/pending-dot.test.ts
+
+      - name: Test pending-preview
+        shell: bash
+        run: node --test tests/pending-preview.test.ts
+
+      - name: Test prompt-editor
+        shell: bash
+        run: node --test tests/prompt-editor.test.ts
+
+      - name: Test quiet-startup
+        shell: bash
+        run: node --test tests/quiet-startup.test.ts
+
+      - name: Test render-animation
+        shell: bash
+        run: node --test tests/render-animation.test.ts
+
+      - name: Test render-cache
+        shell: bash
+        run: node --test tests/render-cache.test.ts
+
+      - name: Test resume-tool-visibility
+        shell: bash
+        run: node --test tests/resume-tool-visibility.test.ts
+
+      - name: Test runtime-patch-isolation
+        shell: bash
+        run: node --test tests/runtime-patch-isolation.test.ts
 
       - name: Test (s–z)
         shell: bash

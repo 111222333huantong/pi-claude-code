@@ -33,9 +33,21 @@ jobs:
         run: |
           git config --global user.name "CI"
           git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
 
       - run: npm ci
-      - run: npm run ci
+
+      # 拆成分步：失败时 GitHub 能直接指出是 lint / typecheck / test 哪一步。
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        shell: bash
+        run: npm test
+
       - run: npm run bench:thinking
       - run: npm pack --dry-run
 

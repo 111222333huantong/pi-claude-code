@@ -185,7 +185,31 @@ pi -e .              # 只跑一次，不改 settings.json
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `^0.84.0`
+- Node.js `>=22.19.0`，Pi `>=1.2.0`
+
+## 常见问题
+
+**能和上游 `pi-cc-extensions` 或 `pi-claude-code-tui` 同时装吗？**
+不能。它们 patch 同一批渲染组件，同屏会互相覆盖。本包已包含上游功能，只装这一个。
+
+**工具输出默认折叠，能一直展开吗？**
+单击卡片即可展开；想永久放宽可在 `/ccstyle` → UI 页调大
+`expandedInputMaxLines` / `expandedOutputMaxLines`。
+
+**fullscreen 怎么开？**
+`TUIMODE=fullscreen` 环境变量或 `pi --tui-mode fullscreen`；去掉参数即回普通模式。
+
+**状态栏没出现？**
+先 `/statusline on` 再 `/reload`。若同时启用了上游 footer，需要在 `/ccstyle`
+Features 页关掉 `enableCustomFooter`——两者互斥。
+
+**Windows / WSL 有什么注意点？**
+`write` 走 Pi 官方路径解析，WSL 的 `/mnt/c/...` 会写到对应的 C 盘目录；
+Ctrl+V 直粘剪贴板只支持 Windows，且需要 `enableClipboardPaste`。
+
+**升级后不适应，怎么退回原生？**
+`/ccstyle off` 立即还原生渲染；配置在 `~/.pi/agent/pi-cc-extensions.json`，
+删掉即恢复默认。
 
 ## 推荐搭配
 

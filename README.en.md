@@ -192,7 +192,33 @@ pi -e .              # one run, does not edit settings.json
 
 ## Compatibility
 
-- Node.js `>=22.19.0`, Pi `^0.84.0`
+- Node.js `>=22.19.0`, Pi `>=1.2.0`
+
+## FAQ
+
+**Can I install it alongside upstream `pi-cc-extensions` or `pi-claude-code-tui`?**
+No. They patch the same renderer components, so they will fight over the screen.
+This package already includes the upstream features — install only one.
+
+**Tool output is collapsed by default. Can it stay expanded?**
+Click a card to expand it; to widen the limit permanently, raise
+`expandedInputMaxLines` / `expandedOutputMaxLines` on the UI tab of `/ccstyle`.
+
+**How do I enable fullscreen?**
+Set `TUIMODE=fullscreen` or pass `pi --tui-mode fullscreen`. Drop it to go back.
+
+**The statusline does not show up.**
+Run `/statusline on`, then `/reload`. If the upstream footer is enabled too, turn
+off `enableCustomFooter` on the Features tab of `/ccstyle` — they are mutually
+exclusive.
+
+**Anything to know on Windows / WSL?**
+`write` uses Pi's official path resolution, so WSL `/mnt/c/...` lands on the real
+C: drive. Ctrl+V clipboard paste is Windows-only and needs `enableClipboardPaste`.
+
+**How do I go back to native rendering?**
+`/ccstyle off` restores it immediately; config lives in
+`~/.pi/agent/pi-cc-extensions.json` — delete it to reset.
 
 ## Recommended companions
 

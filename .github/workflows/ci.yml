@@ -46,7 +46,15 @@ jobs:
 
       - name: Test
         shell: bash
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test.log
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            # 把失败用例写成 annotation：公开仓库无需管理员权限即可读取。
+            grep -E '^not ok [0-9]+ - ' /tmp/test.log | sed 's/^/::error::/' | head -30
+          fi
+          exit "$status"
 
       - run: npm run bench:thinking
       - run: npm pack --dry-run

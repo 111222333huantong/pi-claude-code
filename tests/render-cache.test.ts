@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+// pi 的 highlightCode 按 COLORTERM 判断 truecolor；无终端环境（CI）默认没有，
+// 本文件断言 `38;2;...` 语法色，测试进程内固定为 truecolor，避免环境差异。
+process.env.COLORTERM ??= "truecolor";
 import {
 	ExpandedToolIoView,
 	ExpandedToolResultText,

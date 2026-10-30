@@ -44,21 +44,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      # 分 4 段跑：失败时步骤名直接暴露是哪个字母区间。
+      - name: Test (a–f)
         shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee /tmp/test.log
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            # 把失败上下文写成 annotation：公开仓库无需管理员权限即可读取。
-            {
-              head -4 /tmp/test.log
-              grep -E 'not ok [0-9]+ - |Error|error:|ERR_' /tmp/test.log | head -3
-              tail -3 /tmp/test.log
-            } | head -10 | sed 's/^/::error::/'
-          fi
-          exit "$status"
+        run: node --test tests/[a-f]*.test.ts
+
+      - name: Test (g–l)
+        shell: bash
+        run: node --test tests/[g-l]*.test.ts
+
+      - name: Test (m–r)
+        shell: bash
+        run: node --test tests/[m-r]*.test.ts
+
+      - name: Test (s–z)
+        shell: bash
+        run: node --test tests/[s-z]*.test.ts
 
       - run: npm run bench:thinking
       - run: npm pack --dry-run

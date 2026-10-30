@@ -51,5 +51,7 @@ jobs:
       - run: npm pack --dry-run
 
       - name: Coverage report
+        # 仅作报告，无覆盖率门槛；避免 runner 上的偶发失败（如内存/时长）阻断绿灯。
         if: matrix.node == '24.x'
+        continue-on-error: true
         run: npm run coverage

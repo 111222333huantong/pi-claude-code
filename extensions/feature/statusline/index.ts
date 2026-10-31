@@ -24,7 +24,10 @@ import {
 } from "./git.ts";
 import { getPrNumber } from "./pr.ts";
 import { buildLines, type StatusSnapshot } from "./render.ts";
-import { EMPTY_USAGE_TOTALS, summarizeUsage, type UsageTotals } from "./usage.ts";
+import { collectUsage, EMPTY_USAGE_TOTALS, type UsageCache, type UsageTotals } from "./usage.ts";
+
+/** ctx.getContextUsage() 的返回形状（可能 undefined）。 */
+type ContextUsage = ReturnType<ExtensionContext["getContextUsage"]>;
 
 function shortCwd(cwd: string): string {
 	return shortenCwd(cwd, homedir());
@@ -77,6 +80,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			const arg = args.trim().toLowerCase();
 			if (arg === "on" || arg === "off") {
 				writeStatuslineConfig({ enabled: arg === "on" });
+				renderConfig = null;
 				ctx.ui.notify?.(
 					`Statusline ${arg === "on" ? "enabled" : "disabled"} (takes effect next session, /reload)`,
 					"info",
@@ -101,7 +105,11 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	let turnStartedAt: number | null = null;
 	let turnTicker: ReturnType<typeof setInterval> | null = null;
 	// 用量累计只在会话叶子变化时重算：run timer 每秒重绘，不能再每秒扫全分支。
-	let usageCache: { leafId: string | null; totals: UsageTotals } | null = null;
+	let usageCache: UsageCache | null = null;
+	// ctx.getContextUsage() 会重建 session projection 并扫全消息；按叶子 + 模型缓存。
+	let contextUsageCache: { key: string; value: ContextUsage } | null = null;
+	// 状态栏配置只在启动/命令写入时读一次，渲染路径不碰文件。
+	let renderConfig: ReturnType<typeof readStatuslineConfig> | null = null;
 
 	const stopTurnTicker = () => {
 		if (turnTicker) clearInterval(turnTicker);
@@ -158,12 +166,15 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		if (!readStatuslineConfig().enabled) return;
+		// 配置在这里读一次，渲染路径只读内存（外部改文件需 /reload 或新会话）。
+		renderConfig = readStatuslineConfig();
+		if (!renderConfig.enabled) return;
 
 		// 换会话时清掉上一会话可能残留的回合计时与用量缓存。
 		turnStartedAt = null;
 		stopTurnTicker();
 		usageCache = null;
+		contextUsageCache = null;
 
 		let git: GitSnapshot = { ...EMPTY_GIT_SNAPSHOT };
 		let extTotal: number | null = null;
@@ -246,24 +257,30 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					if (thinking === "off") thinking = null;
 
 					let usage: UsageTotals = { ...EMPTY_USAGE_TOTALS };
+					let leafId: string | null = null;
 					try {
-						const leafId = ctx.sessionManager.getLeafId();
-						if (usageCache?.leafId === leafId) {
-							usage = usageCache.totals;
-						} else {
-							usage = summarizeUsage(ctx.sessionManager.getBranch());
-							usageCache = { leafId, totals: usage };
-						}
+						const result = collectUsage(ctx.sessionManager, usageCache);
+						usage = result.totals;
+						usageCache = result.cache;
+						leafId = result.cache?.leafId ?? null;
 					} catch {
 						usageCache = null;
 					}
-					const ctxUsage = (() => {
-						try {
-							return ctx.getContextUsage();
-						} catch {
-							return undefined;
+					// 叶子 + 模型都没变时复用；避免 run 计时每秒重建 projection。
+					let ctxUsage: ContextUsage;
+					try {
+						const model = ctx.model;
+						const key = `${leafId ?? ""}\0${model?.id ?? ""}\0${model?.name ?? ""}\0${model?.contextWindow ?? 0}`;
+						if (contextUsageCache?.key === key) {
+							ctxUsage = contextUsageCache.value;
+						} else {
+							ctxUsage = ctx.getContextUsage();
+							contextUsageCache = { key, value: ctxUsage };
 						}
-					})();
+					} catch {
+						contextUsageCache = null;
+						ctxUsage = undefined;
+					}
 
 					let mcpText: string | null = null;
 					try {
@@ -272,6 +289,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						mcpText = null;
 					}
 					if (!mcpText && mcpCount > 0) mcpText = `mcp ${mcpCount} enabled`;
+					if (!renderConfig) renderConfig = readStatuslineConfig();
+					const statusConfig = renderConfig;
 
 					const snapshot: StatusSnapshot = {
 						model: modelLabel(ctx.model),
@@ -294,7 +313,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						deletions: git.deletions,
 						pr: getPrNumber(ctx.cwd, git.branch !== null, undefined, Date.now(), git.branch),
 						worktree: git.worktree,
-						showWorktree: readStatuslineConfig().showWorktree,
+						showWorktree: statusConfig.showWorktree,
 					};
 					const safeWidth = Math.max(20, Math.floor(width) || 80);
 					return buildLines(snapshot, safeWidth, paint)
@@ -313,6 +332,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		unsubscribeBranch = null;
 		rerenderCurrent = null;
 		usageCache = null;
+		contextUsageCache = null;
+		renderConfig = null;
 		finishTurn();
 	});
 }

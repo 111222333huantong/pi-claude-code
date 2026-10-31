@@ -225,6 +225,11 @@ Ctrl+V 直粘剪贴板只支持 Windows，且需要 `enableClipboardPaste`。
 
 > **与 `@arhen/pi-core-subagent` 同屏**：`subagent` 派生调用保留对方自带的计划图渲染（人名标题，无 UUID）；`subagent_status/result/await/reply/steer/cancel` 走本包工具卡（`runId` 短 ID + 人名 taskId）。对方的 live widget 在编辑器上方、`/subagents peek` 按需查看，无底部常驻面板。注意：`@tintinweb/pi-tasks` 的 `TaskExecute` 只认 tintinweb 私有 RPC，换 arhen 后降级（任务跟踪照常，派发改口头指令）。用户中断（esc）的工具等待会收敛为 dim 色 `Operation aborted`，不再复读原文。
 
+## 参与
+
+问题与想法走 issue 模板或直接开 PR；开发约定见 [`CONTRIBUTING.md`](./CONTRIBUTING.md)，
+安全问题请走[私密报告](./SECURITY.md)。
+
 ## 致谢
 
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md)。

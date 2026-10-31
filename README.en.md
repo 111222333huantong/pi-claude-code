@@ -236,6 +236,11 @@ C: drive. Ctrl+V clipboard paste is Windows-only and needs `enableClipboardPaste
 
 > **Sharing the screen with `@arhen/pi-core-subagent`**: `subagent` spawns keep their built-in plan-graph rendering (human names, no UUIDs); `subagent_status/result/await/reply/steer/cancel` use this package's tool cards (short `runId` + human `taskId`). Its live widget sits above the editor and `/subagents peek` is on demand — no bottom-docked panel. Note: `@tintinweb/pi-tasks`' `TaskExecute` only speaks tintinweb's private RPC and degrades with arhen (tracking works, dispatch verbally). User-aborted tool waits collapse into a dim `Operation aborted` instead of echoing the raw message.
 
+## Contributing
+
+Open an issue from the templates or send a PR; see [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+for conventions. Please report security issues privately via [`SECURITY.md`](./SECURITY.md).
+
 ## Credits
 
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md).

@@ -19,6 +19,7 @@ import {
 import { formatTokens, padLine } from "../utils/format.ts";
 import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
+import { summarizeUsage, type UsageTotals } from "./statusline/usage.ts";
 
 export type ContextPart = {
 	label: string;
@@ -140,6 +141,23 @@ export function contextHealth(percent: number | null): {
 
 const COPY_LABEL = "[copy]";
 const ESC_LABEL = "[esc]";
+
+/**
+ * 会话缓存命中摘要：`cache 84% hit · 120k read · 8k write`。
+ *
+ * 口径与 Anthropic 用量一致：命中率 = cacheRead / (input + cacheRead + cacheWrite)。
+ * 没有缓存活动（首轮或未启用 prompt caching）时不显示，避免写 `0% hit`。
+ */
+export function cacheSummary(totals: UsageTotals): string {
+	const read = Math.max(0, totals.cacheRead);
+	const write = Math.max(0, totals.cacheWrite);
+	const prompt = Math.max(0, totals.input) + read + write;
+	if (prompt <= 0 || (read <= 0 && write <= 0)) return "";
+	const segments = [`cache ${Math.round((read / prompt) * 100)}% hit`];
+	if (read > 0) segments.push(`${formatTokens(read)} read`);
+	if (write > 0) segments.push(`${formatTokens(write)} write`);
+	return segments.join(" · ");
+}
 
 /** 测试可替换；生产使用 pi 的剪贴板实现。 */
 let copyTextImpl: (text: string) => Promise<void> = (text) => copyToClipboard(text);
@@ -722,9 +740,16 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 				{ label: "Other", tokens: other, color: rgbColor(0x92, 0x9e, 0xab) },
 				{ label: "Free space", tokens: free, color: rgbColor(0x76, 0x84, 0x94) },
 			];
+			let cacheLine = "";
+			try {
+				cacheLine = cacheSummary(summarizeUsage(ctx.sessionManager.getBranch()));
+			} catch {
+				// 会话不可读（嵌入式/恢复中）时不显示缓存行
+			}
 
 			if (ctx.mode !== "tui") {
 				const lines = allParts.map((part) => `${part.label}: ${formatTokens(part.tokens)} tokens`);
+				if (cacheLine) lines.push(cacheLine);
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
@@ -962,6 +987,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 											width,
 											`${theme.fg("muted", subtitle)}${theme.fg(health.color, ` · ${health.label}`)}`,
 										),
+										...(cacheLine ? [frameRow(theme, width, theme.fg("dim", cacheLine))] : []),
 										frameDivider(theme, width),
 										frameRow(theme, width, segments),
 										frameRow(theme, width, ""),
@@ -983,11 +1009,12 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									const visibleHeight = Math.min(lines.length, maxHeight);
 									// hitbox 用弹框局部坐标（0-based）：esc 在 title 行（第 1 行）
 									// 尾部 │ 前 5 列，preview 行对应 partRows（顶 border=0、title=1、
-									// ├=2、segments=3、空行=4，part 从 5 起）。不依赖官方放置行列。
+									// ├=2、segments=3、空行=4，part 从 5 起；有缓存行时整体下移 1）。
+									const partStart = 5 + (cacheLine ? 1 : 0);
 									escHitbox = { row: 1, startCol: width - 6, endCol: width - 2 };
 									previewHitboxes = visiblePreviews.flatMap((preview) => {
 										const partIndex = allParts.findIndex((part) => part.label === preview.label);
-										const line = 5 + partIndex;
+										const line = partStart + partIndex;
 										return partIndex >= 0 && line < visibleHeight
 											? [
 													{

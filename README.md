@@ -50,7 +50,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 <img src="./assets/readme/compact-mode.webp" alt="compact 模式：Ran 4 commands, read 4 files, 1 failed · 31.9s · 47.2 tok/s · TTFT 2.7s，下方为输入框与两行状态栏" width="100%">
 
-**`/context`**：上下文占用分解，token 与百分比两列贴右，回车预览选中项。
+**`/context`**：上下文占用分解，token 与百分比两列贴右，附带缓存命中统计，回车预览选中项。
 
 <p align="center"><img src="./assets/readme/context-dialog.webp" alt="Context Usage 弹框：8 个 part 行，token/百分比右对齐，底部提示 ↑↓ select · Click / Enter to preview · [esc] close" width="70%"></p>
 

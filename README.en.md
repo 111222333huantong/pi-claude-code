@@ -54,7 +54,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 
 <img src="./assets/readme/compact-mode.webp" alt="Compact mode: Ran 4 commands, read 4 files, 1 failed · 31.9s · 47.2 tok/s · TTFT 2.7s, followed by the prompt and the two-line statusline" width="100%">
 
-**`/context`**: usage breakdown with right-aligned token and percentage columns; Enter previews the selected row.
+**`/context`**: usage breakdown with right-aligned token and percentage columns plus cache-hit stats; Enter previews the selected row.
 
 <p align="center"><img src="./assets/readme/context-dialog.webp" alt="Context Usage dialog: eight part rows with right-aligned token/percentage columns and the footer hint ↑↓ select · Click / Enter to preview · [esc] close" width="70%"></p>
 

@@ -6,6 +6,7 @@ import test from "node:test";
 import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
 import { rgbColor, visibleWidth } from "@earendil-works/pi-tui";
 import contextUsageExtension, {
+	cacheSummary,
 	capParts,
 	collectContextBreakdown,
 	contextHealth,
@@ -436,7 +437,7 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 type ContextOverlayEntry = { component: any; done: (action?: unknown) => void };
 
 /** /context 主弹框与预览共用 harness：每次 ui.custom 同步挂载一个 overlay 并记录。 */
-function contextDialogHarness(options: { mode?: string } = {}) {
+function contextDialogHarness(options: { mode?: string; sessionEntries?: unknown[] } = {}) {
 	const fg: Array<[string, string]> = [];
 	const bg: Array<[string, string]> = [];
 	const notifications: string[] = [];
@@ -481,6 +482,7 @@ function contextDialogHarness(options: { mode?: string } = {}) {
 		}),
 		getSystemPrompt: () => "s".repeat(200),
 		sessionManager: {
+			getBranch: () => options.sessionEntries ?? [],
 			buildSessionProjection: () => ({
 				entries: [
 					{
@@ -601,6 +603,39 @@ test("context dialog renders every part row with right-aligned figures", async (
 	assert.equal(new Set(figures.map((figure) => figure.percentEnd)).size, 1, "百分比列右对齐");
 	for (const row of rows) assert.match(row, /\d\.\d% +│$/);
 
+	dialog.latest().component.handleInput("\x1b");
+	await dialog.running;
+});
+
+test("cacheSummary: 命中率用 input+cacheRead+cacheWrite 作分母", () => {
+	assert.equal(cacheSummary({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }), "");
+	assert.equal(
+		cacheSummary({ input: 20_000, output: 0, cacheRead: 80_000, cacheWrite: 0, cost: 0 }),
+		"cache 80% hit · 80k read",
+	);
+	assert.equal(
+		cacheSummary({ input: 20_000, output: 0, cacheRead: 80_000, cacheWrite: 5_000, cost: 0 }),
+		"cache 76% hit · 80k read · 5k write",
+	);
+});
+
+test("context dialog shows cache hit stats when the session has cache usage", async () => {
+	const dialog = contextDialogHarness({
+		sessionEntries: [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					usage: { input: 20_000, output: 100, cacheRead: 80_000, cacheWrite: 0 },
+				},
+			},
+		],
+	});
+	const lines = dialog.latest().component.render(64);
+	assert.ok(
+		lines.some((line: string) => line.includes("cache 80% hit · 80k read")),
+		"缓存命中行出现在用量副标题下方",
+	);
 	dialog.latest().component.handleInput("\x1b");
 	await dialog.running;
 });

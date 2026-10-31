@@ -14,6 +14,8 @@
   `empty` 短语。只对内置 read/grep/find/ls 生效，MCP 与扩展工具不猜口径。
   结果末尾的 `[N entries limit reached...]` / `[50.0KB limit reached]` 通知块不计入；
   grep 的 context 模式只数 `path:N:` 匹配行。
+- `/context` 在用量副标题下增加缓存命中行：`cache 84% hit · 120k read · 8k write`
+  （命中率 = cacheRead / (input + cacheRead + cacheWrite)；无缓存活动时不显示）。
 
 ### 新增
 

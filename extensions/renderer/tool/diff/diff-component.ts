@@ -14,6 +14,10 @@ export type DisplayConfigInput = ToolDisplayConfig | (() => ToolDisplayConfig);
 
 export interface DiffRenderOptions {
 	expanded: boolean;
+	/** 展开态安全上限已由用户第二次点击解除。 */
+	renderAll?: boolean;
+	/** 第二次点击“render all”时写回持久状态（组件每次重绘可能重建）。 */
+	onShowAll?: () => void;
 	filePath?: string;
 	previousContent?: string;
 	fileExistedBeforeWrite?: boolean;

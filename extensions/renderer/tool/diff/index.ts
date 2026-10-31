@@ -17,6 +17,21 @@ function resultText(result: any): string {
 		.join("\n");
 }
 
+/** 展开态大 diff 的“render all”状态挂在工具调用上，组件重建后仍保留。 */
+function diffRenderAllState(context: any): { renderAll: boolean; onShowAll: () => void } {
+	const state = context?.state ?? {};
+	const renderAll = state.ccstyleDiffRenderAll === true;
+	return {
+		renderAll,
+		onShowAll: () => {
+			if (!context) return;
+			const next = context.state ?? {};
+			next.ccstyleDiffRenderAll = true;
+			context.state = next;
+		},
+	};
+}
+
 function unavailableComponent(reason: string, theme: any) {
 	return {
 		render(width: number): string[] {
@@ -44,12 +59,14 @@ export function renderRichToolResult(
 ): any | undefined {
 	if (options?.isPartial || options?.isError || context?.isError) return undefined;
 	const expanded = options?.expanded === true || context?.expanded === true;
+	const renderAllState = diffRenderAllState(context);
 	const filePath = context?.args?.file_path ?? context?.args?.path;
 	if (toolName === "edit") {
 		return renderEditDiffResult(
 			result?.details,
 			{
 				expanded,
+				...renderAllState,
 				filePath,
 				isHovered: options?.isHovered,
 				invalidate: () => context?.invalidate?.(),
@@ -74,6 +91,7 @@ export function renderRichToolResult(
 		typeof context?.args?.content === "string" ? context.args.content : undefined,
 		{
 			expanded,
+			...renderAllState,
 			filePath,
 			previousContent: metadata.previousContent,
 			fileExistedBeforeWrite: metadata.fileExistedBeforeWrite,

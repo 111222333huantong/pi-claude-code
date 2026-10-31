@@ -762,6 +762,11 @@ export function showMoreHintText(): string {
 	return isToolTuiFullscreen() ? "click to show more" : `${expandShortcutText()} to show more`;
 }
 
+/** 展开态大 diff 的安全上限提示：再点一次才全量渲染。 */
+export function renderAllHintText(): string {
+	return "click to render all";
+}
+
 /** 展开卡的收起提示，与折叠态 showMoreHintText 同一位置对称。 */
 export function collapseHintText(): string {
 	return isToolTuiFullscreen() ? "↑ Collapse" : `${expandShortcutText()} to collapse`;

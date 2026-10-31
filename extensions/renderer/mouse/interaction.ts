@@ -12,6 +12,7 @@ import {
 	markCompactRoundToolExpanded,
 	setHoveredCompactAssistant,
 } from "../compact-mode.ts";
+import { isRichDiffComponent } from "../tool/diff/diff-renderer.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCollapseHintLine, setToolTuiFullscreen } from "../tool/names.ts";
 import {
@@ -92,7 +93,13 @@ type FrameToolRender = {
 };
 
 type InteractionRegion = {
-	kind: "collapsed-hint" | "collapse-hint" | "expanded-card" | "show-more" | "scroll-bottom";
+	kind:
+		| "collapsed-hint"
+		| "collapse-hint"
+		| "expanded-card"
+		| "show-more"
+		| "show-all"
+		| "scroll-bottom";
 	row: number;
 	startCol: number;
 	endCol: number;
@@ -133,6 +140,7 @@ function interactionRegionAt(packet: SgrMousePacket): InteractionRegion | null {
 	);
 	return (
 		matches.find((region) => region.kind === "show-more") ??
+		matches.find((region) => region.kind === "show-all") ??
 		matches.find((region) => region.kind === "scroll-bottom") ??
 		matches.find((region) => region.kind === "collapsed-hint") ??
 		matches.find((region) => region.kind === "collapse-hint") ??
@@ -273,6 +281,14 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	if (!region) return false;
 	if (region.kind === "scroll-bottom") return false;
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
+	if (region.kind === "show-all") {
+		const result = region.component?.resultRendererComponent;
+		if (result?.showAll?.()) {
+			region.component.invalidate?.();
+			tui.requestRender?.();
+		}
+		return true;
+	}
 	const component = region.component;
 	if (!component) return false;
 	if (region.kind === "expanded-card" || region.kind === "collapse-hint") {
@@ -368,6 +384,18 @@ function isNativeExpandHintLine(line: string): boolean {
 	return /(\([^()]*\/(?: click| to expand)\)|(?:[\w/+]+\s+)?to (?:expand|show more)\)?)\s*$/.test(
 		stripTerminalSequencesPreservingLayout(line),
 	);
+}
+
+/** 展开态大 diff 的 `click to render all` 行；命中返回可调 showAll() 的组件。 */
+function richDiffShowAllTarget(component: any, line: string): any | null {
+	const result = component?.resultRendererComponent;
+	if (!isRichDiffComponent(result) || typeof result.showAll !== "function") return null;
+	if (typeof result.isCapped === "function" && !result.isCapped()) return null;
+	const plain = stripTerminalSequencesPreservingLayout(line);
+	if (typeof result.isCollapsedHintLine === "function" && !result.isCollapsedHintLine(plain)) {
+		return null;
+	}
+	return result;
 }
 
 /**
@@ -467,6 +495,23 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 		}
 		clearPendingCollapsePress();
 	} else {
+		// 展开态大 diff 的 render-all 提示：解除安全上限，不收起。
+		if (isTool) {
+			const rich = richDiffShowAllTarget(component, line);
+			if (rich) {
+				rich.showAll();
+				clearPendingCollapsePress();
+				setHoveredToolCallId(null);
+				setHoveredToolGroup(null);
+				setHoveredThinking(null);
+				setHoveredMessageDisplay(null);
+				setHoveredToolIo(null, null);
+				setHoveredCompactAssistant(null);
+				component.invalidate?.();
+				tui.requestRender?.();
+				return true;
+			}
+		}
 		// 普通工具截断头 show-more：打开全量预览（不收起）。
 		const view = isTool ? component.resultRendererComponent : null;
 		if (isExpandedToolIoView(view)) {
@@ -831,6 +876,19 @@ function buildInteractionFrame(
 			if (placement.componentRow < cardStart) continue;
 			const finalRow = lineIndexToScreenRow(placement.lineIndex);
 			if (finalRow >= 1 && finalRow <= visibleRows) {
+				// 展开态大 diff 的 render-all 提示：只在这一行提供第二次点击。
+				const rich = richDiffShowAllTarget(component, placement.finalLine);
+				if (rich) {
+					const box = collapsedHintHitbox(placement.finalLine, HINT_HITBOX_PAD_COLS);
+					regions.push({
+						kind: "show-all",
+						row: finalRow,
+						startCol: box?.startCol ?? 1,
+						endCol: box?.endCol ?? width,
+						component,
+					});
+					continue;
+				}
 				// 展开态的 ↑ Collapse 提示单独成区：hover 高亮 hint，点击仍收起整卡。
 				const hintBox = collapsedHintHitbox(placement.finalLine);
 				if (hintBox && isCollapseHintLine(stripTerminalSequences(placement.finalLine))) {

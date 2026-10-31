@@ -551,8 +551,23 @@ export function renderWriteDiffResult(
 		return detailedData;
 	}
 
+	let renderAll = options.renderAll === true;
+
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** 展开态第二次点击：解除 2000 行安全上限。 */
+		showAll(): boolean {
+			if (!options.expanded || renderAll) return false;
+			renderAll = true;
+			cache.invalidate();
+			options.onShowAll?.();
+			options.invalidate?.();
+			return true;
+		},
+		/** 是否仍受展开态安全上限约束（鼠标层据此提供第二次点击入口）。 */
+		isCapped(): boolean {
+			return options.expanded === true && !renderAll;
+		},
 		/** 鼠标层只在真正的 remainder 行上提供展开入口。 */
 		isCollapsedHintLine(plainLine: string): boolean {
 			const hint = cache.getHintLine();
@@ -567,7 +582,7 @@ export function renderWriteDiffResult(
 			const live = resolveLiveDisplayConfig(config);
 			const wordWrap = live.diffWordWrap;
 			const indicatorMode = resolveDiffIndicatorMode(live);
-			const configKey = displayConfigCacheKey(live);
+			const configKey = `${displayConfigCacheKey(live)}:${renderAll ? "all" : "cap"}`;
 			const safeWidth = normalizeDiffRenderWidth(width);
 			const resolvedMode = resolveDiffPresentationMode(
 				live,
@@ -655,7 +670,11 @@ export function renderWriteDiffResult(
 			}
 
 			const data = getDetailedData();
-			const displayLimit = resolveDiffDisplayLimit(options.expanded, writeCollapsedLimit);
+			const displayLimit = resolveDiffDisplayLimit(
+				options.expanded,
+				writeCollapsedLimit,
+				renderAll,
+			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			const entryBudget = takeEntriesForLineBudget(data.entries, processBudget);
 			const splitBudget = takeSplitRowsForBudget(data.splitRows, processBudget);
@@ -696,6 +715,7 @@ export function renderWriteDiffResult(
 				theme,
 				unprocessedLogicalRows,
 				hovered,
+				renderAll,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =

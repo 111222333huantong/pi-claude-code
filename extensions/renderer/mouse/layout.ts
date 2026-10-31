@@ -35,7 +35,7 @@ export function collapsedHintHitbox(
 ): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);
 	const match =
-		/(\([^()\n]*(?: \/ click|, (?:[\w/+]+\s+)?to (?:expand|show more))\)|click to show more|to show more|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
+		/(\([^()\n]*(?: \/ click|, (?:[\w/+]+\s+)?to (?:expand|show more|render all))\)|click to (?:show more|render all)|to (?:show more|render all)|↑ Collapse|to collapse)(?=\)?\s*$)/.exec(
 			plain,
 		);
 	if (!match?.[1]) return null;

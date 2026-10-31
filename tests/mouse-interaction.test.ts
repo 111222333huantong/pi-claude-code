@@ -1125,6 +1125,8 @@ test("collapsed hint hitbox expands by pad cols on both sides", () => {
 	assert.equal(padded.startCol, Math.max(1, exact.startCol - 2));
 	assert.equal(padded.endCol, exact.endCol + 2);
 	assert.equal(collapsedHintHitbox("plain line without hint", 2), null);
+	// 展开态大 diff 的第二次点击入口也要能定位。
+	assert.ok(collapsedHintHitbox("  ↳ … 812 more diff lines · click to render all", 2));
 });
 
 test("osc8 link ranges only cover linked text, not the whole line", () => {

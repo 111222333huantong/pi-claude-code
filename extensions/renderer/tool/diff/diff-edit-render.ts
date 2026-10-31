@@ -158,9 +158,23 @@ export function renderEditDiffResult(
 		};
 	}
 	let detailedData: ReturnType<typeof buildDetailedData> | undefined;
+	let renderAll = options.renderAll === true;
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
+		/** 展开态第二次点击：解除 2000 行安全上限。 */
+		showAll(): boolean {
+			if (!options.expanded || renderAll) return false;
+			renderAll = true;
+			cache.invalidate();
+			options.onShowAll?.();
+			options.invalidate?.();
+			return true;
+		},
+		/** 是否仍受展开态安全上限约束（鼠标层据此提供第二次点击入口）。 */
+		isCapped(): boolean {
+			return options.expanded === true && !renderAll;
+		},
 		/** Only the current summary/remainder row is an expand target, never diff body text. */
 		isCollapsedHintLine(plainLine: string): boolean {
 			const hint = cache.getHintLine();
@@ -175,7 +189,7 @@ export function renderEditDiffResult(
 			const live = resolveLiveDisplayConfig(config);
 			const wordWrap = live.diffWordWrap;
 			const indicatorMode = resolveDiffIndicatorMode(live);
-			const configKey = displayConfigCacheKey(live);
+			const configKey = `${displayConfigCacheKey(live)}:${renderAll ? "all" : "cap"}`;
 			const safeWidth = normalizeDiffRenderWidth(width);
 			const mode = resolveDiffPresentationMode(live, safeWidth, canRenderSplitLayout(safeWidth));
 			const hovered = options.isHovered?.() ?? false;
@@ -220,7 +234,11 @@ export function renderEditDiffResult(
 			if (!detailedData) detailedData = buildDetailedData();
 			const { splitRows, showHashlineAnchors, lineNumberWidth, highlightLine } = detailedData;
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
-			const displayLimit = resolveDiffDisplayLimit(options.expanded, live.editDiffCollapsedLines);
+			const displayLimit = resolveDiffDisplayLimit(
+				options.expanded,
+				live.editDiffCollapsedLines,
+				renderAll,
+			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			// Only highlight/render a prefix that can fill the display limit; full-diff
 			// LCS + syntax highlight on thousands of hidden lines is pure waste when collapsed.
@@ -257,6 +275,7 @@ export function renderEditDiffResult(
 				theme,
 				unprocessedLogicalRows,
 				hovered,
+				renderAll,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =

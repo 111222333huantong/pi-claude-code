@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../../../config/config.ts";
-import { showMoreHintText } from "../names.ts";
+import { renderAllHintText, showMoreHintText } from "../names.ts";
 import type { SplitDiffRow } from "./diff-inline.ts";
 import type { RenderedRow } from "./diff-layout.ts";
 import { type DiffTheme, stabilizeBackgroundResets } from "./diff-palette.ts";
@@ -32,11 +32,23 @@ function renderDiffSpacerLine(width: number): string {
 }
 
 /**
- * Body lines to render before the remainder hint. Expanded diffs are never capped:
- * clicking `click to show more` expands the card to the whole diff.
+ * 展开态的安全上限（渲染后的视觉行）。超过时先渲染前缀并给
+ * `… N more diff lines · click to render all`，再点一次才全量。
+ * 2000 行足以覆盖绝大多数 edit/write；更大的 diff 多半是在看生成物。
  */
-export function resolveDiffDisplayLimit(expanded: boolean, maxCollapsedLines: number): number {
-	if (expanded) return Number.POSITIVE_INFINITY;
+export const EXPANDED_DIFF_MAX_LINES = 2000;
+
+/**
+ * Body lines to render before the remainder hint. Collapsed diffs use the configured
+ * line limit; expanded diffs render fully up to EXPANDED_DIFF_MAX_LINES, and only
+ * `renderAll` (second click) lifts the cap.
+ */
+export function resolveDiffDisplayLimit(
+	expanded: boolean,
+	maxCollapsedLines: number,
+	renderAll = false,
+): number {
+	if (expanded) return renderAll ? Number.POSITIVE_INFINITY : EXPANDED_DIFF_MAX_LINES;
 	const collapsedLimit = Number.isFinite(maxCollapsedLines)
 		? maxCollapsedLines
 		: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines;
@@ -105,8 +117,10 @@ export function applyLineLimit(
 	 */
 	unprocessedLogicalRows = 0,
 	hovered = false,
+	/** 展开态第二次点击后为 true：解除 EXPANDED_DIFF_MAX_LINES 上限。 */
+	renderAll = false,
 ): { lines: string[]; hintLine?: string } {
-	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines);
+	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines, renderAll);
 	const safeUnprocessed = Math.max(0, unprocessedLogicalRows);
 	if (limit === 0 || (rows.length <= limit && safeUnprocessed === 0)) {
 		return { lines: rows.map((row) => clampDiffLineToWidth(row.text, width)) };
@@ -127,12 +141,13 @@ export function applyLineLimit(
 		{
 			remainingLines: remaining,
 			hiddenHunks,
+			...(expanded ? { hintLabel: renderAllHintText() } : {}),
 		},
 		width,
 		DIFF_WIDTH_OPS,
 	);
 
-	const clickLabel = showMoreHintText();
+	const clickLabel = expanded ? renderAllHintText() : showMoreHintText();
 	const clickIndex = hintText.lastIndexOf(clickLabel);
 	// 展开态不会再截断，剩下的分支必是折叠态提示。
 	// 提示文本与其余折叠卡一致用 dim，hover 时 clickLabel 提到 text。

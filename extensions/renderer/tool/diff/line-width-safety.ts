@@ -10,6 +10,8 @@ export interface WidthMeasurementOps {
 export interface CollapsedDiffHintOptions {
 	remainingLines: number;
 	hiddenHunks: number;
+	/** 展开态大 diff 用 `click to render all`；缺省为折叠态的 `click to show more`。 */
+	hintLabel?: string;
 }
 
 function guardSafeWidth(width: number): number | undefined {
@@ -70,10 +72,11 @@ export function buildCollapsedDiffHintText(
 			options.hiddenHunks > 0
 				? `${options.hiddenHunks} ${pluralize(options.hiddenHunks, "hunk")}`
 				: undefined;
+		const hintLabel = options.hintLabel ?? showMoreHintText();
 
 		// 括号去掉：与工具卡的同名提示一致，只用小圆点连接
 		const candidates = [
-			`… ${[remainingText, hiddenHunksText, showMoreHintText()].filter(Boolean).join(" · ")}`,
+			`… ${[remainingText, hiddenHunksText, hintLabel].filter(Boolean).join(" · ")}`,
 			`… ${[remainingText, hiddenHunksText].filter(Boolean).join(" · ")}`,
 			`… ${[shortRemainingText, shortHiddenHunksText].filter(Boolean).join(" · ")}`,
 			options.hiddenHunks > 0

@@ -20,6 +20,8 @@ export interface SplitDiffRow {
 }
 
 const MAX_INLINE_DIFF_LINE_LENGTH = 700;
+/** 非空白词元重合度低于此值视为改写，不叠加词级高亮（delta max-line-distance 的简化版）。 */
+const MIN_INLINE_SIMILARITY = 0.25;
 
 function tokenizeInlineDiff(input: string): Array<{ value: string; start: number; end: number }> {
 	if (!input) {
@@ -136,7 +138,37 @@ function tokensToDiffSpans(
 	return mergeSpans(trimmed);
 }
 
-function computeInlineDiffSpans(
+/**
+ * 非空白词元的重合度（多重集合交集 / 较大集合大小）。
+ * 只用它做「值不值得词级高亮」的闸门；真正的改动区间仍由 LCS 决定。
+ */
+function tokenSimilarity(
+	leftTokens: Array<{ value: string }>,
+	rightTokens: Array<{ value: string }>,
+): number {
+	const left = new Map<string, number>();
+	const right = new Map<string, number>();
+	let leftTotal = 0;
+	let rightTotal = 0;
+	for (const token of leftTokens) {
+		if (!token.value.trim()) continue;
+		left.set(token.value, (left.get(token.value) ?? 0) + 1);
+		leftTotal++;
+	}
+	for (const token of rightTokens) {
+		if (!token.value.trim()) continue;
+		right.set(token.value, (right.get(token.value) ?? 0) + 1);
+		rightTotal++;
+	}
+	if (leftTotal === 0 || rightTotal === 0) return 0;
+	let common = 0;
+	for (const [value, count] of left) {
+		common += Math.min(count, right.get(value) ?? 0);
+	}
+	return common / Math.max(leftTotal, rightTotal);
+}
+
+export function computeInlineDiffSpans(
 	leftLine: string,
 	rightLine: string,
 ): { left: DiffSpan[]; right: DiffSpan[] } {
@@ -160,6 +192,10 @@ function computeInlineDiffSpans(
 			left: leftLine.trim().length > 0 ? [{ start: 0, end: leftLine.length }] : [],
 			right: rightLine.trim().length > 0 ? [{ start: 0, end: rightLine.length }] : [],
 		};
+	}
+
+	if (tokenSimilarity(leftTokens, rightTokens) < MIN_INLINE_SIMILARITY) {
+		return { left: [], right: [] };
 	}
 
 	const table: number[][] = Array.from({ length: leftCount + 1 }, () =>

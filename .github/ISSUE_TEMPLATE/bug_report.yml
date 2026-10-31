@@ -1,0 +1,68 @@
+name: Bug report
+description: 渲染、交互或配置不符合预期
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先说清楚**看到什么**和**期望什么**，比贴大段日志更有用。
+        装了两个同类 UI 扩展（`pi-tidy`、`pi-ext`、`pi-claude-code-tui` 等）时，请先卸载到只剩本包再复现。
+  - type: input
+    id: package-version
+    attributes:
+      label: pi-claude-code 版本
+      description: 运行 `npm view pi-claude-code version` 或看 `/loaded`
+      placeholder: "1.4.3"
+    validations:
+      required: true
+  - type: input
+    id: pi-version
+    attributes:
+      label: Pi 版本
+      description: 运行 `pi --version`
+      placeholder: "1.2.0"
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: 终端与环境
+      description: 终端名、操作系统、是否 tmux / SSH / WSL
+      placeholder: "Windows Terminal 1.22 / WSL2 / node 22.19"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 实际看到什么？能复制终端文本就复制文本（截图也行，但文本更方便定位）
+      placeholder: |
+        工具卡折叠后标题行是空的，展开才正常。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望
+      description: 你认为应该显示成什么？
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 最小步骤；涉及配置时贴 `/config` 里相关的几行
+      placeholder: |
+        1. `/config` 设为 compact
+        2. 让模型连续跑 3 个 read
+        3. 点击组头展开
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他
+      description: 日志、报错、最近的改动（可选）。请去掉 token / 路径里的私人信息。
+    validations:
+      required: false

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安装与配置问题
+    url: https://github.com/111222333huantong/pi-claude-code#readme
+    about: 先看 README 的安装、配置与 FAQ；仍然不行再开 issue。
+  - name: Pi 本身的问题
+    url: https://github.com/earendil-works/pi/issues
+    about: Pi 核心（模型、工具、会话）的问题不属于本扩展。
+  - name: 安全问题
+    url: https://github.com/111222333huantong/pi-claude-code/security/advisories/new
+    about: 不要公开披露，走私密报告入口。

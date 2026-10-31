@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      # TUI / Pi 相关依赖经常需要一起升，分开提会互相踩 peer 范围。
+      pi-stack:
+        patterns:
+          - "@earendil-works/*"
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - "@biomejs/*"
+          - "typescript"
+          - "@types/*"
+    ignore:
+      # peerDependencies 写的是 *，devDependencies 跟着 Pi 版本走；大版本升级手动评估。
+      - dependency-name: "@earendil-works/*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"

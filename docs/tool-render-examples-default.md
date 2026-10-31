@@ -311,7 +311,7 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 2 done · 1 failed · click to show more
- ├ ✓ Read extensions/index.ts
+ ├ ✓ Read extensions/index.ts · 40 lines
  ├ ✓ Bash npm test · 12.4s
  └ ✗ Ffgrep "renderCall" in extensions/
 ```
@@ -319,7 +319,7 @@ write 新建 / 覆盖：
 ### 展开：完整背景卡片
 
 ```text
- ● Multiple Tools: 2 done · 1 failed · Read… · ↑ Collapse
+ ● Multiple Tools: 2 done · 1 failed · 12.4s · ↑ Collapse
  ├ ✓ Read extensions/index.ts
  │ ├ Input
  │ │ path: extensions/index.ts
@@ -386,7 +386,7 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
  ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Re… · click to show more
  ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s
  ├ ✓ Get Subagent Result 6dae0e11
- └ ✓ Read extensions/index.ts
+ └ ✓ Read extensions/index.ts · 1 line
 ```
 
 ```text

@@ -41,7 +41,8 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 点击封面播放演示视频
 
-**工具卡与折叠**：一个回合里的 Read / Bash 自动并组，`click to show more` 展开。
+**工具卡与折叠**：一个回合里的 Read / Bash 自动并组，组头报**总耗时**，组内每行报产出
+（`12 lines` / `3 matches`），`click to show more` 展开。
 
 <img src="./assets/readme/tool-cards.webp" alt="工具卡分组：Multiple Tools: 4 done · Read×3, Bash×1，逐行折叠摘要" width="100%">
 

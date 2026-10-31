@@ -50,6 +50,7 @@ import {
 	formatToolDuration,
 	headTruncateToWidth,
 	outputLineCount,
+	textFromResult,
 	toolViewportWidth,
 } from "./result.ts";
 import {
@@ -350,11 +351,39 @@ function shellResultTail(
 	return duration ? ` ${fg("dim", `· ${duration}`)}` : "";
 }
 
+/**
+ * 折叠行产出注记：`· 12 lines` / `· 3 matches` / `· no files`。
+ * 内置检索/读取工具才有可靠口径；MCP 与扩展工具的结果格式未知，宁可不报也不报错。
+ */
+const RESULT_NOTE_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
+
+function resultNoteTail(tool: any, fg: Fg): string {
+	if (tool?.result == null || tool.result.isError === true) return "";
+	const name = toolName(tool).toLowerCase();
+	if (!RESULT_NOTE_TOOL_NAMES.has(name)) return "";
+	const text = textFromResult(tool.result).trim();
+	if (name === "grep" && text === "No matches found") return ` ${fg("dim", "· no matches")}`;
+	if (name === "find" && /^No files found/.test(text)) return ` ${fg("dim", "· no files")}`;
+	if (name === "ls" && text === "(empty directory)") return ` ${fg("dim", "· empty")}`;
+	const count = outputLineCount(tool.result);
+	if (count <= 0) return "";
+	const [singular, plural] =
+		name === "grep"
+			? ["match", "matches"]
+			: name === "find"
+				? ["file", "files"]
+				: name === "ls"
+					? ["entry", "entries"]
+					: ["line", "lines"];
+	return ` ${fg("dim", `· ${count} ${count === 1 ? singular : plural}`)}`;
+}
+
 /** 子工具折叠行正文：与组内同一套摘要。 */
 function toolSummaryText(tool: any, toolStatus: ToolStatus, width: number, fg: Fg): string {
 	const summary = askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
 	const detail = fg("dim", summary.detail);
-	const result = agentResultTail(tool, fg) + shellResultTail(tool, fg, toolStatus);
+	const result =
+		agentResultTail(tool, fg) + resultNoteTail(tool, fg) + shellResultTail(tool, fg, toolStatus);
 	const mainWidth = Math.max(0, width - visibleWidth(detail) - visibleWidth(result));
 	return `${renderToolSummary(summary, mainWidth, fg)}${detail}${result}`;
 }
@@ -451,6 +480,29 @@ function groupCountText(
 /** 组头圆点色：有失败取 error，否则有运行中取 accent，否则 success。 */
 function groupOverallStatus(counts: GroupHeaderCounts): ToolStatus {
 	return counts.error ? "error" : counts.pending ? "pending" : "success";
+}
+
+/**
+ * 组头总耗时：各工具已知 `durationMs` 之和（与 pi-tidy 同口径；子代理通知没有耗时）。
+ * 还在跑或不足 1 秒不报——短任务报 `300ms` 只是噪音。
+ */
+function groupDurationText(
+	children: readonly unknown[],
+	counts: GroupHeaderCounts,
+	fg: (color: string, text: string) => string,
+): string {
+	if (counts.pending > 0) return "";
+	let total = 0;
+	let known = 0;
+	for (const child of children as any[]) {
+		const ms = child?.result?.durationMs;
+		if (typeof ms === "number" && Number.isFinite(ms) && ms >= 0) {
+			total += ms;
+			known++;
+		}
+	}
+	if (known === 0 || total < 1_000) return "";
+	return ` ${fg("dim", "·")} ${fg("dim", formatToolDuration(total))}`;
 }
 
 /**
@@ -641,8 +693,14 @@ export class ToolGroupComponent extends Container {
 		const rowWidth = toolViewportWidth(width);
 		// 工具列表让位给展开提示：提示被截断的话，鼠标层要在行尾找 `click to show more`
 		// 就找不到，整张卡在窄宽度下点不开。名字截断后子行里仍能看全。
-		const head = ` ${fg(overallColor, "●")} ${label}: ${countText}`;
+		const baseHead = ` ${fg(overallColor, "●")} ${label}: ${countText}`;
+		const duration = groupDurationText(this.children, counts, fg);
 		const tail = ` ${hint}`;
+		// 窄屏先砍总耗时再砍列表：展开提示是鼠标命中锚点，任何时候都不能被挤掉。
+		const head =
+			visibleWidth(baseHead) + visibleWidth(duration) + visibleWidth(tail) <= rowWidth
+				? `${baseHead}${duration}`
+				: baseHead;
 		const listRoom = rowWidth - visibleWidth(head) - visibleWidth(tail) - 3;
 		// 连一个工具名都放不下就不放列表：退化成 `· …` 只会把行撑爆。
 		const nameList =

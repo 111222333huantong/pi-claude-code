@@ -3,6 +3,21 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## 未发布
+
+### 新增
+
+- 工具组头部在全部结算后报**总耗时**（各工具 `durationMs` 之和，`≥1s` 才显示）：
+  `● Multiple Tools: 3 done · 2.4s · Read×2, Bash×1 · click to show more`。
+- 组内折叠行报产出体积：`Read a.ts · 12 lines`、`Grep "TODO" · 3 matches`、
+  `Find "*.ts" · 2 files`、`Ls . · 4 entries`；空结果用 `no matches` / `no files` /
+  `empty` 短语。只对内置 read/grep/find/ls 生效，MCP 与扩展工具不猜口径。
+
+### 仓库
+
+- 新增 `CONTRIBUTING.md`、`SECURITY.md`、issue 模板（bug / feature）、
+  PR 模板与 Dependabot 周更配置。
+
 ## 1.4.3 — 2026-10-30
 
 - README：新增中英 FAQ（互斥安装、fullscreen、状态栏、Windows/WSL、回退原生），

@@ -453,7 +453,7 @@ test("every format joins a synthetic neighbour tool with one grouped row per age
 				alone.map((row) => ` ├${row.replace(/ · click to show more$/, "")}`),
 				fixture.name,
 			);
-			assert.equal(rows.at(-1), " └ ✓ Read fixture.ts", fixture.name);
+			assert.equal(rows.at(-1), " └ ✓ Read fixture.ts · 1 line", fixture.name);
 			assertWithin(group, fixture.name);
 
 			group.setExpanded(true);
@@ -484,13 +484,13 @@ test("representative grouped formats render their known-good rows", () => {
 			` ├ ✓ Subagent Finished fixture-agent-1 · completed (steered) · ${STATS}`,
 			` ├ ✓ Subagent Finished fixture-agent-2 · ${STATS}`,
 			` ├ ✓ Subagent Finished fixture-agent-3 · completed (steered) · ${STATS}`,
-			" └ ✓ Read fixture.ts",
+			" └ ✓ Read fixture.ts · 1 line",
 		]);
 		assert.deepEqual(plainRows(groupWithRead(byNumber("02")).render(240)), [
 			" ● Multiple Tools: 1 done · 2 failed · Subagent Finished×2, Read×1 · click to show more",
 			" ├ ✗ Subagent Finished fixture-agent-1 · error · 1.2s",
 			" ├ ✗ Subagent Finished fixture-agent-2 · error · 1.2s",
-			" └ ✓ Read fixture.ts",
+			" └ ✓ Read fixture.ts · 1 line",
 		]);
 	});
 });

@@ -681,7 +681,10 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 		parent.addChild(ps);
 		const rows = plain((parent.children[0] as ToolGroupComponent).render(140));
 		// 单组标题用 toolTitle，列表跟子行同一套写法；各跑一次也报 ×1。
-		assert.equal(rows[0], " ● Multiple Tools: 2 done · Bash×1, PowerShell×1 · click to show more");
+		assert.equal(
+			rows[0],
+			" ● Multiple Tools: 2 done · 12.7s · Bash×1, PowerShell×1 · click to show more",
+		);
 		// 只报耗时：行数在折叠卡里冗余，展开就能看到。
 		assert.equal(rows[1], " ├ ✓ Bash npm test · 12.4s");
 		assert.equal(rows[2], " └ ✓ PowerShell Get-ChildItem · 300ms");
@@ -711,8 +714,8 @@ test("组头列表用人性化名并恒带次数；组内 shell 行只报耗时"
 		parent2.addChild(read);
 		parent2.addChild(grep);
 		const rows2 = plain((parent2.children[0] as ToolGroupComponent).render(140));
-		assert.equal(rows2[1], " ├ ✓ Read a.ts");
-		assert.equal(rows2[2], ' └ ✓ Grep "x"');
+		assert.equal(rows2[1], " ├ ✓ Read a.ts · 1 line");
+		assert.equal(rows2[2], ' └ ✓ Grep "x" · 1 match');
 
 		// 窄宽度下先让出工具列表，保住行尾展开提示（鼠标层的命中锚点）。
 		const narrow = plain((parent.children[0] as ToolGroupComponent).render(72));
@@ -769,5 +772,87 @@ test("分组展开卡为内联图片留出全部占位行", () => {
 	} finally {
 		hooks.shutdown();
 		resetCapabilitiesCache();
+	}
+});
+
+test("组头在全部结算后报总耗时；还在跑或不足 1 秒不报", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const first = started("read", "dur-a", { path: "a.ts" });
+		first.updateResult({ content: [{ type: "text", text: "x" }], isError: false, durationMs: 600 });
+		const second = started("read", "dur-b", { path: "b.ts" });
+		parent.addChild(first);
+		parent.addChild(second);
+		const group = parent.children[0] as ToolGroupComponent;
+		// 有一个还在跑：不报半点耗时，避免数字跳来跳去。
+		assert.doesNotMatch(plain(group.render(140))[0]!, / · \d+(?:\.\d+)?(?:ms|s)/);
+		second.updateResult({
+			content: [{ type: "text", text: "y" }],
+			isError: false,
+			durationMs: 500,
+		});
+		// 600 + 500 = 1.1s：读的不是单次最慢，而是这一段工具的总耗时。
+		assert.match(plain(group.render(140))[0]!, /^ ● Read: 2 done · 1\.1s · click to show more$/);
+		// 窄屏先让出总耗时，展开提示是鼠标命中锚点，必须留在行尾。
+		const narrowHead = plain(group.render(48))[0]!;
+		assert.match(narrowHead, /click to show more$/);
+		assert.doesNotMatch(narrowHead, /1\.1s/);
+
+		// 总和不足 1 秒：报 `500ms` 只是噪音，直接省略。
+		const quick = new Container() as any;
+		const a = started("read", "dur-c", { path: "c.ts" });
+		a.updateResult({ content: [{ type: "text", text: "x" }], isError: false, durationMs: 200 });
+		const b = started("read", "dur-d", { path: "d.ts" });
+		b.updateResult({ content: [{ type: "text", text: "y" }], isError: false, durationMs: 300 });
+		quick.addChild(a);
+		quick.addChild(b);
+		assert.match(
+			plain((quick.children[0] as ToolGroupComponent).render(140))[0]!,
+			/^ ● Read: 2 done · click to show more$/,
+		);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("组内检索行报产出：行数 / 匹配数 / 文件数 / 目录项数", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const read = started("read", "note-read", { path: "a.ts" });
+		read.updateResult({
+			content: [{ type: "text", text: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12" }],
+			isError: false,
+		});
+		const grep = started("grep", "note-grep", { pattern: "TODO" });
+		grep.updateResult({ content: [{ type: "text", text: "a:1\nb:2\nc:3" }], isError: false });
+		const find = started("find", "note-find", { pattern: "*.ts" });
+		find.updateResult({ content: [{ type: "text", text: "a.ts\nb.ts" }], isError: false });
+		const ls = started("ls", "note-ls", { path: "." });
+		ls.updateResult({ content: [{ type: "text", text: "src\ndocs" }], isError: false });
+		for (const tool of [read, grep, find, ls]) parent.addChild(tool);
+		const rows = plain((parent.children[0] as ToolGroupComponent).render(200));
+		assert.match(rows[1]!, /^ ├ ✓ Read a\.ts · 12 lines$/);
+		assert.match(rows[2]!, /^ ├ ✓ Grep "TODO" · 3 matches$/);
+		assert.match(rows[3]!, /^ ├ ✓ Find "\*\.ts" · 2 files$/);
+		assert.match(rows[4]!, /^ └ ✓ Ls \. · 2 entries$/);
+
+		// 空结果用短语，而不是 `0 行`。
+		const empty = new Container() as any;
+		const none = started("grep", "note-none", { pattern: "zzz" });
+		none.updateResult({ content: [{ type: "text", text: "No matches found" }], isError: false });
+		const companion = started("read", "note-companion", { path: "z.ts" });
+		companion.updateResult({ content: [{ type: "text", text: "z" }], isError: false });
+		empty.addChild(none);
+		empty.addChild(companion);
+		const emptyRows = plain((empty.children[0] as ToolGroupComponent).render(160));
+		assert.match(emptyRows[1]!, / · no matches$/);
+	} finally {
+		hooks.shutdown();
 	}
 });

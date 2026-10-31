@@ -44,7 +44,9 @@ Run `/reload` after installation.
 
 Click the cover to play the demo video
 
-**Tool cards and collapsing**: Read / Bash calls in one turn merge into a group; `click to show more` expands it.
+**Tool cards and collapsing**: Read / Bash calls in one turn merge into a group; the
+header reports the group's **total time**, each row its output volume (`12 lines` /
+`3 matches`), and `click to show more` expands it.
 
 <img src="./assets/readme/tool-cards.webp" alt="Tool group: Multiple Tools: 4 done · Read×3, Bash×1, with one collapsed summary row per call" width="100%">
 

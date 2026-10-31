@@ -322,7 +322,7 @@ test("a finished subagent joins the adjacent tools as one more grouped item", ()
 			" ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
 			// 本 fork：无映射的长 agent_id 回落 8 位短 ID（agent-titles 垫片口径，VENDOR §7）。
 			" ├ ✓ Get Subagent Result 6dae0e11",
-			" └ ✓ Read /home/ning/github/pi-subagents/src/index.ts (offset=280, limit=92)",
+			" └ ✓ Read /home/ning/github/pi-subagents/src/index.ts (offset=280, limit=92) · 1 line",
 		]);
 	});
 });
@@ -757,7 +757,7 @@ test("multi-agent notifications count one item per agent in the group", () => {
 		assert.match(rows[1]!, /^ ├ ✓ Subagent Finished a · 35 tool uses/);
 		assert.match(rows[2]!, /^ ├ ✗ Subagent Finished b · error · 35 tool uses/);
 		assert.match(rows[3]!, /^ ├ ✓ Subagent Finished c · 35 tool uses/);
-		assert.equal(rows[4], " └ ✓ Read a.ts");
+		assert.equal(rows[4], " └ ✓ Read a.ts · 1 line");
 	});
 });
 

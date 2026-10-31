@@ -231,6 +231,15 @@ function shellDurationText(toolName: string, context: any, isPartial: boolean): 
 	return elapsed === undefined ? "" : formatToolDuration(elapsed);
 }
 
+/** 非 shell 的慢读取/搜索：≥1s 才补耗时，快调用保持干净（与组内行同口径）。 */
+const SLOW_RESULT_TOOL_NAMES = new Set(["read", "grep", "find", "ls"]);
+
+function slowResultDurationText(toolName: string, context: any): string {
+	if (!SLOW_RESULT_TOOL_NAMES.has(toolName.toLowerCase())) return "";
+	const elapsed = toolElapsedMs(context, false);
+	return elapsed !== undefined && elapsed >= 1_000 ? formatToolDuration(elapsed) : "";
+}
+
 /**
  * Agent 的 renderResult：与 pi-subagents 保持同样的分支，但收敛成 ccstyle 的 ↳ 行。
  * running/partial 转交原渲染器（只有它有 spinner frame 和 activity 文案）；
@@ -690,7 +699,8 @@ export function createCcstyleTool(
 				context.state.ccstyleShellEndedAt = Date.now();
 			}
 			// 折叠行接在摘要后，展开态接在 Output 正文后（原生也是在结果底部报一行）。
-			const duration = shellDurationText(toolName, context, false);
+			const duration =
+				shellDurationText(toolName, context, false) || slowResultDurationText(toolName, context);
 
 			setToolVisualState(context, isError ? "error" : "success");
 			const toolCallId = context?.toolCallId;

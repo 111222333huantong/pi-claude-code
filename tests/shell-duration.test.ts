@@ -133,20 +133,30 @@ test("时钟回拨不输出负数", () => {
 	}
 });
 
-test("非 shell 工具不报耗时", () => {
+test("非 shell 工具只在慢调用（≥1s）时报耗时", () => {
 	const previousMode = config.mode;
 	config.mode = "on";
 	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
 	try {
-		const tool = shellTool("read", "rd-1", { path: "a.ts" });
-		tool.markExecutionStarted();
-		tool.render(100);
-		tool.updateResult({
+		const slow = shellTool("read", "rd-1", { path: "a.ts" });
+		slow.markExecutionStarted();
+		slow.render(100);
+		slow.updateResult({
 			content: [{ type: "text", text: "a\nb" }],
 			isError: false,
 			durationMs: 1234,
 		});
-		assert.doesNotMatch(render(tool)[1]!, /\d+(\.\d+)?(ms|s)\b/);
+		assert.match(render(slow)[1]!, /1\.2s/);
+
+		const quick = shellTool("read", "rd-2", { path: "b.ts" });
+		quick.markExecutionStarted();
+		quick.render(100);
+		quick.updateResult({
+			content: [{ type: "text", text: "a" }],
+			isError: false,
+			durationMs: 5,
+		});
+		assert.doesNotMatch(render(quick)[1]!, /\d+(\.\d+)?(ms|s)\b/);
 	} finally {
 		hooks.shutdown();
 		config.mode = previousMode;

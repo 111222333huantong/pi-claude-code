@@ -169,7 +169,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 > without an extra model call. The local fallback drops meta/planning chatter and short fragments,
 > and emits nothing when a section has no useful content.
 
-This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Features tab in `/ccstyle`):
+This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Features tab in `/ccstyle`). Saved changes apply automatically; `/statusline worktree on|off` toggles the L2 worktree segment immediately:
 
 ```js
 {

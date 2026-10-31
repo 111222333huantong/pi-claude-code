@@ -16,6 +16,8 @@
   grep 的 context 模式只数 `path:N:` 匹配行。
 - `/context` 在用量副标题下增加缓存命中行：`cache 84% hit · 120k read · 8k write`
   （命中率 = cacheRead / (input + cacheRead + cacheWrite)；无缓存活动时不显示）。
+- 状态栏配置支持热加载：监听 `statusline.json` 所在目录，保存后 footer 自动刷新；
+  `/statusline worktree on|off` 可立即切换 L2 的 worktree 段，不用改文件或 `/reload`。
 
 ### 性能
 

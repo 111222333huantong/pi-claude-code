@@ -17,7 +17,7 @@ import {
 	parseWorktree,
 	startGitPoller,
 } from "../extensions/feature/statusline/git.ts";
-import { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
+import registerStatusline, { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
 import { _resetPrCache, getPrNumber, parsePrNumber } from "../extensions/feature/statusline/pr.ts";
 
 test("parsePorcelainHead: 分支与上下游", () => {
@@ -108,6 +108,35 @@ test("statusline config: 原子写不留下临时文件", () => {
 	writeStatuslineConfig({ showWorktree: false }, file);
 	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
 	assert.deepEqual(readdirSync(dir), ["statusline.json"], "tmp 文件已 rename 或清理");
+});
+
+test("statusline command: worktree on/off 立即写配置并生效", async () => {
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	const dir = mkdtempSync(join(tmpdir(), "statusline-cmd-"));
+	process.env.PI_CODING_AGENT_DIR = dir;
+	try {
+		let handler: any;
+		registerStatusline({
+			registerCommand: (_name: string, definition: any) => {
+				handler = definition.handler;
+			},
+			getCommands: () => [],
+			on: () => {},
+		} as any);
+		const notes: string[] = [];
+		const ctx = { ui: { notify: (message: string) => notes.push(message) } } as any;
+
+		await handler("worktree off", ctx);
+		assert.equal(readStatuslineConfig(join(dir, "statusline.json")).showWorktree, false);
+		await handler("status", ctx);
+		assert.match(notes.at(-1) ?? "", /worktree off/);
+
+		await handler("worktree on", ctx);
+		assert.equal(readStatuslineConfig(join(dir, "statusline.json")).showWorktree, true);
+	} finally {
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previous;
+	}
 });
 
 test("normalizeMcpStatus: adapter 状态（ANSI+图标）收敛为 mcp N enabled", () => {

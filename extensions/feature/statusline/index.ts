@@ -8,13 +8,15 @@
  * 扩展/mcp 计数复用 loaded-stats 进程级单例（无额外扫描）。
  * 开关：独立 `~/.pi/agent/statusline.json` + `/statusline` 命令。
  */
+import { watch } from "node:fs";
 import { homedir } from "node:os";
+import { basename, dirname } from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { shortenCwd } from "../../utils/format.ts";
 import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
-import { readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
+import { defaultStatuslinePath, readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
 import {
 	collectGitStatus,
 	EMPTY_GIT_SNAPSHOT,
@@ -70,14 +72,16 @@ function hasMcpAdapter(pi: ExtensionAPI): boolean {
 
 export default function registerStatusline(pi: ExtensionAPI): void {
 	pi.registerCommand("statusline", {
-		description: "Toggle the custom statusline footer (on|off|status)",
+		description: "Toggle the custom statusline footer (on|off|worktree on|off|status)",
 		getArgumentCompletions: (prefix) =>
-			["on", "off", "status"]
+			["on", "off", "worktree on", "worktree off", "status"]
 				.filter((v) => v.startsWith(prefix))
 				.map((value) => ({
 					value,
 					label: value,
-					description: `Statusline ${value}`,
+					description: value.startsWith("worktree")
+						? `Statusline ${value} (applies immediately)`
+						: `Statusline ${value}`,
 				})),
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
@@ -88,6 +92,17 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					`Statusline ${arg === "on" ? "enabled" : "disabled"} (takes effect next session, /reload)`,
 					"info",
 				);
+				return;
+			}
+			if (arg === "worktree on" || arg === "worktree off") {
+				writeStatuslineConfig({ showWorktree: arg.endsWith(" on") });
+				renderConfig = readStatuslineConfig();
+				try {
+					rerenderCurrent?.();
+				} catch {
+					// ignore
+				}
+				ctx.ui.notify?.(`Statusline worktree ${arg.endsWith(" on") ? "on" : "off"}`, "info");
 				return;
 			}
 			const current = readStatuslineConfig();
@@ -112,8 +127,46 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	// ctx.getContextUsage() 会重建 session projection 并扫全消息；按叶子 + 模型缓存，
 	// 另加 5s TTL：工具集/系统提示变化不一定产生新 leaf，兜底刷新一次。
 	let contextUsageCache: { key: string; at: number; value: ContextUsage } | null = null;
-	// 状态栏配置只在启动/命令写入时读一次，渲染路径不碰文件。
+	// 状态栏配置只在启动/命令写入/文件变化时读，渲染路径不碰文件。
 	let renderConfig: ReturnType<typeof readStatuslineConfig> | null = null;
+	let stopConfigWatcher: (() => void) | null = null;
+	let configWatcherTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const stopConfigWatch = (): void => {
+		if (configWatcherTimer) clearTimeout(configWatcherTimer);
+		configWatcherTimer = null;
+		stopConfigWatcher?.();
+		stopConfigWatcher = null;
+	};
+
+	/** 监听配置文件所在目录：编辑器原子替换（rename）也能收到事件。 */
+	const startConfigWatch = (): void => {
+		stopConfigWatch();
+		const filePath = defaultStatuslinePath();
+		const directory = dirname(filePath);
+		const fileName = basename(filePath);
+		try {
+			const watcher = watch(directory, { persistent: false }, (_event, changed) => {
+				if (changed && changed.toString() !== fileName) return;
+				if (configWatcherTimer) clearTimeout(configWatcherTimer);
+				configWatcherTimer = setTimeout(() => {
+					configWatcherTimer = null;
+					renderConfig = readStatuslineConfig();
+					try {
+						rerenderCurrent?.();
+					} catch {
+						// ignore
+					}
+				}, 120);
+				configWatcherTimer.unref?.();
+			});
+			watcher.unref?.();
+			stopConfigWatcher = () => watcher.close();
+		} catch {
+			// 目录不存在/无权限：保留会话启动时读到的配置，等 /reload。
+			stopConfigWatcher = null;
+		}
+	};
 
 	const stopTurnTicker = () => {
 		if (turnTicker) clearInterval(turnTicker);
@@ -170,8 +223,9 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		// 配置在这里读一次，渲染路径只读内存（外部改文件需 /reload 或新会话）。
+		// 配置在这里读一次；之后只由命令写入或文件监听更新，渲染路径不碰文件。
 		renderConfig = readStatuslineConfig();
+		stopConfigWatch();
 		if (!renderConfig.enabled) return;
 
 		// 换会话时清掉上一会话可能残留的回合计时与用量缓存。
@@ -192,6 +246,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			}
 		};
 		rerenderCurrent = rerender;
+		startConfigWatch();
 
 		// git 快照：立即采一次 + 后台轮询。
 		try {
@@ -342,6 +397,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		usageCache = null;
 		contextUsageCache = null;
 		renderConfig = null;
+		stopConfigWatch();
 		finishTurn();
 	});
 }

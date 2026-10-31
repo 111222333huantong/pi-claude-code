@@ -161,7 +161,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 > 每块本地提炼一行摘要，不额外调用模型。本地 fallback 会过滤“用户问了什么/我要怎么回答/确保格式”
 > 这类元话语和短碎片；过滤后没有有效内容就不生成条目。
 
-本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）：
+本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）。保存后自动生效；`/statusline worktree on|off` 可立即切换 L2 的 worktree 段：
 
 ```js
 {

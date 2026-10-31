@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -99,6 +99,15 @@ test("statusline config: 写合并保留其他键", () => {
 	writeFileSync(file, JSON.stringify({ enabled: false, extra: 1 }));
 	writeStatuslineConfig({ showWorktree: false }, file);
 	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
+});
+
+test("statusline config: 原子写不留下临时文件", () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-cfg-"));
+	const file = join(dir, "statusline.json");
+	writeStatuslineConfig({ enabled: false }, file);
+	writeStatuslineConfig({ showWorktree: false }, file);
+	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
+	assert.deepEqual(readdirSync(dir), ["statusline.json"], "tmp 文件已 rename 或清理");
 });
 
 test("normalizeMcpStatus: adapter 状态（ANSI+图标）收敛为 mcp N enabled", () => {

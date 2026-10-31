@@ -68,6 +68,17 @@ test("bashLivePreview splits tail window with earlier-lines head", () => {
 	assert.deepEqual(empty.tail, []);
 });
 
+test("bashLivePreview normalizes CRLF and keeps the last line for limit=1", () => {
+	const preview = bashLivePreview("a\r\nb\r\nc\r\n", 1);
+	assert.equal(preview.total, 3);
+	assert.equal(preview.header, "… (2 earlier lines)");
+	assert.deepEqual(preview.tail, ["c"]);
+	// 缓存不能把上一次输入的结果串给下一次。
+	const next = bashLivePreview("fresh", 1);
+	assert.equal(next.total, 1);
+	assert.deepEqual(next.tail, ["fresh"]);
+});
+
 test("running bash shows tail preview with count in title", () => {
 	const previousMode = config.mode;
 	const previousFlag = config.liveToolPreview;

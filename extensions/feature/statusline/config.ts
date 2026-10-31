@@ -4,7 +4,7 @@
  * 与主配置 `claude-code-style.json` 分离（用户选择）：坏文件永不抛、
  * 缺键回默认、写入保留其他键。`filePath` 参数供测试指向临时文件。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -60,10 +60,23 @@ export function writeStatuslineConfig(
 		}
 	}
 	const next = normalize({ ...settings, ...partial });
+	const text = `${JSON.stringify(next, null, 2)}\n`;
+	// 原子写：先写 tmp 再 rename，崩溃不留半截 JSON（与主配置同做法）。
+	const tmp = `${filePath}.${process.pid}.tmp`;
 	try {
 		mkdirSync(dirname(filePath), { recursive: true });
-		writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
+		writeFileSync(tmp, text);
+		renameSync(tmp, filePath);
 	} catch {
-		// best effort
+		try {
+			rmSync(tmp, { force: true });
+		} catch {
+			// best effort
+		}
+		try {
+			writeFileSync(filePath, text);
+		} catch {
+			// best effort
+		}
 	}
 }

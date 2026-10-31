@@ -18,6 +18,10 @@
   （命中率 = cacheRead / (input + cacheRead + cacheWrite)；无缓存活动时不显示）。
 - 状态栏配置支持热加载：监听 `statusline.json` 所在目录，保存后 footer 自动刷新；
   `/statusline worktree on|off` 可立即切换 L2 的 worktree 段，不用改文件或 `/reload`。
+- fullscreen 选区复制默认 clean copy：剥掉工具卡树线（`├ └ │ ↳`）、代码框
+  （`╭─╮ │ │ ╰─╯`）和 `… N more lines` / `click to render all` 提示，只留正文；
+  列 0 的 Markdown 引用块、diff 的 `+/-` 标记和正文缩进保持原样。
+  `/ccstyle` → UI 页 `Clean copy` 可关。
 
 ### 性能
 

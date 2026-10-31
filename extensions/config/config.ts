@@ -93,6 +93,8 @@ export type Config = {
 	stickyUserMessage: boolean;
 	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层；两者文案相同。 */
 	scrollButtonMode: ScrollButtonMode;
+	/** fullscreen 选区复制时剥掉树线/代码框/展开提示，只留正文。 */
+	cleanCopy: boolean;
 	enableSessionReference: boolean;
 	enableSubagentAutocomplete: boolean;
 	enableContextCommand: boolean;
@@ -217,6 +219,7 @@ export const DEFAULT_CONFIG: Config = {
 	liveToolPreviewLines: 5,
 	stickyUserMessage: true,
 	scrollButtonMode: "dock",
+	cleanCopy: true,
 	enableSessionReference: true,
 	enableSubagentAutocomplete: true,
 	enableContextCommand: true,
@@ -396,6 +399,7 @@ export function normalizeConfig(input: unknown): Config {
 			SCROLL_BUTTON_MODES,
 			DEFAULT_CONFIG.scrollButtonMode,
 		),
+		cleanCopy: source.cleanCopy !== false,
 		enableSessionReference: source.enableSessionReference !== false,
 		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
 		enableContextCommand: source.enableContextCommand !== false,
@@ -526,6 +530,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
 		`livePreview=${source.liveToolPreview ? `${source.liveToolPreviewLines} lines` : "off"}`,
 		`scrollButton=${source.scrollButtonMode}`,
+		`cleanCopy=${source.cleanCopy ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
 		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
 		`context=${source.enableContextCommand ? "on" : "off"}`,

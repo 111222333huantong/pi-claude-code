@@ -733,6 +733,15 @@ export async function showCcstylePanel(
 			currentValue: config.stickyUserMessage ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const cleanCopySetting = {
+			id: "cleanCopy",
+			label: "Clean copy",
+			description: config.cleanCopy
+				? "Fullscreen selection copy drops tool tree guides, code-box borders and expand hints."
+				: "Fullscreen selection copy keeps rendered guides and hints.",
+			currentValue: config.cleanCopy ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const completionBellSetting = {
 			id: "completionBellAfterSec",
 			label: "Completion bell",
@@ -1268,6 +1277,13 @@ export async function showCcstylePanel(
 							: "Fullscreen: use Pi's native floating Jump to latest overlay.";
 					break;
 				}
+				case "cleanCopy": {
+					updateConfig({ cleanCopy: value === "on" });
+					cleanCopySetting.description = config.cleanCopy
+						? "Fullscreen selection copy drops tool tree guides, code-box borders and expand hints."
+						: "Fullscreen selection copy keeps rendered guides and hints.";
+					break;
+				}
 				case "showStartupHeader": {
 					const enabled = value === "on";
 					updateConfig({ showStartupHeader: enabled });
@@ -1379,6 +1395,7 @@ export async function showCcstylePanel(
 					toolLabelClipSetting,
 					stickyUserMessageSetting,
 					scrollButtonSetting,
+					cleanCopySetting,
 					startupHeaderSetting,
 					startupAnimationSetting,
 					sloganSetting,

@@ -71,6 +71,7 @@ export const FLUSH_DOCKED_BASH_PATCH = Symbol.for("pi.ccstyle.flush-docked-bash-
 export const EARLY_STARTUP_HEADER_PATCH = Symbol.for("pi.ccstyle.early-startup-header-patch");
 export const EARLY_STARTUP_HEADER_SWAP_KEY = Symbol.for("pi.ccstyle.early-startup-header-swap");
 export const TOOL_HOVER_STATE_KEY = Symbol.for("pi.ccstyle.tool-hover-state");
+export const CLEAN_COPY_PATCH = Symbol.for("pi.ccstyle.clean-copy-patch");
 
 // ── transcript 右缘内缩 ──
 export const TRANSCRIPT_GUTTER_PATCH_KEY = Symbol.for("pi.ccstyle.transcript-gutter-patch");

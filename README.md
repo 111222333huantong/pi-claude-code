@@ -104,6 +104,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
   "scrollButtonMode": "dock",              // fullscreen：dock 独占行 / native Pi 原生浮层
+  "cleanCopy": true,                       // fullscreen 选区复制去掉工具树线、代码框与展开提示
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
@@ -172,6 +173,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 > [!TIP]
 > **全屏模式**：展开态 diff 默认最多 2000 行，末尾给 `… N more diff lines · click to render all`，再点一次才全量。Input/Output 超行时末行给 `… +N more lines`，单击看全量，再击收起。
+> 拖选复制默认走 clean copy：工具树线（`├ └ │ ↳`）、代码框和展开提示不进剪贴板；`/ccstyle` → UI 页的 `Clean copy` 可关。
 
 > [!NOTE]
 > **Mermaid 渲染**：`markdown.mermaid` 建议设为 `final`（`~/.pi/agent/settings.json` 或 `/settings`）。默认 `streaming` 逐帧重绘，`final` 只渲染最终版。

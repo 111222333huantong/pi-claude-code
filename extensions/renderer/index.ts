@@ -24,6 +24,7 @@ import {
 	installDefaultMode,
 	installToolExpandedBackground,
 } from "./default-mode.ts";
+import { installCleanCopy } from "./mouse/clean-copy.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import {
 	ensureFullscreenViewportInput,
@@ -184,6 +185,8 @@ export default function (
 		installMainScreenDoRenderPatch();
 		// 粘性用户消息头：标记注入 + fullscreen 帧合成。
 		installStickyPromptPatches();
+		// fullscreen 选区复制：剥掉树线/代码框/展开提示（/ccstyle 里可关）。
+		installCleanCopy();
 		const defaultMode = installDefaultMode(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
 		const compactMode = installCompactMode({

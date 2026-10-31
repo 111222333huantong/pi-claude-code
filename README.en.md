@@ -108,6 +108,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "stickyUserMessage": true,               // fullscreen: pin a user message's first line once it scrolls off the top edge, until the next one takes over
   "scrollButtonMode": "dock",              // fullscreen: extension dock row / native Pi floating overlay
+  "cleanCopy": true,                       // fullscreen selection copy drops tool tree guides, code-box borders and expand hints
 
   // diff
   "diffViewMode": "auto",                  // layout: auto / split / unified

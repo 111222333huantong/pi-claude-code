@@ -875,3 +875,43 @@ test("组内检索行报产出：行数 / 匹配数 / 文件数 / 目录项数",
 		hooks.shutdown();
 	}
 });
+
+test("窄屏先让 offset/limit 让位，保住路径；短路径不被误伤", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const read = started("read", "detail-read", {
+			path: "src/really/deeply/nested/path/to/a/very/long/file-name.ts",
+			offset: 280,
+			limit: 92,
+		});
+		read.updateResult({ content: [{ type: "text", text: "x" }], isError: false });
+		const companion = started("grep", "detail-grep", { pattern: "x" });
+		companion.updateResult({ content: [{ type: "text", text: "a:1:x" }], isError: false });
+		parent.addChild(read);
+		parent.addChild(companion);
+		const group = parent.children[0] as ToolGroupComponent;
+		const narrow = plain(group.render(50));
+		assert.doesNotMatch(narrow[1]!, /offset=280/, "窄屏 detail 应让位给路径");
+		assert.match(narrow[1]!, /file-name\.ts/, "路径尾部应保留");
+		const wide = plain(group.render(220));
+		assert.match(wide[1]!, /offset=280, limit=92/, "宽屏 detail 照常显示");
+
+		// 短路径：主参数本来就很短，detail 可以留。
+		const short = new Container() as any;
+		const shortRead = started("read", "detail-short", { path: "a.ts", offset: 1, limit: 2 });
+		shortRead.updateResult({ content: [{ type: "text", text: "x" }], isError: false });
+		const shortGrep = started("grep", "detail-short-grep", { pattern: "y" });
+		shortGrep.updateResult({ content: [{ type: "text", text: "a:1:y" }], isError: false });
+		short.addChild(shortRead);
+		short.addChild(shortGrep);
+		assert.match(
+			plain((short.children[0] as ToolGroupComponent).render(60))[1]!,
+			/offset=1, limit=2/,
+		);
+	} finally {
+		hooks.shutdown();
+	}
+});

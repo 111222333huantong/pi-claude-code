@@ -382,13 +382,29 @@ function resultNoteTail(tool: any, fg: Fg): string {
 	return ` ${fg("dim", `· ${count} ${count === 1 ? singular : plural}`)}`;
 }
 
+/** detail（offset/limit、taskId 等）最多值得占用的宽度；主参数不够时先让它。 */
+const MIN_MAIN_WIDTH_WITH_DETAIL = 30;
+
+/** 摘要主参数实际需要的列数：路径按 prefix + 路径值算，其余按 main 算。 */
+function mainSummaryWidth(summary: ToolCallSummary): number {
+	return summary.path
+		? visibleWidth(summary.path.prefix) + 1 + visibleWidth(summary.path.value)
+		: visibleWidth(summary.main);
+}
+
 /** 子工具折叠行正文：与组内同一套摘要。 */
 function toolSummaryText(tool: any, toolStatus: ToolStatus, width: number, fg: Fg): string {
 	const summary = askUserResultSummary(tool) ?? codemodeResultSummary(tool) ?? toolSummary(tool);
-	const detail = fg("dim", summary.detail);
 	const result =
 		agentResultTail(tool, fg) + resultNoteTail(tool, fg) + shellResultTail(tool, fg, toolStatus);
-	const mainWidth = Math.max(0, width - visibleWidth(detail) - visibleWidth(result));
+	const resultWidth = visibleWidth(result);
+	const detailWidth = visibleWidth(summary.detail);
+	// 窄屏先让 detail（offset=/limit= 这类）让位，保住路径或命令本身。
+	// 短主参数（`a.ts`）不按 30 列硬卡，只要求它自己放得下。
+	const mainBudget = Math.min(MIN_MAIN_WIDTH_WITH_DETAIL, mainSummaryWidth(summary));
+	const showDetail = summary.detail.length > 0 && width - detailWidth - resultWidth >= mainBudget;
+	const detail = showDetail ? fg("dim", summary.detail) : "";
+	const mainWidth = Math.max(0, width - (showDetail ? detailWidth : 0) - resultWidth);
 	return `${renderToolSummary(summary, mainWidth, fg)}${detail}${result}`;
 }
 

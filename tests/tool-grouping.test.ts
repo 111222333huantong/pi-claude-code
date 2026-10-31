@@ -915,3 +915,31 @@ test("窄屏先让 offset/limit 让位，保住路径；短路径不被误伤", 
 		hooks.shutdown();
 	}
 });
+
+test("慢的 read/grep 行补耗时，快调用不补", () => {
+	const hooks = installToolGrouping(() => true);
+	const plain = (lines: string[]) =>
+		lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")).filter((line) => line.trim());
+	try {
+		const parent = new Container() as any;
+		const slow = started("read", "slow-read", { path: "big.ts" });
+		slow.updateResult({
+			content: [{ type: "text", text: "1\n2\n3\n4\n5" }],
+			isError: false,
+			durationMs: 1_500,
+		});
+		const quick = started("grep", "quick-grep", { pattern: "x" });
+		quick.updateResult({
+			content: [{ type: "text", text: "a:1:x\nb:2:x" }],
+			isError: false,
+			durationMs: 5,
+		});
+		parent.addChild(slow);
+		parent.addChild(quick);
+		const rows = plain((parent.children[0] as ToolGroupComponent).render(160));
+		assert.match(rows[1]!, / · 5 lines · 1\.5s$/);
+		assert.match(rows[2]!, / · 2 matches$/);
+	} finally {
+		hooks.shutdown();
+	}
+});

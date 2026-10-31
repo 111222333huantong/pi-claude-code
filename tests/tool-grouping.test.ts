@@ -834,7 +834,13 @@ test("组内检索行报产出：行数 / 匹配数 / 文件数 / 目录项数",
 		const find = started("find", "note-find", { pattern: "*.ts" });
 		find.updateResult({ content: [{ type: "text", text: "a.ts\nb.ts" }], isError: false });
 		const ls = started("ls", "note-ls", { path: "." });
-		ls.updateResult({ content: [{ type: "text", text: "src\ndocs" }], isError: false });
+		// SDK 的截断通知是末尾一整块 `[500 entries limit reached...]`，不能算成一条目录项。
+		ls.updateResult({
+			content: [
+				{ type: "text", text: "src\ndocs\n\n[500 entries limit reached. Use limit=1000 for more]" },
+			],
+			isError: false,
+		});
 		for (const tool of [read, grep, find, ls]) parent.addChild(tool);
 		const rows = plain((parent.children[0] as ToolGroupComponent).render(200));
 		assert.match(rows[1]!, /^ ├ ✓ Read a\.ts · 12 lines$/);
@@ -852,6 +858,19 @@ test("组内检索行报产出：行数 / 匹配数 / 文件数 / 目录项数",
 		empty.addChild(companion);
 		const emptyRows = plain((empty.children[0] as ToolGroupComponent).render(160));
 		assert.match(emptyRows[1]!, / · no matches$/);
+
+		// grep context 模式一块结果有多行，只数匹配行（`path:N:`），上下文行不重复计数。
+		const ctx = new Container() as any;
+		const context = started("grep", "note-context", { pattern: "hit", context: 1 });
+		context.updateResult({
+			content: [{ type: "text", text: "a.ts:1: hit\na.ts-2- ctx\na.ts-3- ctx" }],
+			isError: false,
+		});
+		const ctxCompanion = started("read", "note-context-companion", { path: "z.ts" });
+		ctxCompanion.updateResult({ content: [{ type: "text", text: "z" }], isError: false });
+		ctx.addChild(context);
+		ctx.addChild(ctxCompanion);
+		assert.match(plain((ctx.children[0] as ToolGroupComponent).render(160))[1]!, / · 1 match$/);
 	} finally {
 		hooks.shutdown();
 	}

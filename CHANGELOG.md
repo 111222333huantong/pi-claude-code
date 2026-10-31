@@ -12,6 +12,8 @@
 - 组内折叠行报产出体积：`Read a.ts · 12 lines`、`Grep "TODO" · 3 matches`、
   `Find "*.ts" · 2 files`、`Ls . · 4 entries`；空结果用 `no matches` / `no files` /
   `empty` 短语。只对内置 read/grep/find/ls 生效，MCP 与扩展工具不猜口径。
+  结果末尾的 `[N entries limit reached...]` / `[50.0KB limit reached]` 通知块不计入；
+  grep 的 context 模式只数 `path:N:` 匹配行。
 
 ### 仓库
 

@@ -93,6 +93,23 @@ export function outputLineCount(result: any): number {
 	return text ? text.split("\n").length : 0;
 }
 
+/**
+ * SDK 追加在结果末尾的整块通知：`[500 entries limit reached. Use limit=1000 for more]`、
+ * `[50.0KB limit reached]`、`[Some lines truncated to 500 chars...]`。多行整行方括号。
+ */
+const RESULT_NOTICE_BLOCK_RE =
+	/\n+\[(?:\d+ (?:entries|matches|results) limit reached[^\]]*|\d+(?:\.\d+)?(?:B|KB|MB|GB) limit reached|Some lines truncated to \d+ chars[^\]]*)\]\s*$/;
+
+/**
+ * 结果正文行：去掉末尾的通知块与空行。折叠行的 `N lines` / `N matches` 用它计数，
+ * 否则截断场景会把 `[500 entries limit reached...]` 也算成一条结果。
+ */
+export function resultBodyLines(result: any): string[] {
+	const text = rawTextFromResult(result).replace(/\r\n?/g, "\n");
+	const body = text.replace(RESULT_NOTICE_BLOCK_RE, "").replace(/\n+$/, "");
+	return body ? body.split("\n") : [];
+}
+
 export function countLines(text: string): number {
 	return text
 		.trim()

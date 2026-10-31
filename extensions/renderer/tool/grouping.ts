@@ -50,7 +50,7 @@ import {
 	formatToolDuration,
 	headTruncateToWidth,
 	outputLineCount,
-	textFromResult,
+	resultBodyLines,
 	toolViewportWidth,
 } from "./result.ts";
 import {
@@ -361,11 +361,15 @@ function resultNoteTail(tool: any, fg: Fg): string {
 	if (tool?.result == null || tool.result.isError === true) return "";
 	const name = toolName(tool).toLowerCase();
 	if (!RESULT_NOTE_TOOL_NAMES.has(name)) return "";
-	const text = textFromResult(tool.result).trim();
+	const lines = resultBodyLines(tool.result);
+	const text = lines.join("\n").trim();
 	if (name === "grep" && text === "No matches found") return ` ${fg("dim", "· no matches")}`;
 	if (name === "find" && /^No files found/.test(text)) return ` ${fg("dim", "· no files")}`;
 	if (name === "ls" && text === "(empty directory)") return ` ${fg("dim", "· empty")}`;
-	const count = outputLineCount(tool.result);
+	// grep 的 context 模式里一块结果有多行（匹配行 `path:N:`、上下文 `path-N-`），
+	// 只数匹配行；格式对不上时回退到非空行数。
+	const matches = name === "grep" ? lines.filter((line) => /:\d+:/.test(line)).length : 0;
+	const count = matches || lines.filter((line) => line.trim() !== "").length;
 	if (count <= 0) return "";
 	const [singular, plural] =
 		name === "grep"

@@ -90,7 +90,15 @@ export function isAbortedResultText(text: string): boolean {
 
 export function outputLineCount(result: any): number {
 	const text = rawTextFromResult(result).replace(/\r\n?/g, "\n").replace(/\n+$/, "");
-	return text ? text.split("\n").length : 0;
+	if (!text) return 0;
+	// 只数换行，不 split：折叠摘要每次重绘都会走到这里。
+	let lines = 1;
+	let index = text.indexOf("\n");
+	while (index !== -1) {
+		lines++;
+		index = text.indexOf("\n", index + 1);
+	}
+	return lines;
 }
 
 /**
@@ -103,11 +111,26 @@ const RESULT_NOTICE_BLOCK_RE =
 /**
  * 结果正文行：去掉末尾的通知块与空行。折叠行的 `N lines` / `N matches` 用它计数，
  * 否则截断场景会把 `[500 entries limit reached...]` 也算成一条结果。
+ *
+ * 按 result 对象做 WeakMap 缓存：同一张卡反复重绘时不再 split 全文；
+ * source 文本变化（流式更新）会重新解析。
  */
+const resultBodyLinesCache = new WeakMap<object, { source: string; lines: string[] }>();
+
 export function resultBodyLines(result: any): string[] {
-	const text = rawTextFromResult(result).replace(/\r\n?/g, "\n");
-	const body = text.replace(RESULT_NOTICE_BLOCK_RE, "").replace(/\n+$/, "");
-	return body ? body.split("\n") : [];
+	const source = rawTextFromResult(result);
+	const cached =
+		result && typeof result === "object" ? resultBodyLinesCache.get(result) : undefined;
+	if (cached && cached.source === source) return cached.lines;
+	const body = source
+		.replace(/\r\n?/g, "\n")
+		.replace(RESULT_NOTICE_BLOCK_RE, "")
+		.replace(/\n+$/, "");
+	const lines = body ? body.split("\n") : [];
+	if (result && typeof result === "object") {
+		resultBodyLinesCache.set(result, { source, lines });
+	}
+	return lines;
 }
 
 export function countLines(text: string): number {

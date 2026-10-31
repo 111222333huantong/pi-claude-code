@@ -49,7 +49,11 @@ export function bashLivePreview(text: string, limit: number): BashLivePreview {
 		return lastPreview.result;
 	}
 
-	const normalized = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+	// 只有含 CR 才走全局替换；末尾换行手动回退，避免正则从字符串开头扫一遍。
+	let normalized = text.indexOf("\r") === -1 ? text : text.replace(/\r\n?/g, "\n");
+	let end = normalized.length;
+	while (end > 0 && normalized.charCodeAt(end - 1) === 10) end--;
+	if (end !== normalized.length) normalized = normalized.slice(0, end);
 	if (!/\S/.test(normalized)) {
 		const result: BashLivePreview = { total: 0, header: null, tail: [] };
 		lastPreview = { text, limit: safeLimit, result };

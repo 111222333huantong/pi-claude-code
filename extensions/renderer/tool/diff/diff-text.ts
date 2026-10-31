@@ -27,6 +27,9 @@ export function fitToWidth(text: string, width: number): string {
 	return gap > 0 ? `${trimmed}${" ".repeat(gap)}` : trimmed;
 }
 
+/** 单条逻辑行最多展开成多少视觉行；超过就截断并以 `…` 收尾（delta 的 wrap-max-lines 思路）。 */
+export const MAX_WRAPPED_LINES = 24;
+
 export function wrapToWidth(text: string, width: number, wordWrap: boolean): string[] {
 	if (width <= 0) {
 		return [""];
@@ -41,5 +44,21 @@ export function wrapToWidth(text: string, width: number, wordWrap: boolean): str
 		return [fitToWidth("", width)];
 	}
 
-	return wrapped.map((line) => fitToWidth(line, width));
+	// 压缩后的 JS/CSS 可能是一行几万字符；全量换行会把折叠区撑到几千行。
+	// 只保留前 N 个视觉行，最后一行的文本裁到 width-1 再补 `…`。
+	const capped =
+		wrapped.length > MAX_WRAPPED_LINES
+			? [
+					...wrapped.slice(0, MAX_WRAPPED_LINES - 1),
+					withEllipsis(wrapped[MAX_WRAPPED_LINES - 1]!, width),
+				]
+			: wrapped;
+
+	return capped.map((line) => fitToWidth(line, width));
+}
+
+function withEllipsis(line: string, width: number): string {
+	const room = Math.max(0, width - 1);
+	const clipped = visibleWidth(line) > room ? truncateToWidth(line, room, "") : line;
+	return `${clipped}…`;
 }

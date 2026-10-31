@@ -96,6 +96,55 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	// 当前会话的 poller（工具结束事件驱动刷新用；session 切换时更新）。
 	let activePoller: GitPoller | null = null;
 
+	// 运行中回合的计时：turn_start 起算，turn_end / agent_end 停；footer 每秒重绘一次。
+	let rerenderCurrent: (() => void) | null = null;
+	let turnStartedAt: number | null = null;
+	let turnTicker: ReturnType<typeof setInterval> | null = null;
+
+	const stopTurnTicker = () => {
+		if (turnTicker) clearInterval(turnTicker);
+		turnTicker = null;
+	};
+	const startTurnTicker = () => {
+		if (!rerenderCurrent || turnTicker) return;
+		turnTicker = setInterval(() => {
+			try {
+				rerenderCurrent?.();
+			} catch {
+				// ignore
+			}
+		}, 1_000);
+		turnTicker.unref?.();
+	};
+	const finishTurn = () => {
+		turnStartedAt = null;
+		stopTurnTicker();
+		try {
+			rerenderCurrent?.();
+		} catch {
+			// ignore
+		}
+	};
+
+	pi.on("turn_start", async (_event, ctx) => {
+		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		turnStartedAt = Date.now();
+		startTurnTicker();
+		try {
+			rerenderCurrent?.();
+		} catch {
+			// ignore
+		}
+	});
+	pi.on("turn_end", async (_event, ctx) => {
+		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		finishTurn();
+	});
+	pi.on("agent_end", async (_event, ctx) => {
+		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		finishTurn();
+	});
+
 	// 工具落定即刷 git 段（忙则丢弃，下拍补上；空闲 3s 拍不受影响）。
 	pi.on("tool_execution_end", async () => {
 		try {
@@ -109,6 +158,10 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		if (!readStatuslineConfig().enabled) return;
 
+		// 换会话时清掉上一会话可能残留的回合计时。
+		turnStartedAt = null;
+		stopTurnTicker();
+
 		let git: GitSnapshot = { ...EMPTY_GIT_SNAPSHOT };
 		let extTotal: number | null = null;
 		let mcpCount = 0;
@@ -120,6 +173,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 				// ignore
 			}
 		};
+		rerenderCurrent = rerender;
 
 		// git 快照：立即采一次 + 后台轮询。
 		try {
@@ -170,6 +224,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					unsubscribeBranch?.();
 					unsubscribeBranch = null;
 					requestRender = null;
+					rerenderCurrent = null;
 				},
 				render(width: number) {
 					const paint = (color: Parameters<Theme["fg"]>[0], text: string) => {
@@ -217,6 +272,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						ctxTokens: ctxUsage?.tokens ?? null,
 						ctxWindow: ctxUsage?.contextWindow ?? 0,
 						cost: usage.cost,
+						turnElapsedMs: turnStartedAt === null ? null : Date.now() - turnStartedAt,
 						mcp: mcpText,
 						extTotal,
 						branch: git.branch,
@@ -246,5 +302,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		activePoller = null;
 		unsubscribeBranch?.();
 		unsubscribeBranch = null;
+		rerenderCurrent = null;
+		finishTurn();
 	});
 }

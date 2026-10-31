@@ -15,6 +15,11 @@
   结果末尾的 `[N entries limit reached...]` / `[50.0KB limit reached]` 通知块不计入；
   grep 的 context 模式只数 `path:N:` 匹配行。
 
+### 新增
+
+- 状态栏在回合运行中显示 `run 12s`（每秒刷新，不足 1 秒不显示；
+  `turn_end` / `agent_end` 后自动消失），长时间任务不用回头看 working 行。
+
 ### 修复
 
 - 组内折叠行在窄屏下先让 `offset=` / `limit=` 这类 detail 让位，保住路径或命令本身；

@@ -68,7 +68,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
 | 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
 | 路径超链接              | 工具标题里的文件路径变为可点击 OSC8 链接（零宽度变化）                                | `/ccstyle` Features 页，默认关                  |
-| 状态栏（本 fork）         | 两行 footer：model/ctx/cost/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
+| 状态栏（本 fork）         | 两行 footer：model/ctx/cost/run/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
 | 状态栏（上游）            | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`（关掉 `/statusline` 后生效） |
 | 主题                  | 随包提供 CC Dark / CC Light / Catppuccin Mocha / Catppuccin Latte 四套主题      | `/settings` → Theme                             |
 

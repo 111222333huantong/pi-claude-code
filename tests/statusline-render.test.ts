@@ -10,6 +10,7 @@ import {
 	fitSegments,
 	formatCost,
 	formatTokens,
+	formatTurnElapsed,
 	SINGLE_LINE_MAX_WIDTH,
 	type StatusSnapshot,
 	thinkingColor,
@@ -61,6 +62,20 @@ test("formatCost: $1 以上两位小数，以下按有效小数；<$0.005 隐藏
 	assert.equal(formatCost(0.004), "");
 	assert.equal(formatCost(0), "");
 	assert.equal(formatCost(Number.NaN), "");
+});
+
+test("formatTurnElapsed: 不足 1 秒不显示，分钟级带秒", () => {
+	assert.equal(formatTurnElapsed(0), "");
+	assert.equal(formatTurnElapsed(999), "");
+	assert.equal(formatTurnElapsed(1_000), "run 1s");
+	assert.equal(formatTurnElapsed(65_000), "run 1m 5s");
+});
+
+test("buildLine1: 运行中回合在 cost 后显示 run 段", () => {
+	assert.match(
+		buildLine1({ ...base, turnElapsedMs: 12_000 }, 160, identity),
+		/\$1\.23 │ run 12s │ mcp/,
+	);
 });
 
 test("ctxColor: 70/90 两档阈值", () => {

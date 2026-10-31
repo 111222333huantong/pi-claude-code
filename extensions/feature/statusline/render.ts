@@ -8,7 +8,7 @@
  */
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { formatTokens, truncateByWidth } from "../../utils/format.ts";
+import { formatDuration, formatTokens, truncateByWidth } from "../../utils/format.ts";
 
 export type Paint = (color: ThemeColor, text: string) => string;
 
@@ -21,6 +21,8 @@ export interface StatusSnapshot {
 	ctxTokens: number | null;
 	ctxWindow: number;
 	cost: number;
+	/** 正在跑的回合已用时间（ms）；空闲时为 null/undefined。 */
+	turnElapsedMs?: number | null;
 	/** 已归一化的 mcp 文案（如 `mcp 3 enabled`），无则 null。 */
 	mcp: string | null;
 	/** 扩展总数，无（未加载完）则 null。 */
@@ -53,6 +55,12 @@ export function formatCost(cost: number): string {
 	if (cost >= 1) return `$${cost.toFixed(2)}`;
 	const fixed = cost.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 	return `$${fixed}`;
+}
+
+/** 运行中的回合耗时：不足 1 秒不显示，格式与 working 行一致（`12s` / `1m 5s`）。 */
+export function formatTurnElapsed(ms: number | null | undefined): string {
+	if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 1_000) return "";
+	return `run ${formatDuration(ms)}`;
 }
 
 /** ctx 段颜色：≥90 error，≥70 warning，否则 dim；null 按 dim。 */
@@ -226,6 +234,10 @@ function line1Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 		const costText = formatCost(snapshot.cost);
 		if (costText)
 			segments.push({ plain: costText, painted: paint("text", costText), priority: 60 });
+	}
+	const turnText = formatTurnElapsed(snapshot.turnElapsedMs);
+	if (turnText) {
+		segments.push({ plain: turnText, painted: paint("muted", turnText), priority: 55 });
 	}
 	if (snapshot.mcp) {
 		const mcpShort = snapshot.mcp.replace(/\s+enabled$/, "");

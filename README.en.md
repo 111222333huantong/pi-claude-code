@@ -72,7 +72,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |
 | Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
 | Path hyperlinks             | File paths in tool titles become clickable OSC8 links (zero width change)                 | `/ccstyle` Features tab, off by default         |
-| Statusline (this fork)      | Two-line footer: model/ctx/cost/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
+| Statusline (this fork)      | Two-line footer: model/ctx/cost/run/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
 | Status bar (upstream)       | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
 | Theme                       | Bundled CC Dark / CC Light / Catppuccin Mocha / Catppuccin Latte themes                   | `/settings` → Theme                             |
 

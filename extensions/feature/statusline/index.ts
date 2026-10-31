@@ -24,7 +24,7 @@ import {
 } from "./git.ts";
 import { getPrNumber } from "./pr.ts";
 import { buildLines, type StatusSnapshot } from "./render.ts";
-import { summarizeUsage } from "./usage.ts";
+import { EMPTY_USAGE_TOTALS, summarizeUsage, type UsageTotals } from "./usage.ts";
 
 function shortCwd(cwd: string): string {
 	return shortenCwd(cwd, homedir());
@@ -100,6 +100,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	let rerenderCurrent: (() => void) | null = null;
 	let turnStartedAt: number | null = null;
 	let turnTicker: ReturnType<typeof setInterval> | null = null;
+	// 用量累计只在会话叶子变化时重算：run timer 每秒重绘，不能再每秒扫全分支。
+	let usageCache: { leafId: string | null; totals: UsageTotals } | null = null;
 
 	const stopTurnTicker = () => {
 		if (turnTicker) clearInterval(turnTicker);
@@ -158,9 +160,10 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		if (!readStatuslineConfig().enabled) return;
 
-		// 换会话时清掉上一会话可能残留的回合计时。
+		// 换会话时清掉上一会话可能残留的回合计时与用量缓存。
 		turnStartedAt = null;
 		stopTurnTicker();
+		usageCache = null;
 
 		let git: GitSnapshot = { ...EMPTY_GIT_SNAPSHOT };
 		let extTotal: number | null = null;
@@ -242,11 +245,17 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					}
 					if (thinking === "off") thinking = null;
 
-					let usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+					let usage: UsageTotals = { ...EMPTY_USAGE_TOTALS };
 					try {
-						usage = summarizeUsage(ctx.sessionManager.getBranch());
+						const leafId = ctx.sessionManager.getLeafId();
+						if (usageCache?.leafId === leafId) {
+							usage = usageCache.totals;
+						} else {
+							usage = summarizeUsage(ctx.sessionManager.getBranch());
+							usageCache = { leafId, totals: usage };
+						}
 					} catch {
-						// keep zeros
+						usageCache = null;
 					}
 					const ctxUsage = (() => {
 						try {
@@ -303,6 +312,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		unsubscribeBranch?.();
 		unsubscribeBranch = null;
 		rerenderCurrent = null;
+		usageCache = null;
 		finishTurn();
 	});
 }

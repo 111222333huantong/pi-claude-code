@@ -32,6 +32,8 @@ export function formatDuration(ms: number): string {
 
 /** Claude-style 紧凑 token 计数：18 / 1.4k / 12k（working-message 与 statusline 同口径）。 */
 export function formatTokens(value: number): string {
+	// 上游偶尔给 NaN / Infinity（缺字段、除法为 0）；别把 "NaNk" 漏到状态栏。
+	if (!Number.isFinite(value)) return "?";
 	const n = Math.max(0, Math.round(value));
 	if (n < 1000) return String(n);
 	const k = n / 1000;

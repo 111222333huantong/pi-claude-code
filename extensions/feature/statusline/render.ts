@@ -44,9 +44,15 @@ export const SEPARATOR = " │ ";
 /** 与 working-message 一致的紧凑 token 计数：18 / 1.4k / 12k（收口自 utils/format）。 */
 export { formatTokens };
 
-/** `$1.23` 两位小数；订阅制零成本由调用方整段隐藏。 */
+/**
+ * `$1.23`；$1 以下按有效小数显示（`$0.05`、`$0.012`），不足 $0.005 整段隐藏。
+ * 直接 toFixed(2) 会把 $0.004 显示成 `$0.00`，让人以为没花钱（grok-build / codeburn 同口径）。
+ */
 export function formatCost(cost: number): string {
-	return `$${cost.toFixed(2)}`;
+	if (!Number.isFinite(cost) || cost < 0.005) return "";
+	if (cost >= 1) return `$${cost.toFixed(2)}`;
+	const fixed = cost.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+	return `$${fixed}`;
 }
 
 /** ctx 段颜色：≥90 error，≥70 warning，否则 dim；null 按 dim。 */
@@ -218,7 +224,8 @@ function line1Segments(snapshot: StatusSnapshot, paint: Paint): FitSegment[] {
 
 	if (snapshot.cost > 0) {
 		const costText = formatCost(snapshot.cost);
-		segments.push({ plain: costText, painted: paint("text", costText), priority: 60 });
+		if (costText)
+			segments.push({ plain: costText, painted: paint("text", costText), priority: 60 });
 	}
 	if (snapshot.mcp) {
 		const mcpShort = snapshot.mcp.replace(/\s+enabled$/, "");

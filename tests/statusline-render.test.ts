@@ -46,11 +46,21 @@ test("formatTokens: 与 working-message 同口径", () => {
 	assert.equal(formatTokens(1400), "1.4k");
 	assert.equal(formatTokens(12000), "12k");
 	assert.equal(formatTokens(46000), "46k");
+	// 上游缺字段/除零时别把 NaNk 漏到状态栏。
+	assert.equal(formatTokens(Number.NaN), "?");
+	assert.equal(formatTokens(Number.POSITIVE_INFINITY), "?");
 });
 
-test("formatCost: 两位小数", () => {
+test("formatCost: $1 以上两位小数，以下按有效小数；<$0.005 隐藏", () => {
 	assert.equal(formatCost(1.23), "$1.23");
 	assert.equal(formatCost(12.8), "$12.80");
+	assert.equal(formatCost(0.05), "$0.05");
+	assert.equal(formatCost(0.012), "$0.012");
+	assert.equal(formatCost(0.006), "$0.006");
+	// 不足半分钱不显示 $0.00（grok-build / codeburn 同口径）。
+	assert.equal(formatCost(0.004), "");
+	assert.equal(formatCost(0), "");
+	assert.equal(formatCost(Number.NaN), "");
 });
 
 test("ctxColor: 70/90 两档阈值", () => {
@@ -73,10 +83,14 @@ test("buildLine1: 宽屏全段", () => {
 	);
 });
 
-test("buildLine1: cost 为 0 整段隐藏", () => {
-	const line = buildLine1({ ...base, cost: 0 }, 120, identity);
-	assert.equal(line.includes("$"), false);
-	assert.equal(line.includes("mcp 3 enabled"), true);
+test("buildLine1: cost 为 0 或不足半分钱整段隐藏，$0.012 正常显示", () => {
+	const zero = buildLine1({ ...base, cost: 0 }, 120, identity);
+	assert.equal(zero.includes("$"), false);
+	assert.equal(zero.includes("mcp 3 enabled"), true);
+	const sub = buildLine1({ ...base, cost: 0.004 }, 120, identity);
+	assert.equal(sub.includes("$"), false);
+	const cheap = buildLine1({ ...base, cost: 0.012 }, 120, identity);
+	assert.equal(cheap.includes("$0.012"), true);
 });
 
 test("buildLine1: ctx 90+ 加 !! 标记", () => {

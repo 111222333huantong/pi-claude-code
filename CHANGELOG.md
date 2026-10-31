@@ -15,6 +15,12 @@
   结果末尾的 `[N entries limit reached...]` / `[50.0KB limit reached]` 通知块不计入；
   grep 的 context 模式只数 `path:N:` 匹配行。
 
+### 修复
+
+- 状态栏成本显示：`$1` 以上两位小数，以下按有效小数（`$0.05` / `$0.012`），
+  不足 `$0.005` 整段隐藏——不再把 `$0.004` 显示成误导性的 `$0.00`。
+- `formatTokens` 遇到 `NaN` / `Infinity` 回 `?`，负数归 0，避免异常值漏进状态栏。
+
 ### 仓库
 
 - 新增 `CONTRIBUTING.md`、`SECURITY.md`、issue 模板（bug / feature）、

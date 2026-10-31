@@ -441,9 +441,14 @@ test("every format joins a synthetic neighbour tool with one grouped row per age
 				`${agents.length - failed + 1} done`,
 				...(failed ? [`${failed} failed`] : []),
 			];
+			// 组头工具列表按次数降序、同次数按名称排序（只有 1 个 agent 时 Read 在前）。
+			const breakdown =
+				agents.length === 1
+					? "Read×1, Subagent Finished×1"
+					: `Subagent Finished×${agents.length}, Read×1`;
 			assert.equal(
 				rows[0],
-				` ● Multiple Tools: ${counts.join(" · ")} · Subagent Finished×${agents.length}, Read×1 · click to show more`,
+				` ● Multiple Tools: ${counts.join(" · ")} · ${breakdown} · click to show more`,
 				fixture.name,
 			);
 			// 组内行与单独行共用同一套摘要，只换了树枝前缀、去掉了提示。

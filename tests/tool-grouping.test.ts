@@ -75,7 +75,7 @@ test("mixed tools group across three empty separators while edit/write and conte
 			.filter((line: string) => line.trim());
 		assert.match(
 			collapsed[0],
-			/^ ● Multiple Tools: 3 running · Read×1, Bash×1, Grep×1 · click to show more$/,
+			/^ ● Multiple Tools: 3 running · Bash×1, Grep×1, Read×1 · click to show more$/,
 		);
 		assert.equal(collapsed.filter((line: string) => line.trim()).length, 4);
 		assert.match(collapsed[1], /^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read /);
@@ -288,7 +288,7 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 			.filter((line: string) => line.trim());
 		assert.match(
 			agentLines[0],
-			/^ ● Multiple Tools: 2 done · Subagent×1, Get Subagent Result×1 · click to show more$/,
+			/^ ● Multiple Tools: 2 done · Get Subagent Result×1, Subagent×1 · click to show more$/,
 		);
 		assert.equal(agentLines[1], " ├ ✓ Subagent 再次测试 tool 调用");
 		// 本 fork：无映射的长 agent_id 回落 8 位短 ID（agent-titles 垫片口径，VENDOR §7）。

@@ -547,7 +547,10 @@ function toolNameList(items: readonly GroupDisplayItem[]): string {
 	for (const { label } of items) {
 		counts.set(label, (counts.get(label) ?? 0) + 1);
 	}
-	return [...counts].map(([label, count]) => `${label}×${count}`).join(", ");
+	return [...counts]
+		.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+		.map(([label, count]) => `${label}×${count}`)
+		.join(", ");
 }
 
 let nextGroupId = 1;

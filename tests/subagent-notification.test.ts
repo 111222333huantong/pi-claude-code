@@ -318,7 +318,7 @@ test("a finished subagent joins the adjacent tools as one more grouped item", ()
 		assert.ok(group instanceof ToolGroupComponent);
 		assert.equal(group.children[0], note, "the notification keeps its place in the order");
 		assert.deepEqual(plain(group.render(240)), [
-			" ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Read×1 · click to show more",
+			" ● Multiple Tools: 3 done · Get Subagent Result×1, Read×1, Subagent Finished×1 · click to show more",
 			" ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s",
 			// 本 fork：无映射的长 agent_id 回落 8 位短 ID（agent-titles 垫片口径，VENDOR §7）。
 			" ├ ✓ Get Subagent Result 6dae0e11",
@@ -835,7 +835,7 @@ test("a steered agent keeps its outcome inside the tool group", () => {
 		const rows = plain(parent.children[0].render(240));
 		assert.match(
 			rows[0]!,
-			/^ ● Multiple Tools: 5 done · Subagent×2, Steer Subagent×1, Subagent Finished×1, Bash×1 · /,
+			/^ ● Multiple Tools: 5 done · Subagent×2, Bash×1, Steer Subagent×1, Subagent Finished×1 · /,
 		);
 		assert.equal(
 			rows[4],

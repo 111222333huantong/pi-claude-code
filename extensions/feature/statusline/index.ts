@@ -29,6 +29,9 @@ import { collectUsage, EMPTY_USAGE_TOTALS, type UsageCache, type UsageTotals } f
 /** ctx.getContextUsage() 的返回形状（可能 undefined）。 */
 type ContextUsage = ReturnType<ExtensionContext["getContextUsage"]>;
 
+/** 上下文统计兜底刷新间隔：leaf/模型不变时最多沿用 5s。 */
+const CONTEXT_USAGE_TTL_MS = 5_000;
+
 function shortCwd(cwd: string): string {
 	return shortenCwd(cwd, homedir());
 }
@@ -106,8 +109,9 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	let turnTicker: ReturnType<typeof setInterval> | null = null;
 	// 用量累计只在会话叶子变化时重算：run timer 每秒重绘，不能再每秒扫全分支。
 	let usageCache: UsageCache | null = null;
-	// ctx.getContextUsage() 会重建 session projection 并扫全消息；按叶子 + 模型缓存。
-	let contextUsageCache: { key: string; value: ContextUsage } | null = null;
+	// ctx.getContextUsage() 会重建 session projection 并扫全消息；按叶子 + 模型缓存，
+	// 另加 5s TTL：工具集/系统提示变化不一定产生新 leaf，兜底刷新一次。
+	let contextUsageCache: { key: string; at: number; value: ContextUsage } | null = null;
 	// 状态栏配置只在启动/命令写入时读一次，渲染路径不碰文件。
 	let renderConfig: ReturnType<typeof readStatuslineConfig> | null = null;
 
@@ -271,11 +275,15 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					try {
 						const model = ctx.model;
 						const key = `${leafId ?? ""}\0${model?.id ?? ""}\0${model?.name ?? ""}\0${model?.contextWindow ?? 0}`;
-						if (contextUsageCache?.key === key) {
+						const now = Date.now();
+						if (
+							contextUsageCache?.key === key &&
+							now - contextUsageCache.at < CONTEXT_USAGE_TTL_MS
+						) {
 							ctxUsage = contextUsageCache.value;
 						} else {
 							ctxUsage = ctx.getContextUsage();
-							contextUsageCache = { key, value: ctxUsage };
+							contextUsageCache = { key, at: now, value: ctxUsage };
 						}
 					} catch {
 						contextUsageCache = null;

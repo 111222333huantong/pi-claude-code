@@ -73,6 +73,9 @@ import { installUserMessageRender, refreshUserMessages } from "./user-message.ts
 
 let compactModeHooks: CompactModeHooks | undefined;
 
+/** Shiki 预热延迟：让首屏与首次输入先获得 CPU，再加载高亮器。 */
+const SHIKI_PREWARM_DELAY_MS = 2_000;
+
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
 	const tui = getToolMouseTui();
 	refreshTranscriptGutter(tui);
@@ -151,7 +154,7 @@ export default function (
 	// 捕获的 ctx，回调里再读旧 ctx 会抛未捕获异常。统一登记、取消并吞错
 	// （cc-my-pi `e4af1d6` #10 口径）。
 	const deferredSessionWork = new Set<ReturnType<typeof setTimeout>>();
-	const scheduleDeferred = (work: () => void): void => {
+	const scheduleDeferred = (work: () => void, delayMs = 0): void => {
 		const timer = setTimeout(() => {
 			deferredSessionWork.delete(timer);
 			try {
@@ -159,7 +162,7 @@ export default function (
 			} catch {
 				/* stale ctx after session lifecycle change */
 			}
-		}, 0);
+		}, delayMs);
 		deferredSessionWork.add(timer);
 	};
 	const cancelDeferredSessionWork = (): void => {
@@ -202,13 +205,10 @@ export default function (
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		// 打点段落包在 compact-mode 之外层（后装先拆），接管其下游 updateContent。
 		const disposeDottedParagraphs = installDottedParagraphs();
-		// Shiki 预热：动态 import + WASM + 双主题只加载一次（约 200ms），
-		// 后面首次展开 diff 不再顿。fire-and-forget，失败走懒加载。
-		try {
-			prewarmShikiHighlight();
-		} catch {
-			// ignore: highlighting falls back to lazy load + plain text
-		}
+		// Shiki 预热：动态 import + WASM + 双主题只加载一次（约 100–200ms）。
+		// 放到首屏之后空闲再跑，避免挤占启动；首次展开 diff 前通常已完成，
+		// 未完成时仍走懒加载。会话切换会取消未执行的预热。
+		scheduleDeferred(() => prewarmShikiHighlight(), SHIKI_PREWARM_DELAY_MS);
 		installation = {
 			defaultMode,
 			toolGrouping,

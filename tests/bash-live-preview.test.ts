@@ -384,3 +384,32 @@ test("write 预告片头 Preview… 无盲文（单盲文规矩）", () => {
 		hooks.shutdown();
 	}
 });
+
+test("bashLivePreview: 流式追加走增量路径，结果与全量重算一致", () => {
+	// 先落一段基准，再逐行追加；每步都与“冷启动重算”对比。
+	bashLivePreview("inc-base\nline-1", 5);
+	for (let step = 2; step <= 40; step++) {
+		const incremental = bashLivePreview(`inc-base\nline-1\nline-${step}`, 5);
+		// 换一个不以旧文本为前缀的输入，强制冷路径重算同一份文本。
+		bashLivePreview(`cold-${step}`, 5);
+		const cold = bashLivePreview(`inc-base\nline-1\nline-${step}`, 5);
+		assert.equal(incremental.total, cold.total, `step ${step}`);
+		assert.deepEqual(incremental.tail, cold.tail, `step ${step}`);
+		assert.equal(incremental.header, cold.header, `step ${step}`);
+	}
+});
+
+test("bashLivePreview: 非前缀替换、CRLF、limit 变化都不复用旧结果", () => {
+	bashLivePreview("aaaa\nbbbb\ncccc", 3);
+	assert.deepEqual(bashLivePreview("xxxx\nyyyy", 3).tail, ["xxxx", "yyyy"]);
+	bashLivePreview("crlf\r\none\r\ntwo", 2);
+	assert.deepEqual(bashLivePreview("crlf\r\none\r\ntwo\r\nthree", 2).tail, ["two", "three"]);
+	bashLivePreview("limit\none\ntwo\nthree", 2);
+	assert.deepEqual(bashLivePreview("limit\none\ntwo\nthree", 3).tail, ["one", "two", "three"]);
+});
+
+test("bashLivePreview: 尾部空行追加不改变 total/header", () => {
+	bashLivePreview("tail-a\ntail-b", 5);
+	assert.equal(bashLivePreview("tail-a\ntail-b\n\n\n", 5).total, 2);
+	assert.equal(bashLivePreview("tail-a\ntail-b\n\n\n", 5).header, null);
+});

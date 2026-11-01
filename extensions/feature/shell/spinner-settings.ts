@@ -22,7 +22,7 @@ export type SpinnerColorSettings = {
 	glyphColor: string;
 };
 
-const SETTINGS_TTL_MS = 1_000;
+const SETTINGS_TTL_MS = 5_000;
 let _cache: { value: SpinnerColorSettings; expires: number } | null = null;
 
 function readJsonFile(path: string): Record<string, unknown> {

@@ -188,12 +188,30 @@ export function planPendingPreview(toolName: string, args: any, cwd: string): Pe
 }
 
 /** FNV-1a 同步 hash（抄 cc-tools `hashText`）：指纹用长度+hash，不 stringify 全文。 */
+type PreviewHashState = { text: string; length: number; hash: number };
+/**
+ * 上一次 hash 的前缀状态：流式 write 每帧只追加一小段，FNV-1a 可以接着算，
+ * 只扫新增后缀；不再每帧把 1MB 正文从头哈希一遍。
+ */
+let lastPreviewHash: PreviewHashState | null = null;
+
 export function hashPreviewText(text: string): string {
+	const previous = lastPreviewHash;
+	let start = 0;
 	let hash = 2166136261;
-	for (let index = 0; index < text.length; index++) {
+	if (
+		previous &&
+		text.length >= previous.length &&
+		text.slice(0, previous.length) === previous.text
+	) {
+		start = previous.length;
+		hash = previous.hash;
+	}
+	for (let index = start; index < text.length; index++) {
 		hash ^= text.charCodeAt(index);
 		hash = Math.imul(hash, 16777619);
 	}
+	lastPreviewHash = { text, length: text.length, hash };
 	return (hash >>> 0).toString(36);
 }
 

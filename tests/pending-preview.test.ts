@@ -170,6 +170,15 @@ test("hashPreviewText: 确定性 FNV-1a，大 content 指纹不分配全文 JSON
 	assert.equal(hashPreviewText("hello"), hashPreviewText("hello"));
 	assert.notEqual(hashPreviewText("hello"), hashPreviewText("world"));
 	assert.match(hashPreviewText("x"), /^[0-9a-z]+$/);
+	// 增量哈希：追加后必须等于从头重算的结果，否则会复用错误指纹。
+	const base = "line\n".repeat(500);
+	hashPreviewText(base);
+	const appended = `${base}${"line\n".repeat(500)}tail`;
+	const incremental = hashPreviewText(appended);
+	// 用一段完全不相关的前缀把模块级前缀缓存挤掉，再算一次全量。
+	hashPreviewText("unrelated-prefix");
+	assert.equal(incremental, hashPreviewText(appended));
+	assert.notEqual(hashPreviewText(`${appended}!`), incremental);
 	// write 大 content：同参二次渲染复用组件（指纹命中，不重跑 Myers）。
 	const dir = fixture({ "big.ts": "base\n" });
 	try {

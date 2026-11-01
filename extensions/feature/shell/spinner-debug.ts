@@ -18,7 +18,7 @@ const envLogPath = process.env.PI_CC_SPINNER_LOG?.trim();
 export const SPINNER_LOG_PATH = envLogPath && envLogPath.length > 0 ? envLogPath : DEFAULT_LOG;
 
 const enabled =
-	process.env.PI_CC_SPINNER_DEBUG !== "0" && process.env.NODE_TEST_CONTEXT === undefined;
+	process.env.PI_CC_SPINNER_DEBUG === "1" && process.env.NODE_TEST_CONTEXT === undefined;
 
 /** Loader-patch counters: zero means the patch is running on a different
  * `@earendil-works/pi-tui` module instance than the live status indicator. */

@@ -279,11 +279,6 @@ function formatWorkingDuration(ms: number): string {
 	return formatDuration(ms) || "0s";
 }
 
-/** Claude-style compact token counts: 18, 1.4k, 12k（收口自 utils/format）。 */
-function formatTokenCount(value: number): string {
-	return formatTokens(value);
-}
-
 function statusText(text: string): string {
 	return `${STATUS_DIM}${text}${RESET}`;
 }
@@ -532,7 +527,7 @@ export default function (pi: ExtensionAPI): void {
 		const statusParts: string[] = [`${interruptShortcutText()} to interrupt`];
 
 		if (tokens > 0) {
-			statusParts.push(`↓ ${formatTokenCount(tokens)} tokens`);
+			statusParts.push(`↓ ${formatTokens(tokens)} tokens`);
 		}
 		// 停滞提示（抄 pi-ui 三色 working 的思想，取文本不断色）：
 		// 无工具执行且 30s 无 token 活动，大概率卡住。工具执行中不报（预期内等待）。

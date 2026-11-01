@@ -18,7 +18,12 @@ import {
 	startGitPoller,
 } from "../extensions/feature/statusline/git.ts";
 import registerStatusline, { normalizeMcpStatus } from "../extensions/feature/statusline/index.ts";
-import { _resetPrCache, getPrNumber, parsePrNumber } from "../extensions/feature/statusline/pr.ts";
+import {
+	_resetPrCache,
+	getPrNumber,
+	PR_CACHE_MAX_ENTRIES,
+	parsePrNumber,
+} from "../extensions/feature/statusline/pr.ts";
 
 test("parsePorcelainHead: 分支与上下游", () => {
 	assert.deepEqual(parsePorcelainHead("## main...origin/main"), {
@@ -255,4 +260,22 @@ test("getPrNumber: 60s 缓存 + 单飞行 + 失败记 null", async () => {
 	assert.equal(getPrNumber("D:/repo", true, failing, 0), null);
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(getPrNumber("D:/repo", true, failing, 1000), null);
+});
+
+test("getPrNumber: 缓存超过上限时淘汰最旧 key", async () => {
+	_resetPrCache();
+	const run = async (cwd: string) => `${cwd.length}`;
+	for (let index = 0; index < PR_CACHE_MAX_ENTRIES + 8; index++) {
+		getPrNumber(`/repo-${index}`, true, run, 0);
+	}
+	await new Promise((resolve) => setImmediate(resolve));
+	// 最早的一批已被淘汰：同一 key 会重新发起请求，而不是直接命中旧值。
+	let calls = 0;
+	const counting = async () => {
+		calls++;
+		return "7";
+	};
+	assert.equal(getPrNumber("/repo-0", true, counting, 1_000), null);
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(calls, 1);
 });

@@ -563,6 +563,8 @@ type SettledGroupCache = {
 	children: readonly unknown[];
 	args: unknown[];
 	results: unknown[];
+	/** 部分结果（流式）也算变化：与 pi-pretty 的 result/isPartial 双键一致。 */
+	partials: boolean[];
 	lines: string[];
 };
 
@@ -686,6 +688,7 @@ export class ToolGroupComponent extends Container {
 				cache.children[i] !== tool ||
 				cache.args[i] !== tool?.args ||
 				cache.results[i] !== tool?.result ||
+				cache.partials[i] !== Boolean(tool?.isPartial) ||
 				(!isSubagentNotificationComponent(tool) && status(tool) === "pending")
 			) {
 				return;
@@ -703,6 +706,7 @@ export class ToolGroupComponent extends Container {
 			children: [...this.children],
 			args: (this.children as any[]).map((tool) => tool?.args),
 			results: (this.children as any[]).map((tool) => tool?.result),
+			partials: (this.children as any[]).map((tool) => Boolean(tool?.isPartial)),
 			lines,
 		};
 	}

@@ -52,6 +52,23 @@ test("truncateByWidth: CJK 计 2 列，不断半个宽字符", () => {
 	assert.equal(truncateByWidth("纯中文", 7), "纯中文");
 });
 
+test("truncateByWidth: 不劈开 emoji 字素簇", () => {
+	// 家庭 emoji 是 7 个码点组成的一个簇；按码点切会留下半个簇。
+	for (const max of [2, 3, 4, 5, 6]) {
+		const out = truncateByWidth("👨‍👩‍👧‍👦 family", max);
+		assert.equal(
+			out.includes("👨‍") && !out.includes("👨‍👩‍👧‍👦") && out !== "👨‍👩‍👧‍👦…",
+			false,
+			`max=${max} produced a partial cluster: ${JSON.stringify(out)}`,
+		);
+		assert.ok(visibleWidth(out) <= max, `max=${max} overflowed: ${JSON.stringify(out)}`);
+	}
+	// 放得下时原样返回
+	assert.equal(truncateByWidth("👨‍👩‍👧‍👦", 2), "👨‍👩‍👧‍👦");
+	assert.equal(truncateByWidth("🇨🇳 flag", 4), "🇨🇳 …");
+	assert.equal(truncateByWidth("👍🏽 ok", 4), "👍🏽 …");
+});
+
 test("displayPath / formatDisplayPath 保留 POSIX 与 Windows 原生分隔符", () => {
 	assert.equal(displayPath("/home/user/project/src/file.ts", "/home/user/project"), "src/file.ts");
 	assert.equal(

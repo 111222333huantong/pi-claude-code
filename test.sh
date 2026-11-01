@@ -2,7 +2,7 @@
 set -u
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-npm_source='npm:pi-cc-extensions'
+npm_source='npm:pi-claude-code'
 
 agent_dir=${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
 settings=$agent_dir/settings.json

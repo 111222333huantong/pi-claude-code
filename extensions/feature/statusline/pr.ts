@@ -13,6 +13,8 @@ const execFileAsync = promisify(execFile);
 
 /** PR 缓存有效期：与上游 cc-my-pi / statusline-pi 同档 60 秒。 */
 export const PR_CACHE_TTL_MS = 60_000;
+/** 上限：key 是 cwd + 分支，长期会话切很多分支时防止无界增长。 */
+export const PR_CACHE_MAX_ENTRIES = 64;
 
 type Runner = (cwd: string) => Promise<string>;
 
@@ -37,6 +39,15 @@ export function parsePrNumber(output: string): number | null {
 const cache = new Map<string, { at: number; value: number | null }>();
 const inFlight = new Set<string>();
 
+function rememberPr(key: string, value: number | null, at: number): void {
+	cache.set(key, { at, value });
+	while (cache.size > PR_CACHE_MAX_ENTRIES) {
+		const oldest = cache.keys().next().value;
+		if (oldest === undefined) break;
+		cache.delete(oldest);
+	}
+}
+
 /** 同步返回上次已知值；过期则后台刷新一次（单飞行）。 */
 export function getPrNumber(
 	cwd: string,
@@ -54,11 +65,11 @@ export function getPrNumber(
 	inFlight.add(key);
 	run(cwd).then(
 		(out) => {
-			cache.set(key, { at: now, value: parsePrNumber(out) });
+			rememberPr(key, parsePrNumber(out), now);
 			inFlight.delete(key);
 		},
 		() => {
-			cache.set(key, { at: now, value: null });
+			rememberPr(key, null, now);
 			inFlight.delete(key);
 		},
 	);

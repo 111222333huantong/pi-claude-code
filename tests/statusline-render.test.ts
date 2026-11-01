@@ -201,7 +201,8 @@ test("fitSegments: short 变体先于剔除，shrinkPriority 小的先降级", (
 	assert.equal(fitSegments(segments, 8), "hi │ ab");
 	// 短形仍超才进剔除阶段：先丢低优先级的 ab。
 	assert.equal(fitSegments(segments, 6), "hi");
-	assert.equal(fitSegments(segments, 1), "");
+	// 只剩最后一段仍超宽时截断保留（hunk 口径），不再整段清空。
+	assert.equal(fitSegments(segments, 1).replace(/\x1b\[[0-9;]*m/g, ""), "…");
 	// 短形为空串的段在降级时直接消失（不再占分隔列）。
 	const vanish = [
 		{

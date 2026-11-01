@@ -88,7 +88,7 @@ import {
 
 type FrameToolRender = {
 	component: any;
-	lines: string[];
+	lineCount: number;
 	contentBoxLines: number;
 };
 
@@ -870,7 +870,7 @@ function buildInteractionFrame(
 				continue;
 			}
 			if (!rendered.contentBoxLines) continue;
-			cardStart = Math.max(0, rendered.lines.length - rendered.contentBoxLines);
+			cardStart = Math.max(0, rendered.lineCount - rendered.contentBoxLines);
 		}
 		for (const placement of componentPlacements) {
 			if (placement.componentRow < cardStart) continue;
@@ -950,7 +950,7 @@ function wrapToolRendersForFrame(
 					if (!Array.isArray(lines)) return lines;
 					renderedTools.push({
 						component,
-						lines: lines.map((line) => String(line)),
+						lineCount: lines.length,
 						contentBoxLines,
 					});
 					return lines.map((line, row) => `${line}${toolFrameMarker(id, row)}`);
@@ -1045,11 +1045,7 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 				const lines = Reflect.apply(originalTuiRender, this, renderArgs);
 				if (!Array.isArray(lines)) return lines;
 				sawTuiRender = true;
-				const extracted = extractToolFramePlacements(
-					lines.map((line) => String(line)),
-					idToComponent,
-					frame.idToView,
-				);
+				const extracted = extractToolFramePlacements(lines, idToComponent, frame.idToView);
 				placements = extracted.placements;
 				return extracted.lines;
 			};
@@ -1064,7 +1060,7 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 			// Test harnesses may paint via doRender without tui.render; recover markers there.
 			if (!sawTuiRender && Array.isArray(this.previousLines)) {
 				const extracted = extractToolFramePlacements(
-					this.previousLines.map((line: unknown) => String(line)),
+					this.previousLines,
 					idToComponent,
 					frame.idToView,
 				);

@@ -60,12 +60,13 @@ export function stripToolFrameMarkers(line: string): string {
  * 及其所属视图与 section），同时返回剥离 marker 后的行。
  */
 export function extractToolFramePlacements(
-	lines: string[],
+	lines: readonly unknown[],
 	idToComponent: Map<number, any>,
 	idToView: Map<number, ExpandedToolIoView>,
 ): { lines: string[]; placements: FrameToolPlacement[] } {
 	const placements: FrameToolPlacement[] = [];
-	const cleaned = lines.map((line, lineIndex) => {
+	const cleaned = lines.map((rawLine, lineIndex) => {
+		const line = typeof rawLine === "string" ? rawLine : String(rawLine);
 		const toolMatches = [...line.matchAll(TOOL_FRAME_MARKER_RE)];
 		const viewMatches = [...line.matchAll(TOOL_VIEW_MARKER_RE)];
 		const finalLine = stripToolFrameMarkers(line);

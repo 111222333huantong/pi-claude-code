@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
+import { measureWidth } from "./width.ts";
 
 /** 执行耗时/输出量键与短格式（真相源在 tool-metrics.ts，此处重导出防漂移）。 */
 export {
@@ -85,20 +86,25 @@ export function padLine(text: string, width: number): string {
 }
 
 /**
- * 按可见列宽截断纯文本（CJK 计 2 列，不断半个宽字符），超宽追加省略号。
- * ASCII 下与 `slice(0, max-1) + "…"` 逐字一致；不注入 ANSI，可安全用于摘要。
+ * 按可见列宽截断纯文本（CJK 计 2 列，不断半个宽字符、不劈开 emoji 字素簇），
+ * 超宽追加省略号。ASCII 下与 `slice(0, max-1) + "…"` 逐字一致；不注入 ANSI。
+ *
+ * 必须按**字素簇**而不是码点迭代：`👨‍👩‍👧‍👦`、`🇨🇳`、`👍🏽` 都是多码点单簇，
+ * 按码点切会留下半个簇，终端显示为替换符或错位。
  */
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 export function truncateByWidth(text: string, max: number, ellipsis = "…"): string {
 	if (max <= 0) return "";
-	if (visibleWidth(text) <= max) return text;
-	const budget = Math.max(0, max - visibleWidth(ellipsis));
+	if (measureWidth(text) <= max) return text;
+	const budget = Math.max(0, max - measureWidth(ellipsis));
 	let width = 0;
 	let end = 0;
-	for (const char of text) {
-		const w = visibleWidth(char);
+	for (const { segment } of GRAPHEME_SEGMENTER.segment(text)) {
+		const w = measureWidth(segment);
 		if (width + w > budget) break;
 		width += w;
-		end += char.length;
+		end += segment.length;
 	}
 	return text.slice(0, end) + ellipsis;
 }

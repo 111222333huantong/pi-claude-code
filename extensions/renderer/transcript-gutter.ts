@@ -167,12 +167,30 @@ function findTranscriptContainer(root: any): any {
 
 /** 扫描并安装右内缩（幂等）；root 为 null/非 TUI/空 transcript 时安全 no-op。 */
 export function refreshTranscriptGutter(root: any): void {
+	// 同一棵 TUI 树上容器是稳定的：命中缓存就直接返回，避免每个 message_update
+	// （流式时按 token 触发）都从根做一次 BFS。每 64 次强制全扫一次，容器被极端
+	// 情况替换时能自愈。
+	if (cachedRoot === root && cachedContainer && isTranscriptGutterContainer(cachedContainer)) {
+		scansSinceRefresh++;
+		if (scansSinceRefresh < FULL_SCAN_EVERY) return;
+	}
+	scansSinceRefresh = 0;
 	const container = findTranscriptContainer(root);
+	cachedRoot = root ?? null;
+	cachedContainer = container ?? null;
 	if (container) patchTranscriptContainer(container);
 }
 
+let cachedRoot: any = null;
+let cachedContainer: any = null;
+let scansSinceRefresh = 0;
+const FULL_SCAN_EVERY = 64;
+
 /** 释放全部右内缩包装（session_shutdown 统一调用）。 */
 export function disposeTranscriptGutter(): void {
+	cachedRoot = null;
+	cachedContainer = null;
+	scansSinceRefresh = 0;
 	const slots = patchRegistry.get<Set<any>>(TRANSCRIPT_GUTTER_SLOTS);
 	if (!slots) return;
 	for (const container of slots) unpatchTranscriptContainer(container);

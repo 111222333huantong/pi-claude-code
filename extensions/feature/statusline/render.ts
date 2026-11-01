@@ -7,7 +7,7 @@
  * 告警靠整段变色 + `!!`。
  */
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatDuration, formatTokens, truncateByWidth } from "../../utils/format.ts";
 
 export type Paint = (color: ThemeColor, text: string) => string;
@@ -140,14 +140,19 @@ export function fitSegments(segments: FitSegment[], width: number): string {
 		if (fits(current)) return emit(current);
 	}
 
-	// ② 剔除阶段（以降级后的文案为准）。
-	while (current.length > 0) {
+	// ② 剔除阶段（以降级后的文案为准）。留最后一段：全部剔光会让窄终端的状态栏
+	// 直接空掉；hunk 的做法是「最后一口气也要留一段并截断」，信息密度更好。
+	while (current.length > 1) {
 		if (fits(current)) return emit(current);
 		let dropIndex = 0;
 		for (let i = 1; i < current.length; i++) {
 			if (current[i]!.priority < current[dropIndex]!.priority) dropIndex = i;
 		}
 		current.splice(dropIndex, 1);
+	}
+	if (current.length === 1) {
+		if (fits(current)) return emit(current);
+		return truncateToWidth(current[0]!.painted, width, "…");
 	}
 	return "";
 }

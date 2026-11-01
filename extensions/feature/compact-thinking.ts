@@ -6,10 +6,10 @@
 // 2. 合并了上游 fork patch：subagent 工具（Agent/Agents）执行期间保持思考动画，
 //    直到 tool_execution_end 或下一个 text/thinking 边界才收尾。
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import {
+import type {
 	AssistantMessageComponent,
-	type ExtensionAPI,
-	type Theme,
+	ExtensionAPI,
+	Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
 	Box,
@@ -22,6 +22,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { getAssistantMessagePrototype } from "../compat/pi-internals.ts";
 import {
 	animateCompactThinkingText,
 	formatThoughtDuration,
@@ -844,8 +845,9 @@ function createTransform(
 	};
 }
 
-function compactThinking(pi: ExtensionAPI) {
-	const prototype = AssistantMessageComponent.prototype as PatchedPrototype;
+function compactThinking(pi: ExtensionAPI): boolean {
+	const prototype = getAssistantMessagePrototype() as PatchedPrototype | undefined;
+	if (!prototype || typeof prototype.updateContent !== "function") return false;
 	const originalUpdateContent = prototype.updateContent;
 
 	activeThinkingStateQuery = (messageTimestamp) =>
@@ -1443,6 +1445,7 @@ function compactThinking(pi: ExtensionAPI) {
 			patchInstalled = false;
 		}
 	});
+	return true;
 }
 
 type CompactThinkingOwner = {
@@ -1509,7 +1512,7 @@ export function installCompactThinking(
 		Object.assign(config, COMPACT_THINKING_DEFAULTS, initialConfig);
 		delegates.clear();
 
-		compactThinking({
+		const installedThinking = compactThinking({
 			on(eventName: string, handler: UpstreamHandler) {
 				if (eventName === "session_start") {
 					// Already inside session_start — run immediately.
@@ -1525,6 +1528,12 @@ export function installCompactThinking(
 			},
 			appendEntry: (...args: any[]) => (pi.appendEntry as any)(...args),
 		} as unknown as ExtensionAPI);
+
+		// Pi 内部接口缺失：不接管思考渲染，保留原生输出。
+		if (!installedThinking) {
+			delegates.clear();
+			return;
+		}
 
 		active = true;
 		patchRegistry.install(COMPACT_THINKING_OWNER, { owner, stop });

@@ -11,6 +11,7 @@
  */
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 import { Markdown, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getAssistantMessagePrototype } from "../compat/pi-internals.ts";
 import { config } from "../config/config.ts";
 import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
@@ -211,7 +212,8 @@ function resyncAssistantComponent(component: any): void {
 export function installDottedParagraphs(): () => void {
 	const previous = patchRegistry.get<{ dispose: () => void }>(ASSISTANT_DOTTED_PATCH);
 	if (previous) previous.dispose();
-	const prototype = (AssistantMessageComponent as any).prototype;
+	const prototype = getAssistantMessagePrototype();
+	if (!prototype) return () => {};
 	const downstream = prototype.updateContent;
 	const patch: { active: boolean; dispose: () => void } = {
 		active: true,

@@ -1,4 +1,5 @@
-import { Markdown, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getMarkdownPrototype } from "../../compat/pi-internals.ts";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { CODE_BLOCK_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
@@ -216,7 +217,11 @@ const RENDER_WRAPPED = Symbol.for("pi.ccstyle.code-block-render-wrapped");
  * `mode === "off"` 时直通原生。常驻安装、无需 dispose（开关走 live 判断）。
  */
 export function installCodeBlockBox(): void {
-	const prototype = Markdown.prototype as unknown as Record<string | symbol, unknown>;
+	const prototype = getMarkdownPrototype() as
+		| (Record<string | symbol, unknown> & { render?: unknown })
+		| undefined;
+	// Pi 内部接口缺失：放弃代码块套框，Markdown 保持原生渲染。
+	if (!prototype) return;
 	if ((prototype.render as unknown as Record<symbol, unknown>)?.[RENDER_WRAPPED]) {
 		patchRegistry.ensure(CODE_BLOCK_PATCH, () => ({ active: true }));
 		return;

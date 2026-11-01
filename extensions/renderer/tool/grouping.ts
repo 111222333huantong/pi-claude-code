@@ -6,6 +6,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { getContainerPrototype, toolDefinitions } from "../../compat/pi-internals.ts";
 import { config } from "../../config/config.ts";
 import {
 	contentRowRange,
@@ -77,7 +78,8 @@ type Patch = {
 };
 
 function toolName(tool: any): string {
-	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
+	const definitions = toolDefinitions(tool);
+	return String(tool?.toolName ?? definitions.extension?.name ?? "tool");
 }
 
 /**
@@ -85,10 +87,11 @@ function toolName(tool: any): string {
  */
 function toolTitle(tool: any): string {
 	const name = toolName(tool);
+	const definitions = toolDefinitions(tool);
 	return (
 		mcpToolTitle({
 			toolName: name,
-			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
+			definition: definitions.extension ?? definitions.builtIn,
 		}) ?? humanizeToolLabel(name)
 	);
 }
@@ -892,7 +895,10 @@ export type ToolGroupingHooks = {
 };
 
 export function installToolGrouping(getEnabled: () => boolean): ToolGroupingHooks {
-	const prototype = Container.prototype as any;
+	const prototype = getContainerPrototype();
+	if (!prototype) {
+		return { setTheme() {}, refresh() {}, shutdown() {} };
+	}
 	const previous = patchRegistry.get<Patch>(PATCH_KEY);
 	if (previous) {
 		previous.active = false;

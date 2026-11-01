@@ -4,6 +4,7 @@
  * 在 handleBashCommand 收尾补一次 flush。
  */
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { getMethodPrototype } from "../../compat/pi-internals.ts";
 import { FLUSH_DOCKED_BASH_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 
 type Patch = {
@@ -14,7 +15,8 @@ type Patch = {
 };
 
 export function installFlushDockedBash(): void {
-	const prototype = InteractiveMode.prototype as any;
+	const prototype = getMethodPrototype(InteractiveMode, "handleBashCommand", "flush-docked-bash");
+	if (!prototype) return;
 	const previous = patchRegistry.get<Patch>(FLUSH_DOCKED_BASH_PATCH);
 	if (previous) previous.active = false;
 	const original =

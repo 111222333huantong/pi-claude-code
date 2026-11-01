@@ -1,4 +1,10 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+	toolContentBox,
+	tuiPreviousLines,
+	tuiTerminalSize,
+	tuiViewportTop,
+} from "../../compat/pi-internals.ts";
 import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
@@ -814,11 +820,9 @@ function buildInteractionFrame(
 	renderedTools: FrameToolRender[],
 	placements: FrameToolPlacement[],
 ): InteractionFrame {
-	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	const { columns: width, rows: visibleRows } = tuiTerminalSize(tui);
 	// native: full buffer; map with the post-doRender previousViewportTop.
-	const lineIndexToScreenRow = (lineIndex: number) =>
-		lineIndex - (Number(tui?.previousViewportTop) || 0) + 1;
-	const visibleRows = Math.max(1, Number(tui?.terminal?.rows) || Number.POSITIVE_INFINITY);
+	const lineIndexToScreenRow = (lineIndex: number) => lineIndex - tuiViewportTop(tui) + 1;
 	const regions: InteractionRegion[] = [];
 	const renderedByComponent = new Map<any, FrameToolRender>();
 	for (const rendered of renderedTools) renderedByComponent.set(rendered.component, rendered);
@@ -865,8 +869,9 @@ function buildInteractionFrame(
 		if (!component.expanded) continue;
 		let cardStart = 0;
 		if (!(component instanceof ToolGroupComponent)) {
-			const box = component.contentBox;
-			if (!box || !Array.isArray(component.children) || !component.children.includes(box)) {
+			const box = toolContentBox(component);
+			const children = component.children;
+			if (!box || !Array.isArray(children) || !children.includes(box)) {
 				continue;
 			}
 			if (!rendered.contentBoxLines) continue;
@@ -926,12 +931,13 @@ function wrapToolRendersForFrame(
 			idToComponent.set(id, component);
 			const wrappedRender = function (this: any, ...renderArgs: any[]) {
 				let contentBoxLines = 0;
-				const box = component.contentBox;
+				const box = toolContentBox(component);
+				const children = component.children;
 				let boxRestore: { target: any; descriptor?: PropertyDescriptor } | undefined;
 				if (
 					box &&
-					Array.isArray(component.children) &&
-					component.children.includes(box) &&
+					Array.isArray(children) &&
+					children.includes(box) &&
 					typeof box.render === "function"
 				) {
 					const boxOriginal = box.render;
@@ -1058,12 +1064,9 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 			const result = Reflect.apply(original, this, args);
 			succeeded = true;
 			// Test harnesses may paint via doRender without tui.render; recover markers there.
-			if (!sawTuiRender && Array.isArray(this.previousLines)) {
-				const extracted = extractToolFramePlacements(
-					this.previousLines,
-					idToComponent,
-					frame.idToView,
-				);
+			const previousLines = tuiPreviousLines(this);
+			if (!sawTuiRender && previousLines) {
+				const extracted = extractToolFramePlacements(previousLines, idToComponent, frame.idToView);
 				this.previousLines = extracted.lines;
 				placements = extracted.placements;
 			}

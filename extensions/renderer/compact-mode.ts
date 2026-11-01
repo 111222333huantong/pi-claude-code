@@ -39,6 +39,7 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getAssistantMessagePrototype, getToolExecutionPrototype } from "../compat/pi-internals.ts";
 import { config, getToolDisplayConfig } from "../config/config.ts";
 import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
 import {
@@ -1229,8 +1230,20 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	const previous = patchRegistry.get<CompactModePatch>(COMPACT_MODE_PATCH_KEY);
 	if (previous) previous.dispose();
 
-	const assistantPrototype = AssistantMessageComponent.prototype as any;
-	const toolPrototype = ToolExecutionComponent.prototype as any;
+	const assistantPrototype = getAssistantMessagePrototype();
+	const toolPrototype = getToolExecutionPrototype();
+	// Pi 内部接口缺失：整套 compact 补丁放弃安装，回退原生渲染。
+	if (!assistantPrototype || !toolPrototype) {
+		return {
+			sync() {},
+			refresh() {},
+			assertOwnership() {},
+			refreshToolCallMessage() {},
+			settleIdleRound() {},
+			settleFinishedRound() {},
+			shutdown() {},
+		};
+	}
 	const patch: CompactModePatch = {
 		active: true,
 		prototype: assistantPrototype,

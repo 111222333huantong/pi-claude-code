@@ -4,6 +4,7 @@ import {
 	SkillInvocationMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { getMethodPrototype } from "../../compat/pi-internals.ts";
 import { config } from "../../config/config.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
@@ -110,7 +111,13 @@ export function installMessageDisplayRendering(): () => void {
 		dispose: () => {},
 	};
 	const installOne = (ComponentClass: any, kind: DisplayKind): void => {
-		const prototype = ComponentClass.prototype;
+		const prototype = getMethodPrototype(
+			ComponentClass,
+			"updateDisplay",
+			`message-display:${kind}`,
+		);
+		// 缺少 updateDisplay 的组件跳过该类型，其余类型照常接管。
+		if (!prototype) return;
 		const original = prototype.updateDisplay;
 		const installed = function (this: any) {
 			if (patch.active && config.mode !== "off") {

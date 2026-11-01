@@ -5,7 +5,12 @@
  * 卡片怎么画在 tool/ccstyle-tool.ts，本文件只负责安装与所有权。
  * 生命周期对齐 compact-mode：installDefaultMode → hooks.shutdown。
  */
-import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+	getToolExecutionPrototype,
+	toolChildren,
+	toolContentBox,
+	toolDefinitions,
+} from "../compat/pi-internals.ts";
 import { type CompactStyleMode, config, isExcludedRenderer } from "../config/config.ts";
 import {
 	COMPONENT_TOOL_RENDER_MODE,
@@ -90,32 +95,34 @@ type ToolExpandedBackgroundPatch = {
 };
 
 function syncToolShell(component: any, shell: "default" | "self"): void {
-	const target = shell === "self" ? component.selfRenderContainer : component.contentBox;
-	if (!target || !Array.isArray(component.children)) return;
+	const target = shell === "self" ? component.selfRenderContainer : toolContentBox(component);
+	const children = toolChildren(component);
+	if (!target || !children) return;
 	const candidates = new Set(
-		[component.contentText, component.contentBox, component.selfRenderContainer].filter(Boolean),
+		[component.contentText, toolContentBox(component), component.selfRenderContainer].filter(
+			Boolean,
+		),
 	);
-	const indexes = component.children
+	const indexes = children
 		.map((child: any, index: number) => (candidates.has(child) ? index : -1))
 		.filter((index: number) => index >= 0);
 	const targetIndex = indexes[0];
 	// 构造期 getRenderShell 先于 Pi 挂载 shell；此处勿挂载，否则构造器会二次添加。
 	if (targetIndex === undefined) return;
-	component.children[targetIndex] = target;
+	children[targetIndex] = target;
 	for (const index of indexes.sort((left: number, right: number) => right - left)) {
-		if (index !== targetIndex) component.children.splice(index, 1);
+		if (index !== targetIndex) children.splice(index, 1);
 	}
 }
 
 function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): boolean {
-	const extensionDefinition = component.toolDefinition;
-	const builtInDefinition = component.builtInToolDefinition;
-	const definition = extensionDefinition ?? builtInDefinition;
+	const definitions = toolDefinitions(component);
+	const definition = definitions.extension ?? definitions.builtIn;
 	const toolName = String(component.toolName || definition?.name || "");
 	// compact 也复用同一套 ccstyle call/result，避免折叠态工具卡回落到 Pi 原生样式。
 	const useCcstyle =
 		patch.mode() !== "off" &&
-		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
+		!preservesOriginalRenderer(definitions.extension, toolName, definitions.builtIn);
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
 	return useCcstyle;
 }
@@ -217,8 +224,9 @@ function toolPaintMatches(hit: ToolPaintHit, tool: any, width: number): boolean 
 
 function installGlobalToolRendering(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
-): GlobalToolRenderPatch {
-	const prototype = (ToolExecutionComponent as any).prototype;
+): GlobalToolRenderPatch | undefined {
+	const prototype = getToolExecutionPrototype();
+	if (!prototype) return undefined;
 	const previous = patchRegistry.get<GlobalToolRenderPatch>(GLOBAL_TOOL_RENDER_PATCH);
 	const downstream = downstreamForGlobalToolInstall(prototype, previous);
 	const originalRender =
@@ -377,7 +385,10 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 export function installToolExpandedBackground(): () => void {
 	const previous = patchRegistry.get<ToolExpandedBackgroundPatch>(TOOL_EXPANDED_BACKGROUND_PATCH);
 	if (previous) previous.dispose();
-	const prototype = ToolExecutionComponent.prototype as unknown as { updateDisplay: () => void };
+	const prototype = getToolExecutionPrototype() as unknown as
+		| { updateDisplay: () => void }
+		| undefined;
+	if (!prototype) return () => {};
 	const original = prototype.updateDisplay;
 	const patch: ToolExpandedBackgroundPatch = {
 		active: true,
@@ -417,6 +428,13 @@ export function installDefaultMode(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): DefaultModeHooks {
 	const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
+	// Pi 内部接口不兼容时放弃补丁：宁可回退原生渲染，也不要半装状态。
+	if (!globalToolRendering) {
+		return {
+			isOwner: () => false,
+			shutdown() {},
+		};
+	}
 	return {
 		isOwner() {
 			return (

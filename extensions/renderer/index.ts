@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { drainCompatIssues } from "../compat/pi-internals.ts";
 import {
 	type CompactStyleMode,
 	type Config,
@@ -321,6 +322,12 @@ export default function (
 			});
 		});
 		const hooks = ensureTuiInstallation(ctx);
+		// 补丁依赖的 Pi 内部接口缺失时提示一次：宁可回退原生渲染，也不静默半坏。
+		const compatIssues = drainCompatIssues();
+		if (compatIssues.length > 0) {
+			const summary = compatIssues.map((issue) => `${issue.feature}: ${issue.missing}`).join(", ");
+			ctx.ui?.notify?.(`ccstyle: 与当前 Pi 版本不兼容，部分样式已回退（${summary}）`, "warning");
+		}
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);

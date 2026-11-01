@@ -1,0 +1,19 @@
+
+ ✓ Edit src/sample.ts
+   ↳ diff · +4 · -2 · unified [━━━━━━━━]
+ ───────────────────────────────────────────────────────────────────────────────
+ @@ -1,6 +1,8 @@
+    1 │ import { run } from "./runner";
+ ▌  2 │ const threshold = 41;
+ ▌  2 │ const threshold = 42;
+    3 │ export default run;
+ ▌  4 │ export const version = "1.5.0";
+    5 │ // keep context
+    6 │ export type Mode = "on" | "compact";
+ @@ -40,4 +40,5 @@
+   40 │ function helper() {
+ ▌ 41 │   return threshold;
+ ▌ 41 │   return threshold + 1;
+ ▌ 42 │   // new note
+   43 │ }
+ ───────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,2 @@
+opus-4-6 (high) │ ctx ███████░ 88% · 175k/200k │ $1.23 │ run 1m 32s │ mcp 3 enabled │ ext 7 on
+~/pi-claude-code │ feat/statusline ↑2 +320 -87 │ PR #42 │ wt golden-wt

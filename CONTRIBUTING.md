@@ -30,6 +30,7 @@ npm test
 | `extensions/compat/` | Pi 内部接口（原型、`contentBox`、TUI 字段）的单点适配与降级 |
 | `extensions/utils/` | 无状态工具函数（宽度、ANSI、格式化） |
 | `tests/` | `node:test` 用例，按功能分文件，渲染断言以纯文本快照为主 |
+| `tests/golden/` | 整屏布局 golden 快照（diff / 工具卡 / 分组 / 状态栏） |
 | `themes/` | 随包发布的四套主题 |
 | `docs/VENDOR.md` | 上游合并记录与第三方来源，改上游同步逻辑时必读 |
 | `docs/release.md` | 发版流程（维护者） |
@@ -65,7 +66,24 @@ npm run bench:update    # 有意变更后重写基线
 npm test                                   # 全量
 node --test tests/tool-grouping.test.ts    # 单个文件
 npm run coverage                           # 覆盖率报告（无门槛）
+npm run test:golden                        # 只跑落盘布局快照
+npm run test:golden:update                 # 确认新布局后更新快照
 ```
+
+### Golden 布局快照
+
+`tests/golden/` 下是整屏纯文本快照：diff 宽度梯度（40/80/120、unified/split、
+折叠/展开）、工具卡状态、工具分组、状态栏降级。它们不测颜色（颜色槽位由
+SGR 断言覆盖），只测**布局与文案**。
+
+- 快照输入固定时钟、固定主题、固定虚拟 cwd；不要引入 `Date.now()`、真实
+  用户目录或本机 `/ccstyle` 配置，否则会在别人机器上漂移。
+- 改渲染逻辑后先跑 `npm run test:golden`，确认 diff 里是「你想要的变化」，
+  再 `test:golden:update`。
+- 新增场景在 `tests/golden/render-cases.ts` 里加一条；文件数控制在 20–30，
+  过多会变成盲目 `--update`。
+- `npm run test:golden:update` 依赖 POSIX 环境变量；Windows 可用
+  `set UPDATE_GOLDEN=1 && npm run test:golden`。
 
 - 渲染断言前先 `stripAnsi`，再 `filter(Boolean)`，否则空行/颜色会让快照很脆。
 - 涉及鼠标或真彩色的用例固定 `process.env.COLORTERM ??= "truecolor"`，否则 CI runner 上

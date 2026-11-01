@@ -1,0 +1,5 @@
+
+
+ ✓ Write src/new.ts
+   ↳ diff unavailable: execution metadata is unavailable
+

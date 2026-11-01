@@ -1,0 +1,11 @@
+
+
+ ✓ Bash npm test
+ ├ Input
+ │ command: npm test
+ │
+ └ Output
+   pass 832
+   fail 0
+   12.4s
+

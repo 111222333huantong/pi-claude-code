@@ -1,0 +1,2 @@
+opus-4-6 (high) │ ctx ██░░░░░░ 23% │ $1.23 │ mcp 3 │ ext 7
+~/pi-claude-code │ feat/statusline ↑2 │ #42 │ golden-wt

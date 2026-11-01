@@ -1,6 +1,6 @@
 {
 	"name": "pi-claude-code",
-	"version": "1.4.3",
+	"version": "1.5.0",
 	"license": "MIT",
 	"description": "Claude Code-style TUI for Pi: tool cards, rich diffs, compact mode, statusline and themes.",
 	"type": "module",
@@ -56,6 +56,8 @@
 		"bench:check": "node --experimental-strip-types scripts/benchmark-hot-paths.ts --check",
 		"bench:update": "node --experimental-strip-types scripts/benchmark-hot-paths.ts --update-baseline",
 		"bench:json": "node --experimental-strip-types scripts/benchmark-hot-paths.ts --json",
+		"test:golden": "node --test tests/render-golden.test.ts",
+		"test:golden:update": "UPDATE_GOLDEN=1 node --test tests/render-golden.test.ts",
 		"lint": "biome check .",
 		"ci": "npm run lint && npm run typecheck && npm test",
 		"prepublishOnly": "npm run ci",

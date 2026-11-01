@@ -1,0 +1,3 @@
+
+ ✓ Bash npm test
+   ↳ 2 lines returned · 12.4s · click to show more

@@ -1,0 +1,5 @@
+
+ ● Multiple Tools: 2 done · 1 failed · 12.4s · Bash×1, Ffgrep×1, Read×1 · click to show more
+ ├ ✓ Read extensions/index.ts · 40 lines
+ ├ ✓ Bash npm test · 12.4s
+ └ ✗ Ffgrep "renderCall" in extensions/

@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
-> 当前版本：ccstyle 1.4.3 · mode=`on`。
+> 当前版本：ccstyle 1.5.0 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
@@ -103,7 +103,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 ```
 
 - hover `click to show more` 时由 muted 切换为白色 text。
-- 点击提示展开工具；展开态 diff 超过 2000 行时先渲染前缀，末尾给 `… N more diff lines · click to render all`，再点一次才全量。
+- 点击提示展开工具，展开态 diff 全量显示，不再截断。
 - 折叠态 diff 行数提示为 muted 色。
 
 write 新建 / 覆盖：
@@ -301,7 +301,7 @@ write 新建 / 覆盖：
 ### 收起：运行中
 
 ```text
- ● Multiple Tools: 3 running · Read… · click to show more
+ ● Multiple Tools: 3 running · Bash… · click to show more
  ├ ⠋ Read extensions/index.ts
  ├ ⠋ Bash npm test
  └ ⠋ Ffgrep "renderCall" in extensions/
@@ -383,14 +383,14 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 紧挨工具时作为展示项并入混合工具组：
 
 ```text
- ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Re… · click to show more
+ ● Multiple Tools: 3 done · Get Subagent Result×1, Read×1, Subagent Finish… · click to show more
  ├ ✓ Subagent Finished 6dae0e11-9341-43b · 35 tool uses · 57.1k token · ~$0.8207 · 34.8s
  ├ ✓ Get Subagent Result 6dae0e11
  └ ✓ Read extensions/index.ts · 1 line
 ```
 
 ```text
- ● Multiple Tools: 3 done · Subagent Finished×1, Get Subagent Result×1, Read×1 · ↑ Collapse
+ ● Multiple Tools: 3 done · Get Subagent Result×1, Read×1, Subagent Finished×1 · ↑ Collapse
  ├ ✓ Subagent Finished 6dae0e11-9341-43b
  │ ├ Description
  │ │ Locate completion text owner

@@ -3,7 +3,7 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
-## 未发布
+## 1.5.0 — 2026-11-01
 
 ### 新增
 
@@ -17,6 +17,10 @@
 - 新增性能门禁 `npm run bench:check`：基准结果按同机 `calib: measureWidth`
   归一化后与 `scripts/bench-baseline.json` 比较（默认 1.8x、0.3ms 噪声豁免），
   CI `perf` job 强制执行；`npm run bench:update` 重写基线。
+- 新增落盘布局快照 `tests/golden/`（20 个场景）：diff 宽度梯度 40/80/120、
+  unified/split、折叠/展开，工具卡成功/失败/展开，工具组折叠/展开，状态栏
+  全量/窄屏/运行中。输入固定时钟、主题与虚拟 cwd；`npm run test:golden`
+  比对，`test:golden:update` 更新。拆文件或调间距时能直接看到整屏 diff。
 - 工具组头部在全部结算后报**总耗时**（各工具 `durationMs` 之和，`≥1s` 才显示）：
   `● Multiple Tools: 3 done · 2.4s · Read×2, Bash×1 · click to show more`。
 - 组内折叠行报产出体积：`Read a.ts · 12 lines`、`Grep "TODO" · 3 matches`、

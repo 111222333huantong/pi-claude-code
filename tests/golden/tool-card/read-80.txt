@@ -1,0 +1,3 @@
+
+ ✓ Read src/sample.ts (offset=10, limit=20)
+   ↳ Read 20 lines · click to show more

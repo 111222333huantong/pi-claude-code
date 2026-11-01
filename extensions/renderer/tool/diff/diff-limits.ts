@@ -1,5 +1,6 @@
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../../../config/config.ts";
+import { measureWidth } from "../../../utils/width.ts";
 import { renderAllHintText, showMoreHintText } from "../names.ts";
 import type { SplitDiffRow } from "./diff-inline.ts";
 import type { RenderedRow } from "./diff-layout.ts";
@@ -12,7 +13,7 @@ import {
 } from "./line-width-safety.ts";
 
 const DIFF_WIDTH_OPS = {
-	measure: visibleWidth,
+	measure: measureWidth,
 	truncate: (text: string, maxWidth: number): string => truncateToWidth(text, maxWidth, ""),
 };
 

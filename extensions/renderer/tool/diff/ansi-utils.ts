@@ -8,11 +8,17 @@ export function expandSgrReset(param: number): readonly number[] | undefined {
 }
 
 export function toSgrParams(rawParams: string): number[] {
-	if (!rawParams.trim()) {
+	const trimmed = rawParams.trim();
+	if (!trimmed) {
 		return [0];
 	}
+	// 绝大多数 SGR 只有一个参数（`0`/`32`/`39`…），跳过 split/map/filter 的分配。
+	if (!trimmed.includes(";")) {
+		const single = Number(trimmed);
+		if (Number.isInteger(single)) return [single];
+	}
 
-	const parsed = rawParams
+	const parsed = trimmed
 		.split(";")
 		.map((token) => Number.parseInt(token, 10))
 		.filter((value) => Number.isFinite(value));

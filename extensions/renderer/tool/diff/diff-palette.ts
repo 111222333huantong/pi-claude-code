@@ -114,7 +114,7 @@ export function stabilizeBackgroundResets(text: string): string {
 }
 
 export function keepBackgroundAcrossResets(text: string, rowBg: string): string {
-	if (!text) {
+	if (!text?.includes("\x1b[")) {
 		return text;
 	}
 

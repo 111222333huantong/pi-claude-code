@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { measureWidth } from "../../../utils/width.ts";
 
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
 	return count === 1 ? singular : plural;
@@ -22,6 +23,12 @@ export function normalizeCodeWhitespace(text: string): string {
 }
 
 export function fitToWidth(text: string, width: number): string {
+	// 先量一次：diff 行几乎都带 `│`/`▎` 这类非 ASCII 字形，truncateToWidth 会因此
+	// 走整行字素切分（约 25µs/行）。已经放得下时直接补空格，省掉这次重扫。
+	// measureWidth 对「ASCII + 装饰字形」走单遍扫描，其余回落 visibleWidth。
+	const measured = measureWidth(text);
+	if (measured === width) return text;
+	if (measured < width) return `${text}${" ".repeat(width - measured)}`;
 	const trimmed = truncateToWidth(text, width, "");
 	const gap = Math.max(0, width - visibleWidth(trimmed));
 	return gap > 0 ? `${trimmed}${" ".repeat(gap)}` : trimmed;

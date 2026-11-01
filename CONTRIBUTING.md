@@ -27,6 +27,7 @@ npm test
 | `extensions/config/` | 配置项、默认值、`/config` 输出 |
 | `extensions/renderer/` | 工具卡、分组、diff、compact、状态栏等渲染层 |
 | `extensions/feature/` | `/context`、`/loaded`、引用、粘贴等独立功能 |
+| `extensions/compat/` | Pi 内部接口（原型、`contentBox`、TUI 字段）的单点适配与降级 |
 | `extensions/utils/` | 无状态工具函数（宽度、ANSI、格式化） |
 | `tests/` | `node:test` 用例，按功能分文件，渲染断言以纯文本快照为主 |
 | `themes/` | 随包发布的四套主题 |
@@ -41,6 +42,22 @@ npm test
 - 交互（点击、悬停、滚轮）改动要同时改 `tests/mouse-*.test.ts`，并用 `hitTarget` 而不是坐标猜测。
 - 新增配置项：`extensions/config/config.ts` 的默认值 + 解析 + `/config` 输出 + README 表格 + 测试，一处不能少。
 - 保留 fork 已有语义（短 agent_id、卡片几何、紧凑 token 口径、`elapsedMs`），见 `docs/VENDOR.md`。
+- **不要直接摸 Pi 内部字段**。原型成员、`contentBox`、`children`、`previousViewportTop`
+  一律走 `extensions/compat/pi-internals.ts`；那里缺失时会记录 issue 并降级为原生渲染，
+  `renderer/index.ts` 在 `session_start` 后统一提示一次。升级 Pi 后先看这个文件。
+
+## 性能门禁
+
+```bash
+npm run bench:hot       # 人读表格
+npm run bench:json      # 机器可读
+npm run bench:check     # 与 scripts/bench-baseline.json 比较
+npm run bench:update    # 有意变更后重写基线
+```
+
+门禁按同机 `calib: measureWidth` 归一化，默认容忍 `1.8x`（`BENCH_TOLERANCE` 可覆盖），
+并对 `0.3ms` 以下的绝对差值豁免（`BENCH_NOISE_FLOOR_MS`）。CI 的 `perf` job 跑的就是它。
+改热路径后如果确实变慢，要在 PR 里说明原因再 `bench:update`。
 
 ## 测试
 

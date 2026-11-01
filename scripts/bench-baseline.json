@@ -1,0 +1,59 @@
+{
+	"generatedAt": "2026-11-01T05:51:53.798Z",
+	"node": "v22.23.2",
+	"platform": "linux/x64",
+	"metrics": {
+		"calib: measureWidth": {
+			"ms": 0.0003275029999999987,
+			"normalized": 1,
+			"iterations": 20000
+		},
+		"usage: full scan": {
+			"ms": 0.4468409999999949,
+			"normalized": 1364.3875017938665,
+			"iterations": 5
+		},
+		"usage: same leaf (cached)": {
+			"ms": 0.0000776598000000149,
+			"normalized": 0.23712698814977334,
+			"iterations": 5000
+		},
+		"usage: incremental +1 entry": {
+			"ms": 0.000474397999999951,
+			"normalized": 1.4485302424709174,
+			"iterations": 1000
+		},
+		"bash preview: tail scan": {
+			"ms": 3.164193,
+			"normalized": 9661.569512340384,
+			"iterations": 5
+		},
+		"bash preview: same input cached": {
+			"ms": 0.000056667000000004464,
+			"normalized": 0.17302742264957785,
+			"iterations": 2000
+		},
+		"bash preview: append 1 line": {
+			"ms": 2.5208610000000817,
+			"normalized": 7697.2149873439075,
+			"iterations": 1
+		},
+		"diff: expanded capped (2200 lines)": {
+			"ms": 85.62301533333334,
+			"normalized": 261441.92674062127,
+			"iterations": 3
+		},
+		"diff: expanded uncapped (2200 lines)": {
+			"ms": 152.91163300000017,
+			"normalized": 466901.4726582681,
+			"iterations": 1
+		}
+	},
+	"info": {
+		"session entries": 20000,
+		"bash MB": 6.2,
+		"bash lines": 200000,
+		"capped rows": 2005,
+		"uncapped rows": 4403
+	}
+}

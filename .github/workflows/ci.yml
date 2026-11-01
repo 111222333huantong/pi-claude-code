@@ -55,3 +55,57 @@ jobs:
         if: matrix.node == '24.x'
         continue-on-error: true
         run: npm run coverage
+
+  # 上游发布新版本后立即跑一遍：补丁依赖 Pi 内部接口，漂移要在升级前发现。
+  peer-latest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Configure git identity for fixture repositories
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+
+      - run: npm ci
+
+      - name: Install latest published Pi
+        run: |
+          npm install --no-save \
+            @earendil-works/pi-ai@latest \
+            @earendil-works/pi-coding-agent@latest \
+            @earendil-works/pi-tui@latest
+          npm ls @earendil-works/pi-coding-agent @earendil-works/pi-tui
+
+      - name: Typecheck against latest Pi
+        run: npm run typecheck
+
+      - name: Test against latest Pi
+        run: npm test
+
+  # 性能门禁：与 scripts/bench-baseline.json 比较，默认容忍 1.8x（按同机 calibration 归一化）。
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Hot path benchmarks
+        run: npm run bench:check
+

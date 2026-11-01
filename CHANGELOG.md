@@ -7,6 +7,16 @@
 
 ### 新增
 
+- 新增 `extensions/compat/pi-internals.ts`：把 `ToolExecutionComponent` /
+  `AssistantMessageComponent` / `Markdown` / `Container` 原型、`contentBox`、
+  `previousViewportTop`、`previousLines`、终端尺寸收进单点适配。Pi 升级后内部
+  接口缺失时，对应补丁自动放弃并回退原生渲染，不再半装；`session_start` 后
+  以 warning toast 提示一次缺失项。
+- CI 新增 `peer-latest` job：每次推送都用 npm 上最新的 `@earendil-works/pi-*`
+  跑 typecheck + 全量测试，提前发现上游漂移。
+- 新增性能门禁 `npm run bench:check`：基准结果按同机 `calib: measureWidth`
+  归一化后与 `scripts/bench-baseline.json` 比较（默认 1.8x、0.3ms 噪声豁免），
+  CI `perf` job 强制执行；`npm run bench:update` 重写基线。
 - 工具组头部在全部结算后报**总耗时**（各工具 `durationMs` 之和，`≥1s` 才显示）：
   `● Multiple Tools: 3 done · 2.4s · Read×2, Bash×1 · click to show more`。
 - 组内折叠行报产出体积：`Read a.ts · 12 lines`、`Grep "TODO" · 3 matches`、

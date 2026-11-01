@@ -35,6 +35,17 @@
 - 工具结果折叠摘要不再 split 全文：行数改换行计数，正文行按 result 对象
   WeakMap 缓存（源文本变化自动失效）。
 - 新增 `npm run bench:hot`：状态栏用量、bash 尾预览、展开态 diff 上限的固定基准。
+- 新增 `utils/width.ts` 快速测宽：ASCII + 本扩展自绘字形走单遍扫描，其余回落
+  `visibleWidth`；diff 展开 2200 行 364ms → **94ms**，`render all` 753ms → **172ms**
+  （`renderUnified` 154ms → 16ms）。`truncateByWidth` 同步改为按字素簇截断。
+- bash 尾预览支持流式追加增量：新输出以旧输出为前缀时只扫新增后缀，
+  6.2MB 追加一行 9.8ms → **3.2ms**。
+- write/edit 流式预览的指纹改为增量 FNV-1a：只哈希新增后缀，不再每帧重扫全文。
+- SGR 处理加热路径：单参数 SGR 跳过 split/map/filter，无 ANSI 行直接返回。
+- Shiki 预热延后到首屏之后 2s（会话切换会取消），启动少约 90ms、
+  峰值 RSS 少约 24MB；诊断日志改为 `PI_CC_SPINNER_DEBUG=1` 才开启。
+- PR 号缓存加上限（64，LRU）；鼠标层不再每帧复制整屏行数组；
+  transcript 右内缩容器定位加缓存（每 64 次全扫自愈）。
 
 ### 新增
 

@@ -1,0 +1,5 @@
+
+ Inspecting the renderer.
+
+ Running... · 9s, read×1, bash×1, grep×1 · click to show more
+ ↳ bash command="npm test"

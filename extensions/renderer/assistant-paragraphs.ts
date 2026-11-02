@@ -17,6 +17,7 @@ import { hasVisibleText, stripAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import {
 	ASSISTANT_DOTTED_PATCH,
+	PATCH_NAME_KEY,
 	PROTOTYPE_ORIGINAL_KEY,
 	patchRegistry,
 } from "../utils/patch-keys.ts";
@@ -235,6 +236,7 @@ export function installDottedParagraphs(): () => void {
 	// 原生），否则指向下游自身，避免恢复时停在打点包装器上。
 	(installed as any)[PROTOTYPE_ORIGINAL_KEY] =
 		(downstream as any)?.[PROTOTYPE_ORIGINAL_KEY] ?? downstream;
+	(installed as any)[PATCH_NAME_KEY] = "dotted";
 	patch.dispose = () => {
 		patch.active = false;
 		if (prototype.updateContent === installed) prototype.updateContent = downstream;

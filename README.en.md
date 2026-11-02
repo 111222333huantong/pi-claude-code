@@ -38,6 +38,14 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 Run `/reload` after installation.
 
+When installing manually with npm, add `--omit=optional` to skip `pi-paster`'s
+optional `sharp` dependency (large; only affects some image resizing, the main
+paste path still works):
+
+```bash
+npm install --omit=optional pi-claude-code
+```
+
 ## Preview
 
 <a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-claude-code terminal screenshot: mascot header, two-line statusline and the fullscreen back-to-bottom button" width="100%"></a>
@@ -63,6 +71,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | Feature                     | Description                                                                               | Entry point                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes | `/ccstyle`                                      |
+| Diagnostics                 | Versions, patch-chain order, compat drift, footer owner and config paths                  | `/ccstyle diag`                                 |
 | Markdown enhancements       | Mermaid dialects and circled-number conversion                                            | Automatic; turn off with `enableMarkdownEnhance: false` |
 | Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                   | `/ccstyle`                                      |
@@ -138,6 +147,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "completionBellAfterSec": 0,             // ring the bell when a turn takes over N seconds, 0 disables
   "liveToolPreview": true,                 // live bash tail preview while running
   "liveToolPreviewLines": 5,               // bash tail preview rows
+  "streamThrottleMs": 100,                 // merge streaming redraws every N ms; 0 = redraw every token (high CPU on long replies)
 
   // features (this fork)
   "enableImagePaster": true,               // image paster: clipboard/dropped images as attachments
@@ -214,6 +224,11 @@ Set `TUIMODE=fullscreen` or pass `pi --tui-mode fullscreen`. Drop it to go back.
 Run `/statusline on`, then `/reload`. If the upstream footer is enabled too, turn
 off `enableCustomFooter` on the Features tab of `/ccstyle` — they are mutually
 exclusive.
+
+**High CPU or choppy scrolling during long replies?**
+Pi 1.x rebuilds the whole Markdown body on every token. This extension merges
+those redraws to roughly 10fps (`streamThrottleMs: 100`). Use `50` for a snappier
+stream, `150`/`250` to save more CPU, or `0` to redraw every token.
 
 **Anything to know on Windows / WSL?**
 `write` uses Pi's official path resolution, so WSL `/mnt/c/...` lands on the real

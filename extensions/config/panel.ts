@@ -68,6 +68,7 @@ import {
 	SCROLL_STEP_LINES_VALUES,
 	type ScrollButtonMode,
 	STARTUP_SLOGAN_COLORS,
+	STREAM_THROTTLE_MS_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
@@ -761,6 +762,16 @@ export async function showCcstylePanel(
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, livePreviewLinesSetting, closeSubmenu),
 		};
+		const streamThrottleSetting = {
+			id: "streamThrottleMs",
+			label: "Stream throttle",
+			description:
+				"Merge streaming assistant redraws to one frame per N ms. 0 redraws every token (higher CPU on long answers).",
+			currentValue: String(config.streamThrottleMs),
+			values: [...STREAM_THROTTLE_MS_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, streamThrottleSetting, closeSubmenu),
+		};
 		const scrollButtonSetting = {
 			id: "scrollButtonMode",
 			label: "Scroll button mode",
@@ -1037,7 +1048,14 @@ export async function showCcstylePanel(
 				customFooterSetting.description = customFooterDescription(enabled);
 				if (enabled) applyCustomFooter(ctx);
 				else clearCustomFooter(ctx);
-				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				if (enabled && readStatuslineConfig().enabled) {
+					ctx.ui.notify(
+						"Custom footer overrides /statusline for this session. Run /statusline off or turn off Custom footer to make the choice permanent.",
+						"warning",
+					);
+				} else {
+					ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				}
 				return;
 			}
 			if (id === "footerCurrency") {
@@ -1351,6 +1369,12 @@ export async function showCcstylePanel(
 					});
 					livePreviewLinesSetting.currentValue = String(config.liveToolPreviewLines);
 					break;
+				case "streamThrottleMs":
+					updateConfig({
+						streamThrottleMs: pickPositiveInt(value, DEFAULT_CONFIG.streamThrottleMs, 0, 1_000),
+					});
+					streamThrottleSetting.currentValue = String(config.streamThrottleMs);
+					break;
 				default:
 					return;
 			}
@@ -1404,6 +1428,7 @@ export async function showCcstylePanel(
 					scrollStepSetting,
 					completionBellSetting,
 					livePreviewLinesSetting,
+					streamThrottleSetting,
 					editorPrefixSetting,
 				],
 			},

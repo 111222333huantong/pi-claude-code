@@ -1,0 +1,7 @@
+
+ Inspecting the renderer.
+
+ Ran for 9s, bash×1 · click to show more
+ ↳ bash command="npm test"
+   pass 832
+   fail 0

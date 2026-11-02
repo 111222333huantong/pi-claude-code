@@ -1038,13 +1038,13 @@ export default function (pi: ExtensionAPI): void {
 		carryTokenRate();
 	});
 
-	pi.on("agent_end", async () => {
-		debugEvent("agent_end", { completionPending: Boolean(completionTimer) });
+	pi.on("agent_settled", async () => {
+		debugEvent("agent_settled", { completionPending: Boolean(completionTimer) });
 		turnActive = false;
 		agentStartTime = 0;
-		// Preserve the just-finished "Turn took …" line. Pi emits agent_end
-		// immediately after the final turn, so clearing here made the completion
-		// status disappear before users could see it.
+		// Preserve the just-finished "Turn took …" line. Settlement means Pi has no
+		// automatic continuation left, so clearing here is safe; clearing at
+		// agent_end made the completion status vanish during retries/queued work.
 		if (completionTimer) return;
 		clearDisplay();
 	});

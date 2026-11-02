@@ -13,8 +13,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { generateDiffString, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	generateDiffString,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
+import { config } from "../extensions/config/config.ts";
 import { collectUsage } from "../extensions/feature/statusline/usage.ts";
+import {
+	_setStreamThrottleClock,
+	_setStreamThrottleEnabledForTests,
+	installStreamThrottle,
+} from "../extensions/renderer/stream-throttle.ts";
 import { bashLivePreview } from "../extensions/renderer/tool/bash-preview.ts";
 import { renderEditDiffResult } from "../extensions/renderer/tool/diff/diff-renderer.ts";
 import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../extensions/renderer/tool/diff/index.ts";
@@ -177,6 +187,119 @@ export function runHotPathBenchmarks(): BenchResult {
 		appendSamples.push(performance.now() - start);
 	}
 	record("bash preview: append 1 line", median(appendSamples), 1);
+
+	// --- assistant 流式渲染：每个 token 重建整段 Markdown 的真实成本 --------
+	// 与 Pi 1.4 的 message_update 行为一致：同一条消息逐步变长，每次
+	// updateContent + render。节流版用 16ms/帧的合成时钟推进，等价于 60fps 流。
+	const latinStream = "The quick brown fox jumps over the lazy dog. **bold** `code`\n\n".repeat(
+		900,
+	);
+	const cjkStream = "这是一个用于测试流式渲染性能的中文段落，包含 **粗体** 和 `代码`。\n\n".repeat(
+		600,
+	);
+	info["stream chars"] = latinStream.length;
+	const STREAM_UPDATES = 40;
+	type StreamRunOptions = {
+		/** 是否每帧调用 render（默认 true，匹配 Pi 的 message_update + requestRender）。 */
+		render?: boolean;
+		onUpdate?: (index: number) => void;
+	};
+	const runStream = (text: string, options: StreamRunOptions = {}): number => {
+		const { render = true, onUpdate } = options;
+		const message: any = {
+			role: "assistant",
+			timestamp: 1,
+			content: [{ type: "text", text: "" }],
+		};
+		const component: any = new AssistantMessageComponent(message, true);
+		const start = performance.now();
+		for (let index = 1; index <= STREAM_UPDATES; index++) {
+			onUpdate?.(index);
+			message.content[0].text = text.slice(0, Math.floor((text.length * index) / STREAM_UPDATES));
+			component.updateContent(message, true);
+			if (render) component.render(100);
+		}
+		// message_end：最终帧无条件渲染。
+		component.updateContent(message, false);
+		if (render) component.render(100);
+		return performance.now() - start;
+	};
+	/** 内容不变时重复 render：节流后 Pi 仍会每 token requestRender 的真实成本。 */
+	const runRenderOnly = (text: string): number => {
+		const message: any = {
+			role: "assistant",
+			timestamp: 1,
+			content: [{ type: "text", text }],
+		};
+		const component: any = new AssistantMessageComponent(message, true);
+		component.updateContent(message, false);
+		component.render(100);
+		const start = performance.now();
+		for (let index = 0; index < STREAM_UPDATES; index++) component.render(100);
+		return performance.now() - start;
+	};
+	record(
+		"stream: latin 40 updates",
+		measure(() => runStream(latinStream), 1),
+		1,
+	);
+	record(
+		"stream: cjk 40 updates",
+		measure(() => runStream(cjkStream), 1),
+		1,
+	);
+	record(
+		"stream: latin 40 updates (update only)",
+		measure(() => runStream(latinStream, { render: false }), 1),
+		1,
+	);
+	record(
+		"stream: cjk 40 updates (update only)",
+		measure(() => runStream(cjkStream, { render: false }), 1),
+		1,
+	);
+	record(
+		"stream: latin 40 renders",
+		measure(() => runRenderOnly(latinStream), 1),
+		1,
+	);
+	record(
+		"stream: cjk 40 renders",
+		measure(() => runRenderOnly(cjkStream), 1),
+		1,
+	);
+
+	const previousThrottle = config.streamThrottleMs;
+	config.streamThrottleMs = 100;
+	_setStreamThrottleEnabledForTests(true);
+	const streamThrottle = installStreamThrottle();
+	try {
+		let clock = 0;
+		_setStreamThrottleClock(() => clock);
+		const runThrottled = (text: string): number => {
+			clock = 0;
+			return runStream(text, {
+				onUpdate: () => {
+					clock += 16;
+				},
+			});
+		};
+		record(
+			"stream: latin 40 updates (throttled)",
+			measure(() => runThrottled(latinStream), 1),
+			1,
+		);
+		record(
+			"stream: cjk 40 updates (throttled)",
+			measure(() => runThrottled(cjkStream), 1),
+			1,
+		);
+	} finally {
+		streamThrottle.dispose();
+		_setStreamThrottleClock(null);
+		_setStreamThrottleEnabledForTests(false);
+		config.streamThrottleMs = previousThrottle;
+	}
 
 	// --- 展开态大 diff：先渲染 2000 行前缀 ----------------------------------
 	const before = Array.from({ length: 2_200 }, (_, index) => `old ${index}`).join("\n");

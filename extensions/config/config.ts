@@ -89,6 +89,11 @@ export type Config = {
 	liveToolPreview: boolean;
 	/** bash 尾预览行数。 */
 	liveToolPreviewLines: number;
+	/**
+	 * 流式 assistant 渲染合并间隔（ms）：只合并 `message_update` 的中间帧，
+	 * 最终帧始终立即渲染。0 关闭（每 token 重绘，CPU 占用显著更高）。
+	 */
+	streamThrottleMs: number;
 	/** fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手。 */
 	stickyUserMessage: boolean;
 	/** fullscreen 回到底部按钮：扩展 dock 行，或 Pi 原生浮层；两者文案相同。 */
@@ -172,6 +177,8 @@ export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 export const COMPLETION_BELL_AFTER_SEC_VALUES = ["0", "10", "30", "60", "120"];
 /** bash live 尾预览行数预设。 */
 export const LIVE_TOOL_PREVIEW_LINES_VALUES = ["3", "5", "8", "12"];
+/** 流式渲染合并间隔预设；0 = 每个 token 都重绘。 */
+export const STREAM_THROTTLE_MS_VALUES = ["0", "50", "100", "150", "250"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"agent",
@@ -217,6 +224,8 @@ export const DEFAULT_CONFIG: Config = {
 	completionBellAfterSec: 0,
 	liveToolPreview: true,
 	liveToolPreviewLines: 5,
+	/** 约 10fps：足够跟手，又把每 token 的整段 Markdown 重建降一个数量级。 */
+	streamThrottleMs: 100,
 	stickyUserMessage: true,
 	scrollButtonMode: "dock",
 	cleanCopy: true,
@@ -393,6 +402,12 @@ export function normalizeConfig(input: unknown): Config {
 			1,
 			50,
 		),
+		streamThrottleMs: pickPositiveInt(
+			source.streamThrottleMs,
+			DEFAULT_CONFIG.streamThrottleMs,
+			0,
+			1_000,
+		),
 		stickyUserMessage: source.stickyUserMessage !== false,
 		scrollButtonMode: pickEnum(
 			source.scrollButtonMode,
@@ -529,6 +544,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`bellAfter=${source.completionBellAfterSec}s`,
 		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
 		`livePreview=${source.liveToolPreview ? `${source.liveToolPreviewLines} lines` : "off"}`,
+		`streamThrottle=${source.streamThrottleMs > 0 ? `${source.streamThrottleMs}ms` : "off"}`,
 		`scrollButton=${source.scrollButtonMode}`,
 		`cleanCopy=${source.cleanCopy ? "on" : "off"}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,

@@ -98,7 +98,7 @@ test("summaryMarkdown renders the agent summary entry", () => {
 	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
 });
 
-test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", async () => {
+test("bindAgentSummary 事件绑定：before_agent_start 重置、agent_end 记 usage、agent_settled 回调", async () => {
 	const handlers = new Map<string, Function>();
 	const fakePi = {
 		on: (event: string, handler: Function) => handlers.set(event, handler),
@@ -107,21 +107,23 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 	const calls: AgentSummaryData[] = [];
 	bindAgentSummary(fakePi, (data) => calls.push(data));
 
-	await handlers.get("agent_start")!();
+	await handlers.get("before_agent_start")!();
 	await handlers.get("tool_execution_start")!({ toolName: "read", args: { path: "a.ts" } });
 	await handlers.get("tool_execution_end")!({ isError: false });
 	await handlers.get("agent_end")!();
+	await handlers.get("agent_settled")!();
 	assert.equal(calls.length, 0); // toolCount < 2
 
 	await handlers.get("tool_execution_start")!({ toolName: "bash", args: { command: "ls" } });
 	await handlers.get("tool_execution_end")!({ isError: true });
 	await handlers.get("agent_end")!();
+	await handlers.get("agent_settled")!();
 	assert.equal(calls.length, 1);
 	assert.equal(calls[0].commands, 1);
 	assert.equal(calls[0].failed, 1);
 	assert.equal(calls[0].reads, 1);
 
-	await handlers.get("agent_start")!();
+	await handlers.get("before_agent_start")!();
 	await handlers.get("tool_execution_start")!({ toolName: "bash", args: {} });
 	await handlers.get("tool_execution_end")!({ isError: false });
 	await handlers.get("tool_execution_start")!({ toolName: "grep", args: {} });
@@ -136,6 +138,7 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 			{ role: "assistant" }, // usage 缺失 → 跳过
 		],
 	});
+	await handlers.get("agent_settled")!();
 	assert.equal(calls.length, 2);
 	assert.deepEqual(calls[1], {
 		commands: 1,
@@ -149,7 +152,40 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 	});
 });
 
-test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
+test("bindAgentSummary：自动重试的多个 agent_end 累加，settled 只回调一次", async () => {
+	const handlers = new Map<string, Function>();
+	const fakePi = {
+		on: (event: string, handler: Function) => handlers.set(event, handler),
+	} as any;
+	const calls: AgentSummaryData[] = [];
+	bindAgentSummary(fakePi, (data) => calls.push(data));
+
+	await handlers.get("before_agent_start")!();
+	await handlers.get("tool_execution_start")!({ toolName: "read", args: { path: "a.ts" } });
+	await handlers.get("tool_execution_end")!({ isError: false });
+	await handlers.get("tool_execution_start")!({ toolName: "bash", args: {} });
+	await handlers.get("tool_execution_end")!({ isError: true });
+	await handlers.get("agent_end")!({
+		messages: [{ role: "assistant", usage: { output: 100 } }],
+	});
+
+	// 重试：before_agent_start 不会重复；统计不清零。
+	await handlers.get("tool_execution_start")!({ toolName: "read", args: { path: "b.ts" } });
+	await handlers.get("tool_execution_end")!({ isError: false });
+	await handlers.get("agent_end")!({
+		messages: [{ role: "assistant", usage: { output: 150 } }],
+	});
+	assert.equal(calls.length, 0, "settled 之前不能提前出摘要");
+
+	await handlers.get("agent_settled")!();
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].reads, 2);
+	assert.equal(calls[0].commands, 1);
+	assert.equal(calls[0].failed, 1);
+	assert.equal(calls[0].outputTokens, 250);
+});
+
+test("agent-summary 注册 renderer，agent_settled 输出引用块", async () => {
 	initTheme("dark");
 	const renderers = new Map<string, Function>();
 	const appended: unknown[] = [];
@@ -163,12 +199,13 @@ test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
 	agentSummaryFeature(fakePi);
 	assert.ok(renderers.has(AGENT_SUMMARY_ENTRY_TYPE));
 
-	await events.get("agent_start")!();
+	await events.get("before_agent_start")!();
 	await events.get("tool_execution_start")!({ toolName: "read", args: { path: "a.ts" } });
 	await events.get("tool_execution_end")!({ isError: false });
 	await events.get("tool_execution_start")!({ toolName: "bash", args: { command: "ls" } });
 	await events.get("tool_execution_end")!({ isError: false });
 	await events.get("agent_end")!();
+	await events.get("agent_settled")!();
 
 	assert.equal(appended.length, 1);
 	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE)!;

@@ -118,7 +118,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	// 当前会话的 poller（工具结束事件驱动刷新用；session 切换时更新）。
 	let activePoller: GitPoller | null = null;
 
-	// 运行中回合的计时：turn_start 起算，turn_end / agent_end 停；footer 每秒重绘一次。
+	// 运行中 run 的计时：agent_start 起算，agent_settled 停；footer 每秒重绘一次。
+	// agent_end 之后仍可能有重试/恢复/排队续跑，因此不能在 turn_end / agent_end 停表。
 	let rerenderCurrent: (() => void) | null = null;
 	let turnStartedAt: number | null = null;
 	let turnTicker: ReturnType<typeof setInterval> | null = null;
@@ -193,9 +194,10 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		}
 	};
 
-	pi.on("turn_start", async (_event, ctx) => {
+	pi.on("agent_start", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		turnStartedAt = Date.now();
+		// 续跑的 agent_start（重试/恢复）不重置起点，run 计时覆盖整个 settled 周期。
+		if (turnStartedAt === null) turnStartedAt = Date.now();
 		startTurnTicker();
 		try {
 			rerenderCurrent?.();
@@ -203,11 +205,7 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			// ignore
 		}
 	});
-	pi.on("turn_end", async (_event, ctx) => {
-		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-		finishTurn();
-	});
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_settled", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		finishTurn();
 	});

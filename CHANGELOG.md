@@ -3,6 +3,42 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## Unreleased
+
+### 新增
+
+- 流式正文节流：新增 `streamThrottleMs`（默认 `100`，约 10fps）。Pi 1.x 每个
+  `message_update` 都会清空内容容器并重建整段 Markdown，长回复会持续吃 CPU；
+  现在只合并流式中间帧，`message_end` 的最终帧始终立即渲染。
+  `0` 恢复逐 token 重绘。`/ccstyle` → UI 页 `Stream throttle` 可调。
+- 状态栏 run 计时改用 `agent_start` → `agent_settled`：`turn_end` / `agent_end`
+  不再停表，自动重试、恢复、排队续跑期间显示的是整段 run 的耗时。
+- 回合摘要与 compact 收尾改用 `agent_settled`：重试/续跑期间不再提前出摘要或
+  把还要继续的回合标成已结束；摘要统计按 `before_agent_start` 重置，重试产生的
+  多个 `agent_end` usage 会累加后只输出一次。
+- 新增 `/ccstyle diag`：一次列出扩展/Pi/Node 版本、`updateContent` 补丁链顺序、
+  各补丁槽位、本会话 compat 漂移、footer 归属与主配置/状态栏配置路径。
+  文本走可滚动的预览面板，方便直接复制反馈。
+- 在状态栏开启时于 `/ccstyle` 打开 `Custom footer` 会提示冲突：本次会话上游
+  footer 会覆盖 `/statusline`，下次启动又会被状态栏接管。
+- compact golden 从 3 条扩到 9 条：进行中 / 已结束 / 展开，覆盖单工具、多工具、
+  失败、窄屏与超长输出；拆 `compact-mode.ts` 前先补齐这类整屏安全网。
+- 拆分 `compact-mode.ts`（2606 → 1682 行）：摘要/状态文本 → `compact-summary.ts`，
+  卡片绘制与展开提示裁剪 → `compact-card.ts`，edit/write rich diff 行 →
+  `compact-tool-lines.ts`，live 槽位与状态行 → `compact-live.ts`。主文件只保留
+  补丁安装与回合状态机；对外导出路径保持不变。
+- 手动 npm 安装可用 `--omit=optional` 跳过 `pi-paster` 的可选 `sharp` 依赖。
+
+### 性能
+
+- 新增流式渲染基准（60fps 合成时钟，40 次 update / 约 5.6 万字符）：
+  latin 297ms → 54ms（5.5×），cjk 140ms → 26ms（5.4×）。`bench:hot` 与
+  `bench-baseline.json` 已包含该指标。
+- `bench:hot` 把流式指标拆成 `updateContent` / `render` 两段：内容不变的重复
+  render 仅约 0.44ms/帧，剩余成本集中在内容变化后的 Markdown 解析。CPU profile
+  显示热点为 marked 的 `RegExp`/`inlineTokens` 与 LaTeX 块探测正则，属于 Pi 内部
+  解析路径，暂不做本地缓存/增量改造，避免负收益。
+
 ## 1.5.0 — 2026-11-01
 
 ### 新增

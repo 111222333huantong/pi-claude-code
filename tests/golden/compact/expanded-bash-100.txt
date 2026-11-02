@@ -1,0 +1,8 @@
+
+ Inspecting the renderer.
+
+
+ bash command="npm test"
+ pass 832
+ fail 0
+

@@ -34,6 +34,7 @@ import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 import {
 	COMPACT_THINKING_OWNER,
 	COMPACT_THINKING_PATCH_KEY,
+	PATCH_NAME_KEY,
 	PROTOTYPE_ORIGINAL_KEY,
 	patchRegistry,
 } from "../utils/patch-keys.ts";
@@ -1207,6 +1208,8 @@ function compactThinking(pi: ExtensionAPI): boolean {
 	};
 	const installedUpdateContent = prototype.updateContent;
 	(installedUpdateContent as any)[COMPACT_THINKING_PATCH_KEY] = true;
+	(installedUpdateContent as any)[PATCH_NAME_KEY] = "compact-thinking";
+	(installedUpdateContent as any)[PROTOTYPE_ORIGINAL_KEY] = originalUpdateContent;
 
 	function ensureAnimationTimer() {
 		if (animationTimer) return;

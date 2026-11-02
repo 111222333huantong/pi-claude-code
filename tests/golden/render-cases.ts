@@ -7,13 +7,21 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	initTheme,
+	ToolExecutionComponent,
+} from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { config, normalizeConfig, setConfig } from "../../extensions/config/config.ts";
 import {
 	buildLines as buildStatusLines,
 	type StatusSnapshot,
 } from "../../extensions/feature/statusline/render.ts";
+import {
+	installCompactMode,
+	refreshCompactModeComponents,
+} from "../../extensions/renderer/compact-mode.ts";
 import claudeCodeStyle from "../../extensions/renderer/index.ts";
 import { renderEditDiffResult } from "../../extensions/renderer/tool/diff/diff-renderer.ts";
 import {
@@ -168,6 +176,221 @@ function diffComponent(
 		"",
 	);
 	return renderLines(component, options.width);
+}
+
+function bootCompactRound(message: any, tools: any[]) {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => 9_000,
+			isMessageThinkingActive: () => false,
+		},
+		isIdle: () => false,
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	const assistant = new AssistantMessageComponent(message as any, true) as any;
+	assistant.updateContent(message);
+	const root = { children: [assistant, ...tools] };
+	refreshCompactModeComponents(root);
+	hooks.sync({ ui: { ...ui, getToolsExpanded: () => false } } as any);
+	refreshCompactModeComponents(root);
+	hooks.refresh();
+	return {
+		assistant,
+		finish() {
+			withSnapshotClock(() => hooks.settleFinishedRound());
+		},
+		stop() {
+			config.mode = previousMode;
+			hooks.shutdown();
+		},
+	};
+}
+
+/** compact 的三类关键状态：进行中 / 已结束 / 展开；再加多工具、失败、窄屏、长输出。 */
+function addCompactCases(cases: GoldenCase[]): void {
+	const timestamp = SNAPSHOT_NOW - 9_000;
+	const message = (content: any[]) => ({ role: "assistant", timestamp, content });
+	const text = { type: "text", text: "Inspecting the renderer." };
+	const thinking = { type: "thinking", thinking: "Checking layout and tool state." };
+	const call = (id: string, name: string, args: Record<string, unknown>) => ({
+		type: "toolCall",
+		id,
+		name,
+		arguments: args,
+	});
+	const add = (
+		name: string,
+		msg: any,
+		tools: any[],
+		options: { width?: number; settle?: boolean; expanded?: boolean; after?: () => void } = {},
+	) => {
+		const round = bootCompactRound(msg, tools);
+		try {
+			options.after?.();
+			if (options.settle) round.finish();
+			if (options.expanded) round.assistant.setExpanded(true);
+			cases.push({ name, lines: renderLines(round.assistant, options.width ?? 100) });
+		} finally {
+			round.stop();
+		}
+	};
+
+	// 进行中：单个 bash / 多工具 + thinking。
+	const runningBash = tool("bash", "gc-bash", { command: "npm test" });
+	runningBash.markExecutionStarted();
+	add(
+		"compact/running-bash-100",
+		message([text, call("gc-bash", "bash", { command: "npm test" })]),
+		[runningBash],
+	);
+
+	const runningRead = tool("read", "gc-read", { path: "src/a.ts" });
+	succeed(runningRead, Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"));
+	const runningGrep = tool("grep", "gc-grep", { pattern: "TODO", path: "src" });
+	succeed(runningGrep, "src/a.ts:1:TODO");
+	const runningMultiBash = tool("bash", "gc-bash", { command: "npm test" });
+	runningMultiBash.markExecutionStarted();
+	add(
+		"compact/running-multi-100",
+		message([
+			thinking,
+			text,
+			call("gc-read", "read", { path: "src/a.ts" }),
+			call("gc-bash", "bash", { command: "npm test" }),
+			call("gc-grep", "grep", { pattern: "TODO", path: "src" }),
+		]),
+		[runningRead, runningMultiBash, runningGrep],
+	);
+
+	// 已结束：单工具 / 多工具 / 失败 / 窄屏。
+	const finishedBash = tool("bash", "gc-bash", { command: "npm test" });
+	add(
+		"compact/finished-bash-100",
+		message([text, call("gc-bash", "bash", { command: "npm test" })]),
+		[finishedBash],
+		{ settle: true, after: () => succeed(finishedBash, "pass 832\nfail 0") },
+	);
+
+	const finishedRead = tool("read", "gc-read", { path: "src/a.ts" });
+	const finishedMultiBash = tool("bash", "gc-bash", { command: "npm test" });
+	const finishedGrep = tool("grep", "gc-grep", { pattern: "TODO", path: "src" });
+	add(
+		"compact/finished-multi-100",
+		message([
+			thinking,
+			text,
+			call("gc-read", "read", { path: "src/a.ts" }),
+			call("gc-bash", "bash", { command: "npm test" }),
+			call("gc-grep", "grep", { pattern: "TODO", path: "src" }),
+		]),
+		[finishedRead, finishedMultiBash, finishedGrep],
+		{
+			settle: true,
+			after: () => {
+				succeed(
+					finishedRead,
+					Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"),
+				);
+				succeed(finishedMultiBash, "pass 832\nfail 0");
+				succeed(finishedGrep, "src/a.ts:1:TODO");
+			},
+		},
+	);
+
+	const failedRead = tool("read", "gc-read", { path: "src/missing.ts" });
+	const failedBash = tool("bash", "gc-bash", { command: "npm test" });
+	add(
+		"compact/expanded-failed-100",
+		message([
+			text,
+			call("gc-read", "read", { path: "src/missing.ts" }),
+			call("gc-bash", "bash", { command: "npm test" }),
+		]),
+		[failedRead, failedBash],
+		{
+			settle: true,
+			expanded: true,
+			after: () => {
+				fail(failedRead, "ENOENT: no such file or directory");
+				succeed(failedBash, "pass 832\nfail 0");
+			},
+		},
+	);
+
+	const narrowRead = tool("read", "gc-read", { path: "src/a.ts" });
+	const narrowBash = tool("bash", "gc-bash", { command: "npm test" });
+	add(
+		"compact/finished-multi-60",
+		message([
+			thinking,
+			text,
+			call("gc-read", "read", { path: "src/a.ts" }),
+			call("gc-bash", "bash", { command: "npm test" }),
+		]),
+		[narrowRead, narrowBash],
+		{
+			width: 60,
+			settle: true,
+			after: () => {
+				succeed(
+					narrowRead,
+					Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"),
+				);
+				succeed(narrowBash, "pass 832\nfail 0");
+			},
+		},
+	);
+
+	// 展开：单工具 / 多工具 / 长输出。
+	const expandedBash = tool("bash", "gc-bash", { command: "npm test" });
+	add(
+		"compact/expanded-bash-100",
+		message([text, call("gc-bash", "bash", { command: "npm test" })]),
+		[expandedBash],
+		{ settle: true, expanded: true, after: () => succeed(expandedBash, "pass 832\nfail 0") },
+	);
+
+	const expandedRead = tool("read", "gc-read", { path: "src/a.ts" });
+	const expandedMultiBash = tool("bash", "gc-bash", { command: "npm test" });
+	const expandedGrep = tool("grep", "gc-grep", { pattern: "TODO", path: "src" });
+	add(
+		"compact/expanded-multi-100",
+		message([
+			thinking,
+			text,
+			call("gc-read", "read", { path: "src/a.ts" }),
+			call("gc-bash", "bash", { command: "npm test" }),
+			call("gc-grep", "grep", { pattern: "TODO", path: "src" }),
+		]),
+		[expandedRead, expandedMultiBash, expandedGrep],
+		{
+			settle: true,
+			expanded: true,
+			after: () => {
+				succeed(
+					expandedRead,
+					Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"),
+				);
+				succeed(expandedMultiBash, "pass 832\nfail 0");
+				succeed(expandedGrep, "src/a.ts:1:TODO");
+			},
+		},
+	);
+
+	const longBash = tool("bash", "gc-bash", { command: "npm test" });
+	add(
+		"compact/expanded-long-output-100",
+		message([text, call("gc-bash", "bash", { command: "npm test" })]),
+		[longBash],
+		{
+			settle: true,
+			expanded: true,
+			after: () =>
+				succeed(longBash, Array.from({ length: 500 }, (_, index) => `output ${index}`).join("\n")),
+		},
+	);
 }
 
 export async function renderGoldenCases(): Promise<GoldenCase[]> {
@@ -360,6 +583,9 @@ export async function renderGoldenCases(): Promise<GoldenCase[]> {
 	} finally {
 		grouping.shutdown();
 	}
+
+	// --- compact：进行中 / 已结束 / 展开 -----------------------------------
+	addCompactCases(cases);
 
 	return cases;
 }

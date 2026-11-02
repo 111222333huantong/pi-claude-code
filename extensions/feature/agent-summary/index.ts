@@ -1,5 +1,5 @@
 /**
- * Agent 回合摘要展示：agent_end 时把本回合工具统计写入会话条目，
+ * Agent 回合摘要展示：agent_settled 时把本次 run 的工具统计写入会话条目，
  * 由 entry renderer 渲染为 markdown 引用块 `> [!TIP] *斜体内容*`。
  *
  * 统计复用 ./core.ts（bash|powershell/read/edit/write/other）。

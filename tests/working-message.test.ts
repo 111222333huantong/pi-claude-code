@@ -35,6 +35,28 @@ function visible(message: string | undefined): string {
 	return (message ?? "").replace(/\u001B\[[0-9;]*m/g, "");
 }
 
+test("working message survives agent_end until the run settles", async () => {
+	const { events, messages, ctx } = install();
+
+	await events.get("turn_start")?.({}, ctx);
+	const working = visible(messages.at(-1));
+	assert.match(working, /… \(esc to interrupt\)$/);
+
+	// agent_end 后仍可能有自动重试/恢复/排队续跑：working 行要继续显示。
+	await events.get("agent_end")?.({}, ctx);
+	assert.equal(
+		visible(messages.at(-1)),
+		working,
+		"agent_end must not clear the working line while the run may continue",
+	);
+
+	// agent_settled 才是最终空闲：无待显示的完成行时恢复 Pi 默认消息。
+	await events.get("agent_settled")?.({}, ctx);
+	assert.equal(messages.at(-1), undefined);
+
+	await events.get("session_shutdown")?.({}, ctx);
+});
+
 test("working message shows a verb with esc hint while streaming", async () => {
 	const { events, messages, ctx } = install();
 

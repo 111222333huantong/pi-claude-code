@@ -193,16 +193,17 @@ export function summaryMarkdown(
 
 /**
  * 绑定 pi 事件到摘要统计：
- * - agent_start 重置
+ * - before_agent_start 重置（一次用户请求一次；agent_start 会在重试/续跑时重复）
  * - tool_execution_start / end 累计
- * - agent_end 从 event.messages 求和 assistant output usage 后回调（toolCount < minToolCount 跳过）
+ * - agent_end 从 event.messages 求和 assistant output usage（每个低层 run 都要记）
+ * - agent_settled 回调（此时重试/恢复/排队工作都已结束；toolCount < minToolCount 跳过）
  */
 export function bindAgentSummary(
 	pi: ExtensionAPI,
 	onSummary: (data: AgentSummaryData) => void,
 ): void {
 	let summary = new AgentRunSummary();
-	pi.on("agent_start", async () => {
+	pi.on("before_agent_start", async () => {
 		summary = new AgentRunSummary();
 	});
 	pi.on("tool_execution_start", async (event) => {
@@ -215,9 +216,11 @@ export function bindAgentSummary(
 		// 防御转换：测试 harness 会以无参调用；messages 只在真实 AgentEndEvent 上存在。
 		const messages = (event as { messages?: readonly unknown[] } | undefined)?.messages;
 		summary.recordUsage(sumUsageOutput(messages));
+	});
+	pi.on("agent_settled", async () => {
 		if (summary.toolCount < 2) return;
 		const data = summary.snapshot();
-		// TTFT 读 token-rate 单例（跨 turn 保持到下一条用户指令，agent_end 时仍有效）；
+		// TTFT 读 token-rate 单例（跨 turn 保持到下一条用户指令，settled 时仍有效）；
 		// 无首 token 时不设字段，保持旧 entry 形状。
 		const ttft = currentTtftMs();
 		if (ttft > 0) data.ttftMs = ttft;

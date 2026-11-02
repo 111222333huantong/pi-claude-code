@@ -12,6 +12,9 @@
  * 底层仍是 globalThis[symbol]，因此外部（含测试）直接读 globalThis 槽不受影响。
  */
 
+// ── 补丁元信息（诊断用）：给 updateContent 包装器起名，便于输出补丁链 ──
+export const PATCH_NAME_KEY = Symbol.for("pi.ccstyle.patch-name");
+
 // ── compact / compact-thinking 协调 ──
 export const COMPACT_MODE_PATCH_KEY = Symbol.for("pi.ccstyle.compact-mode-patch");
 export const COMPACT_THINKING_PATCH_KEY = Symbol.for("pi.ccstyle.compact-thinking-update");
@@ -45,6 +48,9 @@ export const PROMPT_GLYPH_FACTORY = Symbol.for("pi.ccstyle.prompt-glyph-factory"
 
 // ── 助手正文打点段落（包在 compact-mode 之外层，先拆） ──
 export const ASSISTANT_DOTTED_PATCH = Symbol.for("pi.ccstyle.assistant-dotted-patch");
+
+// ── 流式渲染节流（最外层，合并 message_update 的中间帧） ──
+export const STREAM_THROTTLE_PATCH = Symbol.for("pi.ccstyle.stream-throttle-patch");
 
 // ── Markdown 代码块套框 ──
 export const CODE_BLOCK_PATCH = Symbol.for("pi.ccstyle.code-block-patch");

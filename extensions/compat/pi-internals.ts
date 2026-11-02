@@ -23,6 +23,8 @@ export type CompatIssue = {
 
 const issues: CompatIssue[] = [];
 const seenIssues = new Set<string>();
+/** 最近一次 drain 的内容：session_start 清空 issues 后，诊断仍能看到本会话漂移。 */
+let lastIssues: CompatIssue[] = [];
 
 export function reportCompatIssue(feature: string, missing: string): void {
 	const key = `${feature}\0${missing}`;
@@ -36,7 +38,13 @@ export function drainCompatIssues(): CompatIssue[] {
 	const drained = [...issues];
 	issues.length = 0;
 	seenIssues.clear();
+	lastIssues = drained;
 	return drained;
+}
+
+/** 最近一次 drain 的兼容性告警（诊断用，不清空）。 */
+export function getCompatIssueHistory(): readonly CompatIssue[] {
+	return lastIssues;
 }
 
 /** 仅供测试：查看当前累积的告警，不清空。 */

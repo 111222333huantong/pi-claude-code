@@ -1,51 +1,91 @@
 {
-	"generatedAt": "2026-11-01T05:51:53.798Z",
+	"generatedAt": "2026-11-02T02:28:51.852Z",
 	"node": "v22.23.2",
 	"platform": "linux/x64",
 	"metrics": {
 		"calib: measureWidth": {
-			"ms": 0.0003275029999999987,
+			"ms": 0.00032118399999999953,
 			"normalized": 1,
 			"iterations": 20000
 		},
 		"usage: full scan": {
-			"ms": 0.4468409999999949,
-			"normalized": 1364.3875017938665,
+			"ms": 0.452266799999984,
+			"normalized": 1408.1236923383003,
 			"iterations": 5
 		},
 		"usage: same leaf (cached)": {
-			"ms": 0.0000776598000000149,
-			"normalized": 0.23712698814977334,
+			"ms": 0.00008153479999998581,
+			"normalized": 0.2538569791770011,
 			"iterations": 5000
 		},
 		"usage: incremental +1 entry": {
-			"ms": 0.000474397999999951,
-			"normalized": 1.4485302424709174,
+			"ms": 0.00043526500000007215,
+			"normalized": 1.3551889259741232,
 			"iterations": 1000
 		},
 		"bash preview: tail scan": {
-			"ms": 3.164193,
-			"normalized": 9661.569512340384,
+			"ms": 3.0505051999999977,
+			"normalized": 9497.687306964239,
 			"iterations": 5
 		},
 		"bash preview: same input cached": {
-			"ms": 0.000056667000000004464,
-			"normalized": 0.17302742264957785,
+			"ms": 0.00005892299999999295,
+			"normalized": 0.1834555893194961,
 			"iterations": 2000
 		},
 		"bash preview: append 1 line": {
-			"ms": 2.5208610000000817,
-			"normalized": 7697.2149873439075,
+			"ms": 2.433189000000084,
+			"normalized": 7575.685588323477,
+			"iterations": 1
+		},
+		"stream: latin 40 updates": {
+			"ms": 292.9626619999999,
+			"normalized": 912133.4250772153,
+			"iterations": 1
+		},
+		"stream: cjk 40 updates": {
+			"ms": 140.3741930000001,
+			"normalized": 437052.25976387464,
+			"iterations": 1
+		},
+		"stream: latin 40 updates (update only)": {
+			"ms": 0.030503000000408065,
+			"normalized": 94.97048420969945,
+			"iterations": 1
+		},
+		"stream: cjk 40 updates (update only)": {
+			"ms": 0.030331999999816617,
+			"normalized": 94.43807910673216,
+			"iterations": 1
+		},
+		"stream: latin 40 renders": {
+			"ms": 17.581442000000152,
+			"normalized": 54739.47021022273,
+			"iterations": 1
+		},
+		"stream: cjk 40 renders": {
+			"ms": 7.070103999999901,
+			"normalized": 22012.628275380815,
+			"iterations": 1
+		},
+		"stream: latin 40 updates (throttled)": {
+			"ms": 53.65743999999995,
+			"normalized": 167061.37292019537,
+			"iterations": 1
+		},
+		"stream: cjk 40 updates (throttled)": {
+			"ms": 25.42398000000003,
+			"normalized": 79157.0563913522,
 			"iterations": 1
 		},
 		"diff: expanded capped (2200 lines)": {
-			"ms": 85.62301533333334,
-			"normalized": 261441.92674062127,
+			"ms": 86.83417066666668,
+			"normalized": 270356.46441499825,
 			"iterations": 3
 		},
 		"diff: expanded uncapped (2200 lines)": {
-			"ms": 152.91163300000017,
-			"normalized": 466901.4726582681,
+			"ms": 151.7892920000004,
+			"normalized": 472592.9436086499,
 			"iterations": 1
 		}
 	},
@@ -53,6 +93,7 @@
 		"session entries": 20000,
 		"bash MB": 6.2,
 		"bash lines": 200000,
+		"stream chars": 55800,
 		"capped rows": 2005,
 		"uncapped rows": 4403
 	}

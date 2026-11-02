@@ -271,7 +271,7 @@ test("config normalize keeps compact, defaults to on, command completions order 
 		claudeCodeStyleExtension(pi, { mode: "on" });
 		assert.deepEqual(
 			completions.map((item) => item.value),
-			["on", "compact", "off", "status", "panel"],
+			["on", "compact", "off", "status", "diag", "panel"],
 		);
 	} finally {
 		config.mode = previousMode;

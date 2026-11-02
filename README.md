@@ -35,6 +35,13 @@ pi install git:github.com/111222333huantong/pi-claude-code
 
 安装后执行 `/reload`。
 
+手动用 npm 安装时，可加 `--omit=optional` 跳过 `pi-paster` 的可选依赖
+`sharp`（体积较大，只影响部分图片缩放，图片粘贴主路径仍可用）：
+
+```bash
+npm install --omit=optional pi-claude-code
+```
+
 ## 界面预览
 
 <a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-claude-code 终端截图：mascot 启动头、两行状态栏与 fullscreen 回到底部按钮" width="100%"></a>
@@ -59,6 +66,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
 | 功能                  | 说明                                                                            | 入口                                            |
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
+| 诊断                  | 版本、补丁链顺序、compat 漂移、footer 归属与配置路径                             | `/ccstyle diag`                                 |
 | Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
@@ -134,6 +142,7 @@ pi install git:github.com/111222333huantong/pi-claude-code
   "completionBellAfterSec": 0,             // 回合超过 N 秒完成时响铃，0 关闭
   "liveToolPreview": true,                 // bash 执行中/落定尾预览开关
   "liveToolPreviewLines": 5,               // bash 尾预览行数
+  "streamThrottleMs": 100,                 // 流式正文合并间隔（ms）；0 = 每个 token 都重绘（长回复 CPU 高）
 
   // features（本 fork 增补）
   "enableImagePaster": true,               // 图片粘贴：剪贴板/拖拽图片转附件
@@ -205,6 +214,11 @@ pi -e .              # 只跑一次，不改 settings.json
 **状态栏没出现？**
 先 `/statusline on` 再 `/reload`。若同时启用了上游 footer，需要在 `/ccstyle`
 Features 页关掉 `enableCustomFooter`——两者互斥。
+
+**长回复时 CPU 占用高、滚动卡顿？**
+Pi 1.x 每个 token 都会重建整段 Markdown。本扩展默认把它合并到约 10fps
+（`streamThrottleMs: 100`）；想更跟手可调到 `50`，想更省 CPU 调到 `150`/`250`，
+设 `0` 则恢复逐 token 重绘。
 
 **Windows / WSL 有什么注意点？**
 `write` 走 Pi 官方路径解析，WSL 的 `/mnt/c/...` 会写到对应的 C 盘目录；

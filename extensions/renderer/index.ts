@@ -10,8 +10,10 @@ import {
 	setConfig,
 	updateConfig,
 } from "../config/config.ts";
+import { formatDiagnostics } from "../config/diagnostics.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
+import { showTextPreview } from "../feature/context.ts";
 import { installMainScreenDoRenderPatch, isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { installDottedParagraphs, refreshDottedParagraphs } from "./assistant-paragraphs.ts";
 import {
@@ -42,6 +44,7 @@ import {
 	installStickyPromptPatches,
 	setStickyPromptTheme,
 } from "./mouse/sticky-prompt.ts";
+import { installStreamThrottle } from "./stream-throttle.ts";
 import { setCodeBlockTheme } from "./tool/code-block.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { prewarmShikiHighlight } from "./tool/diff/shiki-highlight.ts";
@@ -147,6 +150,7 @@ export default function (
 				disposeSubagentNotificationRenderer: () => void;
 				disposeToolExpandedBackground: () => void;
 				disposeDottedParagraphs: () => void;
+				disposeStreamThrottle: () => void;
 				disposeUserMessage: () => void;
 		  }
 		| undefined;
@@ -206,6 +210,8 @@ export default function (
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		// 打点段落包在 compact-mode 之外层（后装先拆），接管其下游 updateContent。
 		const disposeDottedParagraphs = installDottedParagraphs();
+		// 流式节流再包一层：只合并 message_update 的中间帧，最终帧直通。
+		const streamThrottle = installStreamThrottle();
 		// Shiki 预热：动态 import + WASM + 双主题只加载一次（约 100–200ms）。
 		// 放到首屏之后空闲再跑，避免挤占启动；首次展开 diff 前通常已完成，
 		// 未完成时仍走懒加载。会话切换会取消未执行的预热。
@@ -218,6 +224,7 @@ export default function (
 			disposeSubagentNotificationRenderer,
 			disposeToolExpandedBackground,
 			disposeDottedParagraphs,
+			disposeStreamThrottle: streamThrottle.dispose,
 			disposeUserMessage,
 		};
 		return installation;
@@ -235,6 +242,7 @@ export default function (
 				},
 				{ value: "off", label: "off", description: "Use Pi's native renderer" },
 				{ value: "status", label: "status", description: "Show full configuration" },
+				{ value: "diag", label: "diag", description: "Show runtime and patch diagnostics" },
 				{ value: "panel", label: "panel", description: "Open interactive settings panel" },
 			];
 			return topLevel.filter((item) => item.value.startsWith(prefix));
@@ -264,7 +272,16 @@ export default function (
 				ctx.ui.notify(`Claude Code style: ${formatConfigStatus(config)}`, "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /ccstyle [on|compact|off|status|panel]", "warning");
+			if (arg === "diag") {
+				const text = formatDiagnostics();
+				if (ctx?.mode === "tui" && ctx?.hasUI && typeof ctx.ui?.custom === "function") {
+					await showTextPreview(ctx, "ccstyle diag", text);
+				} else {
+					ctx.ui?.notify?.(text, "info");
+				}
+				return;
+			}
+			ctx.ui.notify("Usage: /ccstyle [on|compact|off|status|diag|panel]", "warning");
 		},
 	});
 
@@ -400,6 +417,9 @@ export default function (
 
 	pi.on("agent_end", async () => {
 		clearLiveToolCalls();
+	});
+	pi.on("agent_settled", async () => {
+		// 重试/恢复/排队续跑都结束后再收口，避免把还要继续的回合提前标成已结束。
 		// 这轮跑完：末尾回合没有正文收口（纯工具回合）就一直挂着 Running。
 		compactModeHooks?.settleFinishedRound();
 	});
@@ -420,6 +440,7 @@ export default function (
 		current.toolGrouping.shutdown();
 		current.disposeToolExpandedBackground();
 		// 打点段落在 compact 之外层：先拆，把 updateContent 还给 compact，再拆 compact。
+		current.disposeStreamThrottle();
 		current.disposeDottedParagraphs();
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;

@@ -1,0 +1,6 @@
+
+ Inspecting the renderer.
+
+ Ran for 9s, read×1, bash×1, grep×1 · click to show more
+ ↳ grep pattern="TODO" path="src"
+   src/a.ts:1:TODO

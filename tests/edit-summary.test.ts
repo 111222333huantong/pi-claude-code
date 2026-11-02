@@ -61,16 +61,56 @@ function plainLines(component: Component, width = 100): string[] {
 		.map((line) => line.trim());
 }
 
-test("edit collapsed lines accepts zero without changing the default or write setting", () => {
-	assert.equal(normalizeConfig({}).editDiffCollapsedLines, 24);
+test("edit collapsed lines accepts auto/zero without changing the write setting", () => {
+	assert.equal(normalizeConfig({}).editDiffCollapsedLines, "auto");
+	assert.equal(normalizeConfig({ editDiffCollapsedLines: "auto" }).editDiffCollapsedLines, "auto");
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: 0 }).editDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: "0" }).editDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: -3 }).editDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: 1 }).editDiffCollapsedLines, 1);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: 999 }).editDiffCollapsedLines, 500);
-	assert.equal(normalizeConfig({ editDiffCollapsedLines: "invalid" }).editDiffCollapsedLines, 24);
+	assert.equal(
+		normalizeConfig({ editDiffCollapsedLines: "invalid" }).editDiffCollapsedLines,
+		"auto",
+	);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
+	assert.ok(DIFF_COLLAPSED_LINES_VALUES.includes("auto"), "the settings panel offers auto");
 	assert.ok(DIFF_COLLAPSED_LINES_VALUES.includes("0"), "the settings panel offers summary-only");
+});
+
+test("auto edit preview expands small diffs and summarizes large ones", () => {
+	const auto = { ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: "auto" as const };
+	const render = (diffText: string, expanded = false) =>
+		plainLines(
+			renderEditDiffResult({ diff: diffText }, { expanded }, auto, theme, "") as Component,
+		).join("\n");
+	const makeDiff = (added: number, removed: number) => {
+		const rows = ["@@ -1,40 +1,40 @@"];
+		for (let index = 0; index < removed; index++) rows.push(`-${index + 1}|old ${index}`);
+		for (let index = 0; index < added; index++) rows.push(`+${index + 1}|new ${index}`);
+		return rows.join("\n");
+	};
+
+	// 2 行改动：完整正文照常显示。
+	const small = render(diff);
+	assert.match(small, /OLD_CONTENT/);
+	assert.match(small, /NEW_CONTENT/);
+
+	// 边界：增删合计 16 行仍算小改。
+	const boundary = render(makeDiff(8, 8));
+	assert.match(boundary, /old 0/);
+	assert.match(boundary, /new 0/);
+	assert.doesNotMatch(boundary, /more diff lines/);
+
+	// 17 行起收成一行摘要，正文不渲染。
+	const large = render(makeDiff(9, 8));
+	assert.match(large, /diff \+9 -8 · .*to show more/);
+	assert.doesNotMatch(large, /old 0|new 0/);
+
+	// 展开后仍然全量，不因为 auto 被卡住。
+	const expanded = render(makeDiff(9, 8), true);
+	assert.match(expanded, /old 0/);
+	assert.match(expanded, /new 0/);
 });
 
 test("zero edit preview is one width-safe summary row in every diff layout", () => {

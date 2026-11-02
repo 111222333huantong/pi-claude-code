@@ -61,6 +61,7 @@ import {
 	LIVE_TOOL_PREVIEW_LINES_VALUES,
 	MAX_STARTUP_SLOGAN_LENGTH,
 	mergeExcludeRendererCandidates,
+	pickEditDiffCollapsedLines,
 	pickPositiveInt,
 	pickPositiveNumber,
 	pickToolLabelClip,
@@ -387,6 +388,7 @@ function buildNumberInputSubmenu(
 	theme: any,
 	setting: { label: string; currentValue: string },
 	closeSubmenu: (selected?: string) => void,
+	allowAuto = false,
 ) {
 	return buildValueInputSubmenu(
 		theme,
@@ -394,8 +396,15 @@ function buildNumberInputSubmenu(
 			prompt: `  ${setting.label} — custom value:`,
 			initial: setting.currentValue,
 			hint: "  Enter to apply · Esc to go back",
-			accept: (raw) => (raw === "" ? undefined : Number.isFinite(Number(raw)) ? raw : null),
-			invalid: (raw) => `Invalid number: "${raw}"`,
+			accept: (raw) =>
+				raw === ""
+					? undefined
+					: allowAuto && raw === "auto"
+						? "auto"
+						: Number.isFinite(Number(raw))
+							? raw
+							: null,
+			invalid: (raw) => `Invalid ${allowAuto ? "value" : "number"}: "${raw}"`,
 		},
 		closeSubmenu,
 	);
@@ -536,11 +545,11 @@ export async function showCcstylePanel(
 		const diffCollapsedSetting = {
 			id: "editDiffCollapsedLines",
 			label: "Edit collapsed lines",
-			description: `How many edit/diff body lines to show before the expand hint (${expandShortcutText()} / click). 0 shows only change counts and the hint. Write uses its own setting below.`,
+			description: `Auto shows small diffs in full and collapses large ones to a summary. A number caps the body at that many lines (${expandShortcutText()} / click to expand). 0 shows only change counts. Write uses its own setting below.`,
 			currentValue: String(config.editDiffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
-				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu),
+				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu, true),
 		};
 		const writeDiffCollapsedSetting = {
 			id: "writeDiffCollapsedLines",
@@ -1178,11 +1187,9 @@ export async function showCcstylePanel(
 					break;
 				case "editDiffCollapsedLines":
 					updateConfig({
-						editDiffCollapsedLines: pickPositiveInt(
+						editDiffCollapsedLines: pickEditDiffCollapsedLines(
 							value,
 							DEFAULT_CONFIG.editDiffCollapsedLines,
-							0,
-							500,
 						),
 					});
 					diffCollapsedSetting.currentValue = String(config.editDiffCollapsedLines);

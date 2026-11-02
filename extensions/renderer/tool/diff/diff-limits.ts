@@ -1,5 +1,5 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../../../config/config.ts";
+import type { EditDiffCollapsedLines, ToolDisplayConfig } from "../../../config/config.ts";
 import { measureWidth } from "../../../utils/width.ts";
 import { renderAllHintText, showMoreHintText } from "../names.ts";
 import type { SplitDiffRow } from "./diff-inline.ts";
@@ -40,20 +40,29 @@ function renderDiffSpacerLine(width: number): string {
 export const EXPANDED_DIFF_MAX_LINES = 2000;
 
 /**
+ * `editDiffCollapsedLines: "auto"` 的分界：增删合计不超过该值时整段展开，
+ * 超过则只留一行变更摘要 + 展开入口。小改不吵、大改不淹 scrollback。
+ */
+export const AUTO_EDIT_COLLAPSE_MAX_CHANGED_LINES = 16;
+
+export function shouldAutoCollapseEdit(stats: { added: number; removed: number }): boolean {
+	return stats.added + stats.removed > AUTO_EDIT_COLLAPSE_MAX_CHANGED_LINES;
+}
+
+/**
  * Body lines to render before the remainder hint. Collapsed diffs use the configured
  * line limit; expanded diffs render fully up to EXPANDED_DIFF_MAX_LINES, and only
  * `renderAll` (second click) lifts the cap.
  */
 export function resolveDiffDisplayLimit(
 	expanded: boolean,
-	maxCollapsedLines: number,
+	maxCollapsedLines: EditDiffCollapsedLines,
 	renderAll = false,
 ): number {
 	if (expanded) return renderAll ? Number.POSITIVE_INFINITY : EXPANDED_DIFF_MAX_LINES;
-	const collapsedLimit = Number.isFinite(maxCollapsedLines)
-		? maxCollapsedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines;
-	return Math.max(1, collapsedLimit);
+	// auto 的“大 diff”分支在渲染前已收成摘要行；走到这里说明是“小 diff 全显”。
+	if (maxCollapsedLines === "auto") return EXPANDED_DIFF_MAX_LINES;
+	return Math.max(1, maxCollapsedLines);
 }
 
 export function resolveWriteCollapsedLimit(
@@ -109,7 +118,7 @@ export function applyLineLimit(
 	rows: RenderedRow[],
 	width: number,
 	expanded: boolean,
-	maxCollapsedLines: number,
+	maxCollapsedLines: EditDiffCollapsedLines,
 	totalHunks: number,
 	theme: DiffTheme,
 	/**

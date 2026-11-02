@@ -28,6 +28,9 @@
   `compact-tool-lines.ts`，live 槽位与状态行 → `compact-live.ts`。主文件只保留
   补丁安装与回合状态机；对外导出路径保持不变。
 - 手动 npm 安装可用 `--omit=optional` 跳过 `pi-paster` 的可选 `sharp` 依赖。
+- `editDiffCollapsedLines` 支持 `"auto"` 并成为新默认：增删合计 ≤16 行的 edit
+  整段展开，超过则收成 `↳ diff +A -D · click to show more` 一行摘要。
+  数字配置继续可用（`0` 仍为仅摘要），write 的 `0` 行默认不变。
 
 ### 性能
 

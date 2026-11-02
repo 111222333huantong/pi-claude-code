@@ -28,6 +28,7 @@ import {
 	clampDiffLineToWidth,
 	resolveDiffDisplayLimit,
 	resolveDiffProcessBudget,
+	shouldAutoCollapseEdit,
 	takeEntriesForLineBudget,
 	takeSplitRowsForBudget,
 } from "./diff-limits.ts";
@@ -199,7 +200,12 @@ export function renderEditDiffResult(
 			}
 
 			// Like write's zero-line preview, handle this before the normal body limiter.
-			if (!options.expanded && live.editDiffCollapsedLines === 0) {
+			// auto 大 diff 复用同一行摘要；小 diff 继续走完整正文。
+			const autoCollapsed =
+				!options.expanded &&
+				live.editDiffCollapsedLines === "auto" &&
+				shouldAutoCollapseEdit(parsed.stats);
+			if (!options.expanded && (live.editDiffCollapsedLines === 0 || autoCollapsed)) {
 				const summary = renderEditCollapsedSummaryLine(parsed.stats, safeWidth, theme, hovered);
 				return cache.set(
 					safeWidth,

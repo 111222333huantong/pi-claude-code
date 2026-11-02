@@ -14,6 +14,8 @@ export type CompactStyleMode = "on" | "compact" | "off";
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffPaletteMode = "theme" | "claude";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
+/** edit 折叠行数：固定行数，或按本次 diff 大小自动决定全显/摘要。 */
+export type EditDiffCollapsedLines = number | "auto";
 export type FooterGitStatsMode = "working" | "branch";
 export type FooterTokenRateMode = "average" | "live";
 export type ScrollButtonMode = "dock" | "native";
@@ -24,7 +26,7 @@ export interface ToolDisplayConfig {
 	diffPalette: DiffPaletteMode;
 	diffSplitMinWidth: number;
 	/** Edit-only collapsed body lines. 0 = change counts and an expand hint. */
-	editDiffCollapsedLines: number;
+	editDiffCollapsedLines: EditDiffCollapsedLines;
 	/** Write-only collapsed body lines. 0 = `↳ created · click to show more`. */
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
@@ -36,8 +38,11 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	diffIndicatorMode: "bars",
 	diffPalette: "theme",
 	diffSplitMinWidth: 120,
-	/** Collapsed edit/diff body: ~half a typical terminal after chrome. */
-	editDiffCollapsedLines: 24,
+	/**
+	 * Auto: small diffs render in full, large diffs collapse to a one-line summary.
+	 * A number caps the collapsed body at that many lines (0 = summary only).
+	 */
+	editDiffCollapsedLines: "auto",
 	/**
 	 * Write create/overwrite collapsed body.
 	 * 0 = `↳ created · click to show more` (stats stay on the title).
@@ -58,7 +63,7 @@ export type Config = {
 	diffIndicatorMode: DiffIndicatorMode;
 	diffPalette: DiffPaletteMode;
 	diffSplitMinWidth: number;
-	editDiffCollapsedLines: number;
+	editDiffCollapsedLines: EditDiffCollapsedLines;
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
@@ -156,7 +161,7 @@ export const FOOTER_GIT_STATS_MODES: FooterGitStatsMode[] = ["working", "branch"
 export const FOOTER_TOKEN_RATE_MODES: FooterTokenRateMode[] = ["average", "live"];
 export const SCROLL_BUTTON_MODES: ScrollButtonMode[] = ["dock", "native"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
-export const DIFF_COLLAPSED_LINES_VALUES = ["0", "12", "24", "36", "48", "80", "120"];
+export const DIFF_COLLAPSED_LINES_VALUES = ["auto", "0", "12", "24", "36", "48", "80", "120"];
 /** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
 export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
@@ -265,6 +270,17 @@ export function pickPositiveInt(value: unknown, fallback: number, min = 1, max =
 	return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+/** edit 折叠行数：`auto` 透传，其余按 0..500 的整数归一化。 */
+export function pickEditDiffCollapsedLines(
+	value: unknown,
+	fallback: EditDiffCollapsedLines = DEFAULT_CONFIG.editDiffCollapsedLines,
+): EditDiffCollapsedLines {
+	if (value === "auto") return "auto";
+	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(500, Math.max(0, Math.floor(n)));
+}
+
 /** toolLabelClip：0 表示按宽度自适应，其余夹到 8..500。 */
 export function pickToolLabelClip(value: unknown): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -317,11 +333,9 @@ export function normalizeConfig(input: unknown): Config {
 			40,
 			300,
 		),
-		editDiffCollapsedLines: pickPositiveInt(
+		editDiffCollapsedLines: pickEditDiffCollapsedLines(
 			source.editDiffCollapsedLines,
 			DEFAULT_CONFIG.editDiffCollapsedLines,
-			0,
-			500,
 		),
 		writeDiffCollapsedLines: pickPositiveInt(
 			source.writeDiffCollapsedLines,

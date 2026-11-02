@@ -113,6 +113,7 @@ test("expanded long edit diff shows every line instead of a remainder hint", () 
 				theme,
 				{ args: { path: "sample.ts" } },
 				new WriteExecutionMetadataStore(),
+				{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 24 },
 			),
 			80,
 		).map(stripVTControlCharacters);
@@ -143,7 +144,7 @@ test("collapsed diff declares only its remainder row as the expand entry", () =>
 	const collapsed: any = renderEditDiffResult(
 		{ diff: diff.join("\n") },
 		{ expanded: false },
-		DEFAULT_TOOL_DISPLAY_CONFIG,
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 24 },
 		theme,
 		"",
 	);

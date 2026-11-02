@@ -100,6 +100,13 @@ const DIFF_LONG = [
 	}),
 ].join("\n");
 
+/** 增删合计 40 行：`auto` 折叠必须收成一行摘要。 */
+const DIFF_LARGE = [
+	"@@ -1,40 +1,40 @@",
+	...Array.from({ length: 20 }, (_, index) => `-${index + 1}|old ${index}`),
+	...Array.from({ length: 20 }, (_, index) => `+${index + 1}|new ${index}`),
+].join("\n");
+
 async function bootDefaultMode(): Promise<() => Promise<void>> {
 	const events = new Map<string, Array<(...args: any[]) => any>>();
 	const pi = {
@@ -460,6 +467,14 @@ export async function renderGoldenCases(): Promise<GoldenCase[]> {
 			diff: DIFF,
 		});
 		cases.push({ name: "tool-card/edit-collapsed-80", lines: renderLines(editCollapsed, 80) });
+
+		// auto：大 diff 折叠成一行摘要，正文不占 scrollback。
+		const editAutoLarge = succeed(
+			tool("edit", "g-edit-large", { path: "src/large.ts" }),
+			undefined,
+			{ diff: DIFF_LARGE },
+		);
+		cases.push({ name: "tool-card/edit-auto-large-80", lines: renderLines(editAutoLarge, 80) });
 
 		const editExpanded = succeed(
 			tool("edit", "g-edit-open", { path: "src/sample.ts" }),

@@ -127,10 +127,10 @@ npm install --omit=optional pi-claude-code
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
   "previewLines": 3,                       // 预览内容行数（空行不占窗口），0 隐藏
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
-  "thinkingExpandedMaxLines": 200,         // 展开先给尾部行数，再推进一次看全文
-  "thinkingLiveSummary": true,             // 活动 thinking 标题扫光 + 按段落累积摘要
-  "thinkingSummaryLimit": 5,               // 折叠态保留的最近摘要条数
-  "showRawThinking": false,                // 展开态显示原文（调试用）
+  "thinkingExpandedMaxLines": 200,         // 旧版 raw preview 的展开行数；文档模式忽略
+  "thinkingLiveSummary": true,             // 文档模式：折叠两行 + 展开全文
+  "thinkingSummaryLimit": 1,               // 折叠态保留的最新正文行数
+  "showRawThinking": false,                // 保留兼容；文档模式始终显示全文
 
   // ui（本 fork 增补）
   "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
@@ -165,11 +165,11 @@ npm install --omit=optional pi-claude-code
 }
 ```
 
-> `thinkingLiveSummary` 只在 thinking 被隐藏（`Ctrl+T` 或 `hideThinkingBlock: true`）时接管；
-> 折叠/展开默认都只显示摘要列表，`showRawThinking: true` 才在展开态显示原文。
-> 有 provider 的 `**Section title**` 时优先用标题；没有时按空行/句末换行/500 字/2 秒空闲切块，
-> 每块本地提炼一行摘要，不额外调用模型。本地 fallback 会过滤“用户问了什么/我要怎么回答/确保格式”
-> 这类元话语和短碎片；过滤后没有有效内容就不生成条目。
+> `thinkingLiveSummary: true` 是新的文档模式：折叠只显示状态 + 最新一句正文，展开直接给全文，
+> 原文不会被摘要替换；provider 的 `**Section title**` 会作为文档小节保留。
+> 设为 `false` 回到旧版 raw preview（`thinkingExpandedMaxLines` 只在这个模式下生效；
+> `showRawThinking` 仅为兼容保留，文档模式始终显示完整原文）。
+> 折叠正文行数由 `thinkingSummaryLimit` 控制；标题、正文、左侧竖线分别使用 muted / dim / dim，全程不斜体。
 
 本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）。保存后自动生效；`/statusline worktree on|off` 可立即切换 L2 的 worktree 段：
 

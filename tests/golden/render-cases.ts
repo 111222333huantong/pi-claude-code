@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { config, normalizeConfig, setConfig } from "../../extensions/config/config.ts";
+import { ThinkingPreviewBlock } from "../../extensions/feature/compact-thinking.ts";
 import {
 	buildLines as buildStatusLines,
 	type StatusSnapshot,
@@ -183,6 +184,36 @@ function diffComponent(
 		"",
 	);
 	return renderLines(component, options.width);
+}
+
+function thinkingBlockLines(
+	heading: string,
+	text: string,
+	width: number,
+	options: { expanded?: boolean; timestamp?: number } = {},
+): string[] {
+	const block = new ThinkingPreviewBlock(
+		heading,
+		text,
+		0,
+		options.timestamp ?? SNAPSHOT_NOW - 12_000,
+		(t) => t,
+		plainTheme as any,
+		0,
+		false,
+		plainTheme as any,
+		undefined,
+		undefined,
+		false,
+		undefined,
+		text,
+	);
+	try {
+		block.setExpanded(options.expanded === true);
+		return renderLines(block, width);
+	} finally {
+		block.setExpanded(false);
+	}
 }
 
 function bootCompactRound(message: any, tools: any[]) {
@@ -519,6 +550,41 @@ export async function renderGoldenCases(): Promise<GoldenCase[]> {
 	} finally {
 		await shutdown();
 	}
+
+	// --- thinking：折叠两行 + 展开文档 ------------------------------------
+	const THINKING_TEXT = [
+		"**排查缓存键**",
+		"",
+		"失败的测试指向 memo 过的布局。缓存键里没有宽度，窗口一缩放就会复用旧行，摘要行于是落进了错误的容器。",
+		"",
+		"**验证修复**",
+		"",
+		"把宽度和折叠行数一起放进缓存键，然后重跑 60/100/140 列的 golden 快照。",
+	].join("\n");
+	cases.push({
+		name: "thinking/collapsed-80",
+		lines: thinkingBlockLines("✻ Thought for 12s", THINKING_TEXT, 80),
+	});
+	cases.push({
+		name: "thinking/collapsed-60",
+		lines: thinkingBlockLines("✻ Thought for 12s", THINKING_TEXT, 60),
+	});
+	cases.push({
+		name: "thinking/expanded-80",
+		lines: thinkingBlockLines("✻ Thought for 12s", THINKING_TEXT, 80, { expanded: true }),
+	});
+	cases.push({
+		name: "thinking/expanded-100",
+		lines: thinkingBlockLines("✻ Thought for 12s", THINKING_TEXT, 100, { expanded: true }),
+	});
+	cases.push({
+		name: "thinking/collapsed-plain-80",
+		lines: thinkingBlockLines(
+			"✻ Thought for 7s",
+			["先看测试失败的位置。", "", "缓存键里没有宽度。", "", "把宽度补进缓存键。"].join("\n"),
+			80,
+		),
+	});
 
 	// --- 状态栏：L1/L2 组装与窄屏降级 --------------------------------------
 	const statusBase: StatusSnapshot = {

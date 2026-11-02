@@ -253,10 +253,11 @@ export function compactRoundCard(
 		| undefined;
 	const layout = (width: number) => {
 		const theme = themeOf();
-		// 与 default 模式分组卡同口径：外卡底色随组内工具聚合，子卡状态变了要重绘。
-		const bgSlot = aggregateToolCardBgSlot(
-			children.map((child) => child?.__ccTool).filter(Boolean),
-		);
+		// 与 default 模式分组卡同口径：外卡底色随组内工具聚合；只有 thinking/文本的
+		// 回合没有工具状态，用中性 pending 底，不能借工具成功绿冒充“成功”。
+		const toolChildren = children.map((child) => child?.__ccTool).filter(Boolean);
+		const bgSlot =
+			toolChildren.length > 0 ? aggregateToolCardBgSlot(toolChildren) : "toolPendingBg";
 		const innerWidth = contentWidth(width);
 		const paints = children.map((child) => {
 			const lines = child.render?.(innerWidth);

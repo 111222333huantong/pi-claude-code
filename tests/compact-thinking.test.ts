@@ -258,7 +258,7 @@ test("thinking chunks split on blank lines and summaries strip filler", () => {
 	);
 });
 
-test("provider summary titles become the summary list without local extraction", () => {
+test("provider summary titles drive the collapsed status and full document", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-provider-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -284,7 +284,7 @@ test("provider summary titles become the summary list without local extraction",
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
-			thinkingSummaryLimit: 5,
+			thinkingSummaryLimit: 1,
 			showRawThinking: false,
 		});
 		emit("session_start", {}, ctx);
@@ -300,27 +300,51 @@ test("provider summary titles become the summary list without local extraction",
 
 		const live = new AssistantMessageComponent(msg, true) as any;
 		live.updateContent(msg);
-		const liveSummaries = renderText(live)
-			.filter((line) => line.startsWith("· "))
-			.map((line) => line.slice(2));
-		assert.deepEqual(
-			liveSummaries,
-			["Inspecting renderer", "Verifying spinner", "Running tests"],
-			"non-OpenAI messages have no provider title in the heading, so every section stays in the list",
+		const liveLines = renderText(live);
+		assert.ok(
+			liveLines.some((line) => line.includes("Thinking… · Running tests")),
+			`active heading should pair status with the current section: ${JSON.stringify(liveLines)}`,
 		);
 		assert.ok(
-			!renderText(live).some((line) => line.includes("I need to inspect")),
-			"provider title mode must not fall back to raw body",
+			liveLines.some((line) => line.includes("Finally I will run the full test suite.")),
+			`latest body line missing: ${JSON.stringify(liveLines)}`,
+		);
+		assert.ok(
+			!liveLines.some((line) => line.startsWith("· ")),
+			"document mode must not render a bullet summary list",
 		);
 
 		emit("message_end", { message: msg }, ctx);
 		const done = new AssistantMessageComponent(msg, true) as any;
 		done.updateContent(msg);
-		assert.deepEqual(
-			renderText(done)
-				.filter((line) => line.startsWith("· "))
-				.map((line) => line.slice(2)),
-			["Inspecting renderer", "Verifying spinner", "Running tests"],
+		const doneLines = renderText(done);
+		assert.ok(
+			doneLines.some((line) => line.includes("Thought · Running tests")),
+			`completed status keeps the latest provider title: ${JSON.stringify(doneLines)}`,
+		);
+		assert.ok(
+			doneLines.some((line) => line.includes("Finally I will run the full test suite.")),
+			"completed collapsed block keeps one body line",
+		);
+
+		thinkingBlockOf(done).setExpanded(true);
+		const expanded = renderText(done);
+		for (const text of [
+			"Inspecting renderer",
+			"Verifying spinner",
+			"Running tests",
+			"I need to inspect the renderer",
+			"Then I will verify the animation frame",
+			"Finally I will run the full test suite.",
+		]) {
+			assert.ok(
+				expanded.some((line) => line.includes(text)),
+				`expanded document missing ${text}`,
+			);
+		}
+		assert.ok(
+			!expanded.some((line) => line.includes("**")),
+			"expanded document strips provider title markers",
 		);
 	} finally {
 		emit("session_shutdown", {}, ctx);
@@ -330,7 +354,7 @@ test("provider summary titles become the summary list without local extraction",
 	}
 });
 
-test("active thinking appends paragraph summaries and hides raw reasoning", async () => {
+test("document thinking collapses to the latest line and expands to full reasoning", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-live-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -349,7 +373,7 @@ test("active thinking appends paragraph summaries and hides raw reasoning", asyn
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
-			thinkingSummaryLimit: 2,
+			thinkingSummaryLimit: 1,
 			showRawThinking: false,
 		});
 		emit("session_start", {}, ctx);
@@ -371,16 +395,17 @@ test("active thinking appends paragraph summaries and hides raw reasoning", asyn
 			`active heading missing: ${JSON.stringify(liveLines)}`,
 		);
 		assert.ok(
-			liveLines.some((line) => line.startsWith("· ")),
-			`summary list missing: ${JSON.stringify(liveLines)}`,
+			liveLines.some((line) => line.includes("Finally I will run the full test suite.")),
+			`latest body line missing: ${JSON.stringify(liveLines)}`,
 		);
 		assert.ok(
-			!liveLines.some((line) => line.includes("I need to inspect")),
-			`raw reasoning leaked into collapsed block: ${JSON.stringify(liveLines)}`,
+			!liveLines.some((line) => line.startsWith("· ")),
+			`document mode must not render a bullet list: ${JSON.stringify(liveLines)}`,
 		);
-		assert.ok(
-			liveLines.filter((line) => line.startsWith("· ")).length <= 2,
-			`collapsed summary limit not applied: ${JSON.stringify(liveLines)}`,
+		assert.equal(
+			liveLines.filter((line) => line.includes("I need to inspect")).length,
+			0,
+			"collapsed mode keeps only the latest body line",
 		);
 
 		emit("message_end", { message: msg }, ctx);
@@ -388,30 +413,127 @@ test("active thinking appends paragraph summaries and hides raw reasoning", asyn
 		done.updateContent(msg);
 		const doneLines = renderText(done);
 		assert.equal(
-			doneLines.filter((line) => line.startsWith("· ")).length,
-			2,
-			`collapsed block keeps the latest two summaries: ${JSON.stringify(doneLines)}`,
+			doneLines.filter((line) => line.includes("Finally I will run")).length,
+			1,
+			`collapsed block keeps the latest line: ${JSON.stringify(doneLines)}`,
 		);
 		assert.ok(
-			doneLines.some((line) => line.includes("2 more summaries")),
-			`hidden summary hint missing: ${JSON.stringify(doneLines)}`,
-		);
-		assert.ok(
-			!doneLines.some((line) => line.includes("Finally I will run")),
-			"raw reasoning must stay hidden after completion",
+			!doneLines.some((line) => line.includes("summaries")),
+			"no legacy summary hint in document mode",
 		);
 
 		thinkingBlockOf(done).setExpanded(true);
 		const expandedLines = renderText(done);
-		assert.equal(
-			expandedLines.filter((line) => line.startsWith("· ")).length,
-			4,
-			`expanded block shows the full summary list: ${JSON.stringify(expandedLines)}`,
-		);
+		for (const line of body.split("\n\n")) {
+			assert.ok(
+				expandedLines.some((rendered) => rendered.includes(line)),
+				`expanded document missing: ${line}`,
+			);
+		}
 		assert.ok(
-			!expandedLines.some((line) => line.includes("I need to inspect")),
-			"expanded block must not fall back to raw reasoning",
+			!expandedLines.some((rendered) => rendered.startsWith("· ")),
+			"expanded document is prose, not a bullet summary list",
 		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("document thinking uses accent badge, muted title, dim body, and a left rule", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-document-theme-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		italic: (text: string) => `<i>${text}</i>`,
+		bold: (text: string) => `<b>${text}</b>`,
+	};
+	const ctx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: { theme, setWidget() {}, requestRender() {} },
+	} as any;
+	const body = [
+		"**排查缓存键**",
+		"",
+		"失败的测试指向 memo 过的布局。",
+		"",
+		"**验证修复**",
+		"",
+		"把宽度放进缓存键。",
+	].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: true,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 1,
+		});
+		emit("session_start", {}, ctx);
+		const msg: any = {
+			role: "assistant",
+			timestamp: Date.now(),
+			content: [{ type: "thinking", thinking: body }],
+		};
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = component.render(100).join("\n");
+		assert.match(collapsed, /<accent>✻ /, "badge uses accent");
+		assert.match(collapsed, /<muted>Thought · 验证修复<\/muted>/, "status and title use muted");
+		assert.match(collapsed, /<dim>把宽度放进缓存键。<\/dim>/, "collapsed body uses dim");
+		assert.doesNotMatch(collapsed, /<i>/, "document mode never italicizes thinking");
+
+		thinkingBlockOf(component).setExpanded(true);
+		const expanded = component.render(100).join("\n");
+		assert.match(
+			expanded,
+			/<dim>▏ <\/dim><text>排查缓存键<\/text>/,
+			"section title uses text color",
+		);
+		assert.match(expanded, /<dim>失败的测试指向 memo 过的布局。<\/dim>/, "body uses dim");
+		assert.doesNotMatch(expanded, /<i>/, "expanded document does not italicize CJK body");
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("document thinking supports more than one collapsed body line", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-document-lines-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = ["第一行。", "第二行。", "第三行。"].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 2,
+		});
+		emit("session_start", {}, ctx);
+		const msg: any = {
+			role: "assistant",
+			timestamp: Date.now(),
+			content: [{ type: "thinking", thinking: body }],
+		};
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const lines = renderText(component);
+		assert.ok(lines.some((line) => line.includes("第二行。")));
+		assert.ok(lines.some((line) => line.includes("第三行。")));
+		assert.ok(!lines.some((line) => line.includes("第一行。")), "keeps only the tail window");
 	} finally {
 		emit("session_shutdown", {}, ctx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

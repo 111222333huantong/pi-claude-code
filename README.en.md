@@ -132,10 +132,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview content lines (blanks skipped); 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
-  "thinkingExpandedMaxLines": 200,         // expanded tail lines first; expand again for full body
-  "thinkingLiveSummary": true,             // shimmer active thinking title + append paragraph summaries
-  "thinkingSummaryLimit": 5,               // recent summaries kept in the collapsed block
-  "showRawThinking": false,                // expanded block shows raw reasoning (debug)
+  "thinkingExpandedMaxLines": 200,         // legacy raw preview tail lines; ignored in document mode
+  "thinkingLiveSummary": true,             // document mode: two-line collapsed status + full document on expand
+  "thinkingSummaryLimit": 1,               // latest body lines kept under the collapsed status
+  "showRawThinking": false,                // kept for compatibility; document mode always shows full text
 
   // ui (this fork)
   "showStartupHeader": true,               // startup header (mascot + tips + Loaded) toggle
@@ -172,13 +172,13 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 }
 ```
 
-> `thinkingLiveSummary` takes over only when thinking blocks are hidden (`Ctrl+T` or
-> `hideThinkingBlock: true`). Collapsed and expanded blocks show summaries by default;
-> set `showRawThinking: true` to show raw reasoning when expanded.
-> Provider `**Section title**` blocks are used directly when present; otherwise reasoning is
-> split on blank lines, sentence-ending newlines, 500 chars, or 2s idle, and summarized locally
-> without an extra model call. The local fallback drops meta/planning chatter and short fragments,
-> and emits nothing when a section has no useful content.
+> `thinkingLiveSummary: true` is the document mode: collapsed shows a status line plus the latest body
+> line, and expanding renders the full reasoning document without replacing the original text.
+> Provider `**Section title**` blocks are preserved as document sections. Set it to `false` to restore
+> the legacy raw preview (`thinkingExpandedMaxLines` only applies there; `showRawThinking` is
+> kept for compatibility, while document mode always shows the full text).
+> `thinkingSummaryLimit` controls the number of collapsed body lines; title, body and left rule use
+> muted / dim / dim respectively, with no italics.
 
 This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Features tab in `/ccstyle`). Saved changes apply automatically; `/statusline worktree on|off` toggles the L2 worktree segment immediately:
 

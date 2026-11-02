@@ -31,6 +31,14 @@
 - `editDiffCollapsedLines` 支持 `"auto"` 并成为新默认：增删合计 ≤16 行的 edit
   整段展开，超过则收成 `↳ diff +A -D · click to show more` 一行摘要。
   数字配置继续可用（`0` 仍为仅摘要），write 的 `0` 行默认不变。
+- thinking 改为文档模式：折叠只显示状态行 + 最新一句正文（`✻ Thought for 12s ·
+  Section`，右侧 `N steps`）；展开直接渲染完整 reasoning 文档，保留 provider 的
+  `**Section title**`、段落、列表和代码块，不再把摘要列表当成展开内容。
+  `thinkingLiveSummary: false` 可回退旧版 raw preview；`thinkingSummaryLimit`
+  默认从 5 改为 1，表示折叠态正文行数。展开态去掉 `toolSuccessBg` 卡片底色，
+  改为淡色左侧竖线；标题/正文/竖线分别使用 muted / dim / dim，不再整块斜体。
+  compact 回合只有 thinking/文本、没有工具时，外卡底色改用中性 `toolPendingBg`，
+  不再把工具成功绿套在思考上。新增 `thinking-document.ts` 与解析/渲染 golden。
 
 ### 性能
 

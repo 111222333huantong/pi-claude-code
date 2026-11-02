@@ -38,8 +38,15 @@ import {
 	PROTOTYPE_ORIGINAL_KEY,
 	patchRegistry,
 } from "../utils/patch-keys.ts";
+import {
+	latestThinkingLines,
+	parseThinkingDocument,
+	type ThinkingDocument,
+	thinkingDocumentCurrentTitle,
+	thinkingDocumentSectionCount,
+	thinkingSectionBody,
+} from "./thinking-document.ts";
 import { THINKING_REDACTED_RE } from "./thinking-summary.ts";
-import { ThinkingSummaryStream } from "./thinking-summary-stream.ts";
 
 // 兼容旧的内部导入路径；纯摘要函数现在在 thinking-summary.ts。
 export {
@@ -59,13 +66,13 @@ export type CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
-	/** 展开中间态 tail 窗口行数（Crush 式）；超长先给尾部，再推进全文。 */
+	/** 展开态最大行数（旧版 raw preview 的 tail 窗口；文档模式忽略）。 */
 	thinkingExpandedMaxLines: number;
-	/** 活动思考标题扫光 + 按段落累积摘要；关闭回到静态标题。 */
+	/** true=文档模式（折叠两行 + 展开全文）；false=旧版 raw preview。 */
 	thinkingLiveSummary?: boolean;
-	/** 折叠态保留的最近摘要条数。 */
+	/** 文档模式折叠态保留的正文行数。 */
 	thinkingSummaryLimit?: number;
-	/** 展开态显示原始 thinking；默认只显示摘要列表。 */
+	/** 旧版摘要模式：展开时放行原始 thinking。 */
 	showRawThinking?: boolean;
 };
 
@@ -142,7 +149,7 @@ const COMPACT_THINKING_DEFAULTS: Required<CompactThinkingConfig> = {
 	// Tests and direct library callers keep the old raw renderer unless they opt in.
 	// The host config always passes the real default (true).
 	thinkingLiveSummary: false,
-	thinkingSummaryLimit: 5,
+	thinkingSummaryLimit: 1,
 	showRawThinking: false,
 };
 
@@ -457,10 +464,24 @@ export class ThinkingPreviewBlock implements Component {
 	private followTail: boolean;
 	/** undefined = 旧原生 preview 模式；数组 = 摘要流模式。 */
 	private summaryLines: string[] | undefined;
-	/** 展开态是否放行原始 thinking（默认只显示摘要）。 */
+	/** 文档模式：原文唯一真源，折叠/展开都从这里投影。 */
+	private document: ThinkingDocument | undefined;
+	/** 展开态是否放行原始 thinking（旧版摘要模式使用）。 */
 	private showRawThinking: boolean;
 	/** 活动态标题在每次 render 时重算，动画 timer 只需 requestRender。 */
 	private headingProvider: (() => string) | undefined;
+	private documentMemo:
+		| {
+				width: number;
+				expanded: boolean;
+				hintHovered: boolean;
+				heading: string;
+				bodyKey: string;
+				limit: number;
+				theme: unknown;
+				lines: string[];
+		  }
+		| undefined;
 	private collapsedMemo:
 		| {
 				width: number;
@@ -489,6 +510,7 @@ export class ThinkingPreviewBlock implements Component {
 		summaryLines?: string[],
 		showRawThinking = false,
 		headingProvider?: () => string,
+		documentText?: string,
 	) {
 		this.heading = heading;
 		this.text = text;
@@ -503,12 +525,153 @@ export class ThinkingPreviewBlock implements Component {
 		this.summaryLines = summaryLines;
 		this.showRawThinking = showRawThinking;
 		this.headingProvider = headingProvider;
+		this.document = documentText === undefined ? undefined : parseThinkingDocument(documentText);
 	}
 
 	private paint(color: string, text: string): string {
 		return this.theme && typeof this.theme.fg === "function"
 			? this.theme.fg(color as never, text)
 			: text;
+	}
+
+	/** 文档模式：折叠两行 + 展开全文；原文不丢，section 只是索引。 */
+	private documentMeta(): string | undefined {
+		const count = this.document ? thinkingDocumentSectionCount(this.document) : 0;
+		if (this.expanded) {
+			if (this.hintHovered) return "collapse";
+			return count > 1 ? `${count} steps` : undefined;
+		}
+		if (this.hintHovered) return "expand";
+		return count > 1 ? `${count} steps` : undefined;
+	}
+
+	private documentHeadingLines(width: number, meta: string | undefined): string[] {
+		const left = this.headingProvider?.() ?? this.heading;
+		const padding = this.padding;
+		const contentWidth = Math.max(1, width - padding * 2);
+		const metaText = meta ? this.paint("dim", meta) : "";
+		if (!metaText) {
+			return new Text(truncateToWidth(left, contentWidth, "…"), padding, 0).render(width);
+		}
+		const leftWidth = visibleWidth(left);
+		const metaWidth = visibleWidth(metaText);
+		if (leftWidth + metaWidth + 2 > contentWidth) {
+			return new Text(truncateToWidth(left, contentWidth, "…"), padding, 0).render(width);
+		}
+		const gap = " ".repeat(contentWidth - leftWidth - metaWidth);
+		return new Text(left + gap + metaText, padding, 0).render(width);
+	}
+
+	private renderDocumentSectionBody(body: string, width: number): string[] {
+		if (this.markdownTheme !== undefined) {
+			try {
+				return new Markdown(
+					body,
+					0,
+					0,
+					this.markdownTheme,
+					{ color: (text) => this.paint("dim", text), italic: false },
+					this.markdownTransform !== undefined ? { transform: this.markdownTransform } : undefined,
+				).render(Math.max(1, width));
+			} catch {
+				// 主题未就绪等异常回退裸文本；render 内绝不抛错。
+			}
+		}
+		return wrapTextWithAnsi(body.replace(/\t/g, "   "), Math.max(1, width));
+	}
+
+	private buildDocumentBodyLines(width: number): string[] {
+		const doc = this.document;
+		if (!doc) return [];
+		const padding = this.padding;
+		const contentWidth = Math.max(1, width - padding * 2);
+		const gutterText = "▏ ";
+		const bodyWidth = Math.max(1, contentWidth - visibleWidth(gutterText));
+		const gutter = this.paint("dim", gutterText);
+		const lines: string[] = [];
+
+		for (const section of doc.sections) {
+			const body = thinkingSectionBody(doc, section);
+			if (!section.title && !body) continue;
+			if (lines.length > 0) lines.push(this.paint("dim", "▏"));
+			if (section.title) {
+				for (const titleLine of wrapTextWithAnsi(section.title, bodyWidth)) {
+					lines.push(gutter + this.paint("text", titleLine));
+				}
+			}
+			if (body) {
+				for (const bodyLine of this.renderDocumentSectionBody(body, bodyWidth)) {
+					lines.push(gutter + bodyLine);
+				}
+			}
+		}
+		return lines;
+	}
+
+	private renderDocument(width: number): string[] {
+		const doc = this.document;
+		if (!doc) return [];
+		const padding = this.padding;
+		const contentWidth = Math.max(1, width - padding * 2);
+		const headingText = this.headingProvider?.() ?? this.heading;
+		const meta = this.documentMeta();
+		const limit = Math.max(1, config.thinkingSummaryLimit ?? 1);
+		const collapsedBody = this.expanded ? [] : latestThinkingLines(doc, limit);
+		const bodyKey = this.expanded ? doc.raw : collapsedBody.join("\n");
+		if (
+			this.documentMemo?.width === width &&
+			this.documentMemo.expanded === this.expanded &&
+			this.documentMemo.hintHovered === this.hintHovered &&
+			this.documentMemo.heading === headingText &&
+			this.documentMemo.bodyKey === bodyKey &&
+			this.documentMemo.limit === limit &&
+			this.documentMemo.theme === this.theme
+		) {
+			return this.documentMemo.lines;
+		}
+
+		const heading = this.documentHeadingLines(width, meta);
+		if (!this.expanded) {
+			const body = collapsedBody.flatMap((line) => {
+				const clipped = truncateToWidth(line, Math.max(1, contentWidth - 2), "…");
+				return new Text(`  ${this.paint("dim", clipped)}`, padding, 0).render(width);
+			});
+			const lines = body.length ? [...heading, ...body] : heading;
+			this.documentMemo = {
+				width,
+				expanded: this.expanded,
+				hintHovered: this.hintHovered,
+				heading: headingText,
+				bodyKey,
+				limit,
+				theme: this.theme,
+				lines,
+			};
+			return lines;
+		}
+
+		const body = renderExpandedMarkdown(
+			this.messageTimestamp,
+			this.runStartIndex,
+			doc.raw,
+			width,
+			() => this.buildDocumentBodyLines(width),
+			this.theme,
+		);
+		const lines = body.length
+			? [...heading, "", ...body.flatMap((line) => new Text(line, padding, 0).render(width))]
+			: heading;
+		this.documentMemo = {
+			width,
+			expanded: this.expanded,
+			hintHovered: this.hintHovered,
+			heading: headingText,
+			bodyKey,
+			limit,
+			theme: this.theme,
+			lines,
+		};
+		return lines;
 	}
 
 	/** 展开态按消息时间戳 + run 序号共享：面板重排/内容重建换掉实例后，
@@ -532,10 +695,14 @@ export class ThinkingPreviewBlock implements Component {
 			evictExpandedWraps(this.messageTimestamp, this.runStartIndex);
 		}
 		this.collapsedMemo = undefined;
+		this.documentMemo = undefined;
 	}
 
 	setHintHovered(hovered: boolean): void {
-		if (this.hintHovered !== hovered) this.collapsedMemo = undefined;
+		if (this.hintHovered !== hovered) {
+			this.collapsedMemo = undefined;
+			this.documentMemo = undefined;
+		}
 		this.hintHovered = hovered;
 	}
 
@@ -645,6 +812,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	render(width: number) {
+		if (this.document) return this.renderDocument(width);
 		if (this.expanded) {
 			const innerWidth = Math.max(1, width - 2);
 			const summaryMode = this.summaryLines !== undefined && !this.showRawThinking;
@@ -731,6 +899,7 @@ export class ThinkingPreviewBlock implements Component {
 
 	invalidate() {
 		this.collapsedMemo = undefined;
+		this.documentMemo = undefined;
 	}
 }
 
@@ -877,8 +1046,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 	let animationFrame = 0;
 	let compactSummaryActive = false;
 	let patchInstalled = true;
-	let lastThinkingDeltaAt = 0;
-	const thinkingSummaryStreams = new Map<string, ThinkingSummaryStream>();
 
 	function thinkingStyle(text: string) {
 		return styleCompactThinkingText(text, activeTheme);
@@ -903,6 +1070,51 @@ function compactThinking(pi: ExtensionAPI): boolean {
 		);
 	}
 
+	function documentAccent(text: string): string {
+		return activeTheme && typeof activeTheme.fg === "function"
+			? activeTheme.fg("accent", text)
+			: text;
+	}
+
+	function documentHeadingStyle(text: string): string {
+		return activeTheme && typeof activeTheme.fg === "function"
+			? activeTheme.fg("muted", text)
+			: text;
+	}
+
+	function documentDim(text: string): string {
+		return activeTheme && typeof activeTheme.fg === "function" ? activeTheme.fg("dim", text) : text;
+	}
+
+	/** 文档模式活动标题：只让状态词扫光，section 标题与时长保持静态。 */
+	function activeDocumentHeading(label: string, title?: string): string {
+		const elapsed = activeThinking ? Math.max(1, Date.now() - activeThinking.startedAt) : undefined;
+		const durationText =
+			elapsed !== undefined && elapsed >= THINKING_DURATION_MIN_MS
+				? formatThoughtDuration(elapsed)
+				: undefined;
+		const chars = Array.from(label);
+		let styledLabel = label;
+		if (activeTheme && typeof activeTheme.fg === "function" && chars.length > 0) {
+			const highlightWidth = Math.max(1, Math.min(5, Math.ceil(chars.length * 0.28)));
+			const start = (animationFrame % (chars.length + highlightWidth)) - highlightWidth;
+			const end = start + highlightWidth;
+			const before = chars.slice(0, Math.max(0, start)).join("");
+			const highlighted = chars.slice(Math.max(0, start), Math.min(chars.length, end)).join("");
+			const after = chars.slice(Math.max(0, end)).join("");
+			styledLabel =
+				(before ? activeTheme.fg("muted", before) : "") +
+				(highlighted ? activeTheme.fg("text", highlighted) : "") +
+				(after ? activeTheme.fg("muted", after) : "");
+		}
+		return (
+			documentAccent(THINKING_BADGE) +
+			styledLabel +
+			(title ? `${documentDim(" · ")}${documentHeadingStyle(title)}` : "") +
+			(durationText ? documentDim(` · ${durationText}`) : "")
+		);
+	}
+
 	function getCompletedDuration(messageTimestamp: number, startIndex: number, endIndex: number) {
 		const durations = completedDurations.get(messageTimestamp);
 		if (!durations) return undefined;
@@ -919,43 +1131,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 			activeThinking.contentIndex >= startIndex &&
 			activeThinking.contentIndex <= endIndex
 		);
-	}
-
-	/**
-	 * 按 run 维护摘要流：只有已收口的块才生成摘要，避免每个 token 都改文案。
-	 * 具体切块/provider 标题/空闲收块在 ThinkingSummaryStream 里，可注入时钟单测。
-	 */
-	function getThinkingSummaryState(
-		messageTimestamp: number,
-		runStartIndex: number,
-		text: string,
-		active: boolean,
-		providerTitleInHeading = false,
-	): string[] | undefined {
-		if (config.thinkingLiveSummary === false) return undefined;
-		const key = thinkingKey(messageTimestamp, runStartIndex);
-		let stream = thinkingSummaryStreams.get(key);
-		if (!stream) {
-			stream = new ThinkingSummaryStream({
-				liveSummary: true,
-				useProviderTitles: config.useSummaryTitlesAsThinkingTitle !== false,
-			});
-			thinkingSummaryStreams.set(key, stream);
-		}
-		stream.setUseProviderTitles(config.useSummaryTitlesAsThinkingTitle !== false);
-		const summaries = stream.update(text, {
-			active,
-			now: Date.now(),
-			lastDeltaAt: lastThinkingDeltaAt,
-			providerTitleInHeading,
-		});
-
-		// Bound the map for very long sessions; completed old runs are cheap to rebuild.
-		if (thinkingSummaryStreams.size > 512 && thinkingSummaryStreams.keys().next().value !== key) {
-			const oldest = thinkingSummaryStreams.keys().next().value;
-			if (oldest !== undefined) thinkingSummaryStreams.delete(oldest);
-		}
-		return summaries;
 	}
 
 	prototype.updateContent = function patchedUpdateContent(
@@ -1089,15 +1264,32 @@ function compactThinking(pi: ExtensionAPI): boolean {
 				latestSummaryFromSignature || !config.useSummaryTitlesAsThinkingTitle
 					? undefined
 					: parseStrictSummaryPart(fullText);
+			const documentSource = stripNoiseLines(fullText.replace(THINKING_REDACTED_RE, ""));
+			const documentMode = config.thinkingLiveSummary !== false;
+			const document = documentMode ? parseThinkingDocument(documentSource) : undefined;
 			const rawBody = stripNoiseLines(
 				(latestSummary?.body ?? strictSummary?.body ?? fullText).replace(THINKING_REDACTED_RE, ""),
 			);
 
 			let heading: string;
 			let headingProvider: (() => string) | undefined;
-			// 活动态用扫光标题 + 段落驱动的摘要列表；完成态保持静态 Thought for Xs。
-			// 活动标题在 render 时现算，动画 timer 不必每帧重建整棵 content。
-			if (active && latestSummary) {
+			// 活动态标题在 render 时现算，动画 timer 不必每帧重建整棵 content。
+			if (documentMode) {
+				const currentTitle = config.useSummaryTitlesAsThinkingTitle
+					? ((document ? thinkingDocumentCurrentTitle(document) : undefined) ??
+						latestSummary?.title)
+					: undefined;
+				if (active) {
+					const rawLabel = self.hiddenThinkingLabel || "Thinking…";
+					const label = rawLabel === "Thinking..." ? "Thinking…" : rawLabel;
+					headingProvider = () => activeDocumentHeading(label, currentTitle);
+					heading = headingProvider();
+				} else {
+					const completedTitle = durationText ? `Thought for ${durationText}` : "Thought";
+					const suffix = currentTitle ? ` · ${currentTitle}` : "";
+					heading = documentAccent(THINKING_BADGE) + documentHeadingStyle(completedTitle + suffix);
+				}
+			} else if (active && latestSummary) {
 				const title = latestSummary.title;
 				headingProvider = () => activeThinkingHeading(title);
 				heading = headingProvider();
@@ -1111,26 +1303,15 @@ function compactThinking(pi: ExtensionAPI): boolean {
 				// Completed compact blocks use one provider-independent status line.
 				// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
 				// "Thinking..."：有确切时长用 Thought for Xs，否则用严格校验过的标题或中性 "Thought"。
-				// 摘要列表开启时完成态固定用 Thought，避免 heading 与列表标题重复。
-				const summaryMode = config.thinkingLiveSummary !== false;
 				const completedTitle =
 					durationText !== undefined
 						? `Thought for ${durationText}`
-						: summaryMode
-							? "Thought"
-							: ((latestSummaryFromSignature ? latestSummary?.title : undefined) ??
-								strictSummary?.title ??
-								"Thought");
+						: ((latestSummaryFromSignature ? latestSummary?.title : undefined) ??
+							strictSummary?.title ??
+							"Thought");
 				heading = thinkingStyle(`${THINKING_BADGE}${completedTitle}`);
 			}
 			const previewSource = rawBody;
-			const summaryLines = getThinkingSummaryState(
-				message.timestamp,
-				runStartIndex,
-				fullText,
-				active,
-				active && latestSummary !== undefined,
-			);
 			self.contentContainer.addChild(
 				new ThinkingPreviewBlock(
 					heading,
@@ -1144,9 +1325,10 @@ function compactThinking(pi: ExtensionAPI): boolean {
 					active,
 					self.markdownTheme,
 					createTransform("assistant-thinking", self),
-					summaryLines,
+					undefined,
 					config.showRawThinking === true,
 					headingProvider,
+					documentMode ? documentSource : undefined,
 				),
 			);
 
@@ -1247,8 +1429,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 			contentIndex,
 			startedAt: Date.now(),
 		};
-		lastThinkingDeltaAt = Date.now();
-		thinkingSummaryStreams.delete(thinkingKey(message.timestamp, contentIndex));
 		streamingComponents.clear();
 		animationFrame = 0;
 
@@ -1271,10 +1451,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 	function finishThinking() {
 		if (!activeThinking) return;
 		const finished = activeThinking;
-		const summaryStream = thinkingSummaryStreams.get(
-			thinkingKey(finished.messageTimestamp, finished.contentIndex),
-		);
-		summaryStream?.close(Date.now());
 		const durationMs = Math.max(1, Date.now() - finished.startedAt);
 		let durations = completedDurations.get(finished.messageTimestamp);
 		if (!durations) {
@@ -1332,7 +1508,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 		const update = event.assistantMessageEvent;
 
 		if (update.type === "thinking_start") {
-			lastThinkingDeltaAt = Date.now();
 			if (activeThinking?.messageTimestamp === event.message.timestamp) {
 				// Some Responses-compatible providers emit a fresh thinking_start for
 				// each summary/reasoning item even though no text or tool boundary has
@@ -1344,7 +1519,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 				startThinking(event.message, update.contentIndex);
 			}
 		} else if (update.type === "thinking_delta") {
-			lastThinkingDeltaAt = Date.now();
 			if (!activeThinking) {
 				startThinking(event.message, update.contentIndex);
 			} else if (activeThinking.messageTimestamp === event.message.timestamp) {
@@ -1388,8 +1562,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 
 	pi.on("session_start", (_event, ctx) => {
 		restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
-		thinkingSummaryStreams.clear();
-		lastThinkingDeltaAt = 0;
 		activeTheme = ctx.ui.theme;
 		if (ctx.mode !== "tui") return;
 
@@ -1411,8 +1583,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 
 	pi.on("session_tree", (_event, ctx) => {
 		restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
-		thinkingSummaryStreams.clear();
-		lastThinkingDeltaAt = 0;
 		refreshMountedTranscript(activeTui);
 		activeTui?.requestRender(true);
 	});
@@ -1431,8 +1601,6 @@ function compactThinking(pi: ExtensionAPI): boolean {
 		latestComponent = undefined;
 		latestComponentTimestamp = undefined;
 		completedDurations.clear();
-		thinkingSummaryStreams.clear();
-		lastThinkingDeltaAt = 0;
 		streamingComponents.clear();
 		expandedThinking.clear();
 		fullExpandedThinking.clear();

@@ -1,0 +1,2 @@
+✻ Thought for 7s                                                         3 steps
+  把宽度补进缓存键。

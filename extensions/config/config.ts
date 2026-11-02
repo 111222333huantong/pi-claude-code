@@ -75,11 +75,11 @@ export type Config = {
 	animationIntervalMs: number;
 	/** 展开中间态 tail 窗口行数；再推进一次才全文。 */
 	thinkingExpandedMaxLines: number;
-	/** 活动思考标题扫光 + 按段落累积摘要列表。 */
+	/** true=文档模式（折叠两行 + 展开全文）；false=旧版 raw preview。 */
 	thinkingLiveSummary: boolean;
-	/** 折叠态保留的最近摘要条数。 */
+	/** 文档模式折叠态保留的正文行数。 */
 	thinkingSummaryLimit: number;
-	/** 展开态显示 thinking 原文（调试用），默认 false。 */
+	/** 保留兼容；文档模式始终显示完整原文。 */
 	showRawThinking: boolean;
 	showStartupHeader: boolean;
 	startupAnimation: boolean;
@@ -175,7 +175,7 @@ export const TOOL_LABEL_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2000"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
-export const THINKING_SUMMARY_LIMIT_VALUES = ["3", "5", "8", "10", "20"];
+export const THINKING_SUMMARY_LIMIT_VALUES = ["1", "2", "3", "5"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** 完成响铃阈值（秒）预设；0 关闭。 */
@@ -218,7 +218,7 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	thinkingExpandedMaxLines: 200,
 	thinkingLiveSummary: true,
-	thinkingSummaryLimit: 5,
+	thinkingSummaryLimit: 1,
 	showRawThinking: false,
 	showStartupHeader: true,
 	startupAnimation: true,

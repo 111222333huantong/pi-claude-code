@@ -85,18 +85,18 @@
 - **Local delta**（已大幅改写）：三级 LRU 缓存、`duration` 落盘持久化、
   `patchRegistry` 所有权管理、`CompactThinkingController` 只读查询面
   （供 `renderer/compact-mode` 复用，不建第二套计时器）。
-- **Local delta（thinking 呈现）**：活动标题复用 compact 摘要扫光；
-  按空行/句末换行/500 字/2 秒空闲切分 reasoning，每块本地提炼一行摘要；
-  有 provider 的 `**Section title**` 时优先用标题，否则先过滤元话语/输出规划/短碎片，
-  再按动作、结果、路径、决策线索选一行；没有有效内容时不生成条目。
-  折叠态保留最近 `thinkingSummaryLimit` 条，展开态显示完整摘要列表。
-  对应配置 `thinkingLiveSummary`（默认 on）、`thinkingSummaryLimit`（默认 5）、
-  `showRawThinking`（默认 off，调试时展开原文）。
+- **Local delta（thinking 呈现）**：文档模式以 reasoning 原文为唯一真源，
+  `thinking-document.ts` 只建立 section 索引（provider 的 `**Section title**` / Markdown
+  标题 / 空行段落），折叠态显示状态 + 最新正文行，展开态直接渲染完整文档，
+  provider 标题、段落、列表和代码块原样保留。
+  对应配置 `thinkingLiveSummary`（默认 on；off 回到旧版 raw preview）、
+  `thinkingSummaryLimit`（默认 1，折叠态正文行数）、`thinkingExpandedMaxLines`
+  （仅旧版 raw preview 生效）。`showRawThinking` 保留兼容；文档模式始终显示全文。
 - **Summary streaming 增量优化**：纯摘要函数在
   `extensions/feature/thinking-summary.ts`，按 run 的状态机在
   `extensions/feature/thinking-summary-stream.ts`；provider 标题按新增行扫描，
   动画 tick 只重算标题，不再每帧全量重建 content tree。
-  回归基准：`npm run bench:thinking`。
+  回归基准：`npm run bench:thinking`。文档模式不再依赖摘要流，保留该模块供旧路径与单测。
 
 ## 5. npm 运行时依赖（非 vendored，但合规相关）
 

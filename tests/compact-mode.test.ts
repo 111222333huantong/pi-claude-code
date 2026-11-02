@@ -250,12 +250,12 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.match(formatConfigStatus(normalizeConfig({})), /bellAfter=0s/);
 	assert.equal(normalizeConfig({}).thinkingLiveSummary, true);
 	assert.equal(normalizeConfig({ thinkingLiveSummary: false }).thinkingLiveSummary, false);
-	assert.equal(normalizeConfig({}).thinkingSummaryLimit, 5);
+	assert.equal(normalizeConfig({}).thinkingSummaryLimit, 1);
 	assert.equal(normalizeConfig({ thinkingSummaryLimit: 20 }).thinkingSummaryLimit, 20);
 	assert.equal(normalizeConfig({}).showRawThinking, false);
 	assert.equal(normalizeConfig({ showRawThinking: true }).showRawThinking, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingLive=on/);
-	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingSummaryLimit=5/);
+	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingSummaryLimit=1/);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingRaw=off/);
 
 	let completions: Array<{ value: string }> = [];

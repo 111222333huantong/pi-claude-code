@@ -637,17 +637,17 @@ export async function showCcstylePanel(
 		};
 		const thinkingLiveSummarySetting = {
 			id: "thinkingLiveSummary",
-			label: "Summary stream",
+			label: "Thinking document",
 			description:
-				"Shimmer the active Thinking title and append one summary per finished reasoning chunk. Applies when thinking blocks are hidden (Ctrl+T).",
+				"One-line thinking status with a single latest line; expanding shows the full reasoning document. Off restores the legacy raw preview.",
 			currentValue: config.thinkingLiveSummary ? "on" : "off",
 			values: ["on", "off"],
 		};
 		const thinkingSummaryLimitSetting = {
 			id: "thinkingSummaryLimit",
-			label: "Summary lines",
+			label: "Collapsed body lines",
 			description:
-				"Number of recent summaries kept in the collapsed thinking block. Expanded blocks show the full list. Default 5.",
+				"Number of latest body lines kept under the collapsed thinking status. Default 1.",
 			currentValue: String(config.thinkingSummaryLimit),
 			values: [...THINKING_SUMMARY_LIMIT_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -657,7 +657,7 @@ export async function showCcstylePanel(
 			id: "showRawThinking",
 			label: "Show raw thinking",
 			description:
-				"Expanded thinking shows raw reasoning instead of the summary list. Debug only; collapsed mode stays summary-only.",
+				"Kept for backward compatibility. Document mode always shows the full reasoning; legacy raw preview already shows raw text.",
 			currentValue: config.showRawThinking ? "on" : "off",
 			values: ["on", "off"],
 		};

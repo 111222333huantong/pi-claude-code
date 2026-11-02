@@ -463,13 +463,16 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	if (!isTool && !isGroup && !isAssistant && !isThinking && !isMessage) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
-		// thinking 例外：标题行（标题、隐藏行数与提示同一行）整行都是展开入口。
+		// thinking 例外：文档模式整块都是展开入口（折叠两行都很窄，点哪都自然）。
 		const hint = collapsedHintHitbox(line, HINT_HITBOX_PAD_COLS);
-		const onHint = Boolean(
-			hint &&
-				(isThinking || (packet.col >= hint.startCol && packet.col <= hint.endCol)) &&
-				isCollapsedHintRow(component, line, hit.localRow),
-		);
+		const onHint = isThinking
+			? true
+			: Boolean(
+					hint &&
+						packet.col >= hint.startCol &&
+						packet.col <= hint.endCol &&
+						isCollapsedHintRow(component, line, hit.localRow),
+				);
 		if (!onHint) {
 			// 面板内非提示区（工具卡标题/摘要行、thinking 预览正文）：单击收起整块面板。
 			if (target.owner) rememberCollapsePress(target.owner, target.owner, packet);
@@ -632,8 +635,8 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			if (component instanceof ToolGroupComponent) {
 				if (overHint) target = { kind: "group", component };
 			} else if (component instanceof ThinkingPreviewBlock) {
-				// thinking 折叠标题行整行可点：整块 hover 都高亮动作词，不只高亮按钮文本。
-				if (component.expanded || hintBox) target = { kind: "thinking", component };
+				// thinking 文档整块可点：折叠/展开都不再要求命中提示文本。
+				target = { kind: "thinking", component };
 			} else if (isToolExecutionComponent(component)) {
 				let view: ExpandedToolIoView | null = null;
 				let section: ToolIoSection | null = null;

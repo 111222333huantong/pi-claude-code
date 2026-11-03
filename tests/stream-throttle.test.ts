@@ -85,6 +85,38 @@ test("stream-throttle: 尾帧 timer 补渲染，非流式调用会取消 pending
 	}
 });
 
+test("stream-throttle: 积压超过阈值时进入 catch-up 立即补帧", () => {
+	const previous = config.streamThrottleMs;
+	config.streamThrottleMs = 100;
+	_setStreamThrottleEnabledForTests(true);
+	const clock = 0;
+	_setStreamThrottleClock(() => clock);
+	const throttle = installStreamThrottle();
+	try {
+		const component: any = new AssistantMessageComponent(message("a"), true);
+		component.updateContent(message("a"), true);
+		// 同一时刻连续 9 帧：前 8 帧合并，第 9 帧触发 catch-up。
+		for (let index = 1; index <= 9; index++) {
+			component.updateContent(message(`b${index}`), true);
+		}
+		assert.equal(component.lastMessage.content[0].text, "b9", "backlog drains immediately");
+
+		// catch-up 窗口内继续来帧也立即渲染。
+		component.updateContent(message("c1"), true);
+		component.updateContent(message("c2"), true);
+		assert.equal(component.lastMessage.content[0].text, "c2");
+
+		// 非流式帧直通并清空 catch-up 状态。
+		component.updateContent(message("done", 2), false);
+		assert.equal(component.lastMessage.content[0].text, "done");
+	} finally {
+		throttle.dispose();
+		_setStreamThrottleClock(null);
+		_setStreamThrottleEnabledForTests(false);
+		config.streamThrottleMs = previous;
+	}
+});
+
 test("stream-throttle: 关闭时直通，dispose 后恢复原方法", () => {
 	const previous = config.streamThrottleMs;
 	config.streamThrottleMs = 100;

@@ -1,2 +1,1 @@
-✻ Thought for 12s                                                        2 steps
-  把宽度和折叠行数一起放进缓存键，然后重跑 60/100/140 列的 golden 快照。
+✻ Thought for 12s

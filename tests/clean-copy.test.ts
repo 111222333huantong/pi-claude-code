@@ -58,6 +58,40 @@ test("cleanCopiedText: 普通文本原样返回（只裁行尾空白）", () => 
 	assert.equal(cleanCopiedText("hello   \n\nworld\t\n"), "hello\n\nworld");
 });
 
+test("cleanCopiedText: thinking 文档去掉左竖线、steps 与尾部窗口提示", () => {
+	const text = [
+		"✻ Thought for 12s · 3 steps",
+		" │ 排查缓存键",
+		" │ 失败的测试指向 memo 过的布局。",
+		"│",
+		" │ … 16 earlier lines hidden",
+		" │ 验证修复",
+		"  │ 缩进的 thinking 正文",
+	].join("\n");
+	assert.equal(
+		cleanCopiedText(text),
+		[
+			"✻ Thought for 12s",
+			"排查缓存键",
+			"失败的测试指向 memo 过的布局。",
+			"",
+			"验证修复",
+			"缩进的 thinking 正文",
+		].join("\n"),
+	);
+});
+
+test("cleanCopiedText: thinking hover 的 expand/collapse 也不进剪贴板", () => {
+	assert.equal(
+		cleanCopiedText("✻ Thought for 7s · 3 steps · expand\n │ 把宽度补进缓存键。"),
+		"✻ Thought for 7s\n把宽度补进缓存键。",
+	);
+	assert.equal(
+		cleanCopiedText("✻ Thought for 7s · collapse\n │ 把宽度补进缓存键。"),
+		"✻ Thought for 7s\n把宽度补进缓存键。",
+	);
+});
+
 test("installCleanCopy: fullscreen 复制走清洗后的文本，可随配置关闭", async () => {
 	installCleanCopy();
 	const proto = TuiAltScreen.prototype as unknown as {

@@ -63,6 +63,23 @@ const plainTheme = {
 	getBgAnsi: () => "",
 };
 
+/** thinking 文档 golden 用：满足 pi-tui Markdown 的最小主题，避免整段回退裸文本。 */
+const thinkingMarkdownTheme = {
+	...plainTheme,
+	code: (text: string) => text,
+	codeBlock: (text: string) => text,
+	codeBlockBorder: (text: string) => text,
+	codeBlockIndent: "  ",
+	heading: (text: string) => text,
+	hr: (text: string) => text,
+	link: (text: string) => text,
+	linkUrl: (text: string) => text,
+	listBullet: (text: string) => text,
+	quote: (text: string) => text,
+	quoteBorder: (text: string) => text,
+	strikethrough: (text: string) => text,
+};
+
 const ui = {
 	theme: plainTheme,
 	setStatus() {},
@@ -190,7 +207,7 @@ function thinkingBlockLines(
 	heading: string,
 	text: string,
 	width: number,
-	options: { expanded?: boolean; timestamp?: number } = {},
+	options: { expanded?: boolean; hovered?: boolean; timestamp?: number } = {},
 ): string[] {
 	const block = new ThinkingPreviewBlock(
 		heading,
@@ -201,7 +218,7 @@ function thinkingBlockLines(
 		plainTheme as any,
 		0,
 		false,
-		plainTheme as any,
+		thinkingMarkdownTheme as any,
 		undefined,
 		undefined,
 		false,
@@ -210,8 +227,10 @@ function thinkingBlockLines(
 	);
 	try {
 		block.setExpanded(options.expanded === true);
+		if (options.hovered) block.setHintHovered(true);
 		return renderLines(block, width);
 	} finally {
+		block.setHintHovered(false);
 		block.setExpanded(false);
 	}
 }
@@ -583,6 +602,33 @@ export async function renderGoldenCases(): Promise<GoldenCase[]> {
 			"✻ Thought for 7s",
 			["先看测试失败的位置。", "", "缓存键里没有宽度。", "", "把宽度补进缓存键。"].join("\n"),
 			80,
+		),
+	});
+	cases.push({
+		name: "thinking/collapsed-hover-80",
+		lines: thinkingBlockLines(
+			"✻ Thought for 7s",
+			["先看测试失败的位置。", "", "缓存键里没有宽度。", "", "把宽度补进缓存键。"].join("\n"),
+			80,
+			{ hovered: true },
+		),
+	});
+	cases.push({
+		name: "thinking/expanded-structure-100",
+		lines: thinkingBlockLines(
+			"✻ Thought for 9s",
+			[
+				"**Checking the fix**",
+				"",
+				"- include width in the key",
+				"- include the collapsed-line limit",
+				"",
+				"```ts",
+				`const key = \`\${width}:\${limit}\`;`,
+				"```",
+			].join("\n"),
+			100,
+			{ expanded: true },
 		),
 	});
 

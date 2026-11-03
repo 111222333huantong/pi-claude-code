@@ -31,14 +31,41 @@
 - `editDiffCollapsedLines` 支持 `"auto"` 并成为新默认：增删合计 ≤16 行的 edit
   整段展开，超过则收成 `↳ diff +A -D · click to show more` 一行摘要。
   数字配置继续可用（`0` 仍为仅摘要），write 的 `0` 行默认不变。
-- thinking 改为文档模式：折叠只显示状态行 + 最新一句正文（`✻ Thought for 12s ·
-  Section`，右侧 `N steps`）；展开直接渲染完整 reasoning 文档，保留 provider 的
-  `**Section title**`、段落、列表和代码块，不再把摘要列表当成展开内容。
-  `thinkingLiveSummary: false` 可回退旧版 raw preview；`thinkingSummaryLimit`
-  默认从 5 改为 1，表示折叠态正文行数。展开态去掉 `toolSuccessBg` 卡片底色，
-  改为淡色左侧竖线；标题/正文/竖线分别使用 muted / dim / dim，不再整块斜体。
+- thinking 改为文档模式：折叠默认只显示状态行（`✻ Thought for 12s · Section`，
+  元信息内联；OpenCode 式，不再显示 `N steps` 或正文预览）；展开直接渲染完整
+  reasoning 文档，保留 provider 的 `**Section title**`、段落、列表和代码块，
+  不再把摘要列表当成展开内容。`thinkingLiveSummary: false` 可回退旧版 raw preview；
+  `thinkingSummaryLimit` 默认从 5 改为 0（0 = 仅状态行；>0 = 预览最新 N 行原文）。
+  展开态去掉 `toolSuccessBg` 卡片底色，
+  改为淡色左侧竖线（`│`，与工具卡树线同列，正文与工具卡标题同列）；
+  状态词/当前小节/正文/竖线分别使用 text / muted / muted / dim，
+  与工具卡的标题/正文/树线层级一致，不再整块斜体。
+  展开态使用同一条淡竖线；折叠态只有状态行，hover 时状态行末尾追加并提亮
+  `expand` / `collapse`。
+  活动态不再对状态词做文字扫光，改用 OpenCode 同款 braille 蛇形点
+  （`⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`，90ms 一帧）；下方 working spinner 保留自己的
+  星形 glyph + 动词扫光。两者字形不同、各自动画，不再像两个重复的星形 spinner。
   compact 回合只有 thinking/文本、没有工具时，外卡底色改用中性 `toolPendingBg`，
   不再把工具成功绿套在思考上。新增 `thinking-document.ts` 与解析/渲染 golden。
+- thinking 标题判定更保守：`**Bold**` 只有在文档开头、空行/围栏之后，且后面是
+  空行或文档结束时才切成 section；段落中间的强调行、`**Lead**\n正文` 不再误判。
+  ATX 标题保持原规则。
+- 文档模式展开可选用尾部窗口：`thinkingDocumentMaxLines`（默认 `0` = 全文，
+  `/ccstyle` → Thinking 页可调）。超过上限时顶部显示
+  `… N earlier lines hidden`，与旧版 raw preview 的提示一致。
+- 展开文档遇到引用式链接定义（`[label]: url`）时回退整篇渲染，避免逐 section
+  渲染导致跨小节引用失效；围栏内的定义不触发。
+- 纯文本折行改为按字素簇切分（`Intl.Segmenter`），emoji ZWJ、组合音标不会被
+  拆到两行；CJK 避头尾规则不变。
+- 流式节流升级为两档：正常按 `streamThrottleMs` 合并；积压超过 8 帧时进入
+  250ms 的 catch-up 立即 drain，再回到正常间隔（Codex Smooth/CatchUp 的简化版）。
+  最终帧仍无条件直通。
+
+### 修复
+
+- fullscreen 选区复制会把 thinking 文档的左竖线 `│`、旧版状态行里的 `N steps` /
+  `expand` / `collapse` 以及 `… N earlier lines hidden` 提示一起复制走。现在按树线规则
+  剥掉竖线，并过滤 thinking 专属的内联状态与尾部窗口提示，只保留正文。
 
 ### 性能
 
@@ -49,6 +76,25 @@
   render 仅约 0.44ms/帧，剩余成本集中在内容变化后的 Markdown 解析。CPU profile
   显示热点为 marked 的 `RegExp`/`inlineTokens` 与 LaTeX 块探测正则，属于 Pi 内部
   解析路径，暂不做本地缓存/增量改造，避免负收益。
+- thinking 文档新增增量构建器：追加时只重解析最后一个 section，前面的索引直接复用。
+  `bench:thinking` 实测 2000 sections / 310 KiB / 约 5000 次更新：逐帧全量解析
+  约 5166ms → 257ms（约 20×）；展开态 Markdown 也按 section 缓存，流式时只重渲染
+  正在增长的最后一段。
+- 展开文档新增 section 级渲染缓存（按 section 对象身份 + 宽度 + 主题），
+  流式展开只重建正在增长的最后一段；渲染结果连 padding 一起缓存，避免每帧
+  对整篇文档重跑 `visibleWidth`。`bench:thinking` 的 120 帧流式渲染：
+  2000 sections / 310 KiB 展开约 50ms、折叠约 15ms（改动前同一基准展开约 7.1s）。
+  重结构文档（列表 + 围栏代码，501 KiB / 22k 行）首次展开约 60ms，
+  去掉展开态逐行右填充后约为改动前（166ms）的三分之一。
+  `thinkingDocumentSectionCount` 改用解析期算好的 `hasBody`，不再每次渲染
+  slice + trim 全文。折叠摘要默认只取 1 行，无围栏时从尾部反向扫描，
+  不再把整段长 reasoning split 成所有行；479 KiB / 8000 行实测约 0.016ms/次。
+  增量构建器也不再原地修改已返回的 sections 数组，旧文档快照保持稳定。
+- 展开文档新增稳定前缀行缓存：按 `messageTimestamp:runStartIndex` 保存已渲染行与
+  section 起始位置，下一帧只截断并重建最后增长的 section，不再每帧把 22k+ 行
+  重新 push 成新数组；宽度/主题/内边距变化才整篇重建，缓存上限 4 份、约 8 MiB。
+- 旧的整篇展开 Markdown 缓存（legacy raw preview）增加 4 MiB 字符预算，避免多份
+  大文档长期驻留；文档模式不再经过这层缓存。
 
 ## 1.5.0 — 2026-11-01
 

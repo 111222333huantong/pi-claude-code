@@ -90,8 +90,15 @@
   标题 / 空行段落），折叠态显示状态 + 最新正文行，展开态直接渲染完整文档，
   provider 标题、段落、列表和代码块原样保留。
   对应配置 `thinkingLiveSummary`（默认 on；off 回到旧版 raw preview）、
-  `thinkingSummaryLimit`（默认 1，折叠态正文行数）、`thinkingExpandedMaxLines`
-  （仅旧版 raw preview 生效）。`showRawThinking` 保留兼容；文档模式始终显示全文。
+  `thinkingSummaryLimit`（默认 0，0 = 仅状态行；>0 = 折叠态预览最新 N 行）、`thinkingExpandedMaxLines`
+  （仅旧版 raw preview 生效）、`thinkingDocumentMaxLines`（默认 0 = 全文；
+  大于 0 时展开态只保留尾部窗口）。`showRawThinking` 保留兼容。
+  `**Bold**` 标题只在块边界成立：文档开头或空行/围栏之后，且后面是空行/结束；
+  `**Lead**\n正文` 视为一个段落。引用式链接定义触发整篇渲染回退。
+  纯文本折行按 `Intl.Segmenter` 字素簇切分。
+  增量构建器只重解析最后一个 section；展开渲染按 section 对象身份缓存标题/正文/
+  padding，并按 run 保存稳定前缀行数组，流式时只截断/重建最后一段。
+  `bench:thinking` 含折叠/展开 120 帧、重结构文档首屏展开指标。
 - **Summary streaming 增量优化**：纯摘要函数在
   `extensions/feature/thinking-summary.ts`，按 run 的状态机在
   `extensions/feature/thinking-summary-stream.ts`；provider 标题按新增行扫描，

@@ -39,12 +39,17 @@ import {
 	patchRegistry,
 } from "../utils/patch-keys.ts";
 import {
+	hasCjkText,
+	hasThinkingLinkReferenceDefinition,
+	hasThinkingMarkdownStructure,
 	latestThinkingLines,
 	parseThinkingDocument,
 	type ThinkingDocument,
+	ThinkingDocumentBuilder,
+	type ThinkingSection,
 	thinkingDocumentCurrentTitle,
-	thinkingDocumentSectionCount,
 	thinkingSectionBody,
+	wrapPlainThinkingText,
 } from "./thinking-document.ts";
 import { THINKING_REDACTED_RE } from "./thinking-summary.ts";
 
@@ -72,6 +77,8 @@ export type CompactThinkingConfig = {
 	thinkingLiveSummary?: boolean;
 	/** 文档模式折叠态保留的正文行数。 */
 	thinkingSummaryLimit?: number;
+	/** 文档模式展开态最多保留的尾部行数；0/缺省 = 始终显示全文。 */
+	thinkingDocumentMaxLines?: number;
 	/** 旧版摘要模式：展开时放行原始 thinking。 */
 	showRawThinking?: boolean;
 };
@@ -149,7 +156,8 @@ const COMPACT_THINKING_DEFAULTS: Required<CompactThinkingConfig> = {
 	// Tests and direct library callers keep the old raw renderer unless they opt in.
 	// The host config always passes the real default (true).
 	thinkingLiveSummary: false,
-	thinkingSummaryLimit: 1,
+	thinkingSummaryLimit: 0,
+	thinkingDocumentMaxLines: 0,
 	showRawThinking: false,
 };
 
@@ -236,10 +244,131 @@ function cachePreview(key: string, entry: PreviewCacheEntry): void {
 	previewCache.set(key, entry);
 }
 
+type SectionMarkdownEntry = {
+	body: string;
+	width: number;
+	streaming: boolean;
+	theme: unknown;
+	markdownTheme: unknown;
+	lines: string[];
+};
+const sectionMarkdownCache = new Map<string, SectionMarkdownEntry>();
+export const THINKING_SECTION_MARKDOWN_CACHE_MAX = 128;
+
+/**
+ * 展开文档的 section 级缓存：key 用 section 对象身份。
+ *
+ * 增量构建器只替换正在增长的最后一个 section，前面 section 的对象
+ * 一直复用；因此流式展开时只有最后一段需要重新渲染，整篇文档的
+ * 标题/正文不会每帧重建。WeakMap 让旧 section 随文档一起回收。
+ */
+type SectionBlockEntry = {
+	width: number;
+	padding: number;
+	theme: unknown;
+	markdownTheme: unknown;
+	markdownTransform: unknown;
+	lines: string[];
+};
+let sectionBlockCache = new WeakMap<ThinkingSection, SectionBlockEntry>();
+
+/**
+ * 展开文档的稳定前缀缓存（按 run 共享）。
+ *
+ * 每次 `updateContent` 都会重建 ThinkingPreviewBlock，实例字段活不过一帧；
+ * 但增量构建器会复用前面 section 的对象身份，所以把「已渲染的行 + 每个
+ * section 的起始行号」按 `messageTimestamp:runStartIndex` 存起来，下一帧
+ * 只截断并重渲染最后增长的一段。宽度/主题/内边距变化时整篇重建。
+ */
+type DocumentBodyCacheEntry = {
+	width: number;
+	padding: number;
+	theme: unknown;
+	markdownTheme: unknown;
+	markdownTransform: unknown;
+	global: boolean;
+	raw: string;
+	sections: ThinkingSection[];
+	starts: number[];
+	blockChars: number[];
+	lines: string[];
+	chars: number;
+};
+const documentBodyCaches = new Map<string, DocumentBodyCacheEntry>();
+export const THINKING_DOCUMENT_BODY_CACHE_MAX = 4;
+const DOCUMENT_BODY_CACHE_CHARS = 8 * 1024 * 1024;
+
+export function thinkingDocumentBodyCacheSize(): number {
+	return documentBodyCaches.size;
+}
+
+function documentBodyCacheKey(messageTimestamp: number, runStartIndex: number): string {
+	return thinkingKey(messageTimestamp, runStartIndex);
+}
+
+function touchDocumentBodyCache(key: string, entry: DocumentBodyCacheEntry): void {
+	documentBodyCaches.delete(key);
+	documentBodyCaches.set(key, entry);
+	let total = 0;
+	for (const cached of documentBodyCaches.values()) total += cached.chars;
+	while (
+		documentBodyCaches.size > 1 &&
+		(documentBodyCaches.size > THINKING_DOCUMENT_BODY_CACHE_MAX ||
+			total > DOCUMENT_BODY_CACHE_CHARS)
+	) {
+		const oldest = documentBodyCaches.keys().next().value;
+		if (oldest === undefined || oldest === key) break;
+		const evicted = documentBodyCaches.get(oldest);
+		if (evicted) total -= evicted.chars;
+		documentBodyCaches.delete(oldest);
+	}
+}
+
+export function thinkingSectionMarkdownCacheSize(): number {
+	return sectionMarkdownCache.size;
+}
+
+function renderSectionMarkdownCached(
+	body: string,
+	width: number,
+	streaming: boolean,
+	theme: unknown,
+	markdownTheme: unknown,
+	render: () => string[],
+): string[] {
+	const key = `${width}:${streaming ? 1 : 0}:${body}`;
+	const hit = sectionMarkdownCache.get(key);
+	if (
+		hit &&
+		hit.body === body &&
+		hit.width === width &&
+		hit.streaming === streaming &&
+		hit.theme === theme &&
+		hit.markdownTheme === markdownTheme
+	) {
+		sectionMarkdownCache.delete(key);
+		sectionMarkdownCache.set(key, hit);
+		return hit.lines;
+	}
+	const lines = render();
+	sectionMarkdownCache.delete(key);
+	while (sectionMarkdownCache.size >= THINKING_SECTION_MARKDOWN_CACHE_MAX) {
+		const oldest = sectionMarkdownCache.keys().next().value;
+		if (oldest === undefined) break;
+		sectionMarkdownCache.delete(oldest);
+	}
+	sectionMarkdownCache.set(key, { body, width, streaming, theme, markdownTheme, lines });
+	return lines;
+}
+
 export function clearThinkingPreviewCache(): void {
 	previewCache.clear();
 	expandedWrapCache.clear();
 	expandedMarkdownCache.clear();
+	sectionMarkdownCache.clear();
+	sectionBlockCache = new WeakMap();
+	documentBodyCaches.clear();
+	expandedMarkdownCacheChars = 0;
 }
 
 type ExpandedWrapEntry = { text: string; lines: string[] };
@@ -284,6 +413,8 @@ function evictExpandedWraps(messageTimestamp: number, runStartIndex: number): vo
 	for (const key of expandedMarkdownCache.keys()) {
 		const [ts, run] = key.split(":");
 		if (Number(ts) === messageTimestamp && Number(run) === runStartIndex) {
+			const entry = expandedMarkdownCache.get(key);
+			if (entry) expandedMarkdownCacheChars -= entry.chars;
 			expandedMarkdownCache.delete(key);
 		}
 	}
@@ -302,9 +433,32 @@ export function thinkingExpandedWrapCacheSize(): number {
  * 与 expandedWrapCache 同键、独立表。Markdown 输出自带主题 ANSI，
  * 因此条目绑定渲染用主题对象，主题切换即失效重渲。
  */
-type ExpandedMarkdownEntry = { text: string; theme: unknown; lines: string[] };
+type ExpandedMarkdownEntry = { text: string; theme: unknown; lines: string[]; chars: number };
 const expandedMarkdownCache = new Map<string, ExpandedMarkdownEntry>();
 export const THINKING_EXPANDED_MARKDOWN_CACHE_MAX = 32;
+/** 旧版 raw preview 的整篇渲染缓存额外受字符预算约束，避免多份大文档长期驻留。 */
+const EXPANDED_MARKDOWN_CACHE_CHARS = 4 * 1024 * 1024;
+let expandedMarkdownCacheChars = 0;
+
+function lineChars(lines: readonly string[]): number {
+	let chars = 0;
+	for (const line of lines) chars += line.length;
+	return chars;
+}
+
+function evictExpandedMarkdownCache(protectedKey: string): void {
+	while (
+		expandedMarkdownCache.size > 1 &&
+		(expandedMarkdownCache.size > THINKING_EXPANDED_MARKDOWN_CACHE_MAX ||
+			expandedMarkdownCacheChars > EXPANDED_MARKDOWN_CACHE_CHARS)
+	) {
+		const oldest = expandedMarkdownCache.keys().next().value;
+		if (oldest === undefined || oldest === protectedKey) break;
+		const entry = expandedMarkdownCache.get(oldest);
+		if (entry) expandedMarkdownCacheChars -= entry.chars;
+		expandedMarkdownCache.delete(oldest);
+	}
+}
 
 function renderExpandedMarkdown(
 	messageTimestamp: number,
@@ -322,18 +476,21 @@ function renderExpandedMarkdown(
 		return hit.lines;
 	}
 	const lines = render();
+	if (hit) expandedMarkdownCacheChars -= hit.chars;
 	expandedMarkdownCache.delete(key);
-	while (expandedMarkdownCache.size >= THINKING_EXPANDED_MARKDOWN_CACHE_MAX) {
-		const oldest = expandedMarkdownCache.keys().next().value;
-		if (oldest === undefined) break;
-		expandedMarkdownCache.delete(oldest);
-	}
-	expandedMarkdownCache.set(key, { text, theme, lines });
+	expandedMarkdownCache.set(key, { text, theme, lines, chars: lineChars(lines) });
+	expandedMarkdownCacheChars += lineChars(lines);
+	evictExpandedMarkdownCache(key);
 	return lines;
 }
 
 export function thinkingExpandedMarkdownCacheSize(): number {
 	return expandedMarkdownCache.size;
+}
+
+/** 仅供测试/诊断：旧版展开缓存当前占用的近似字符数。 */
+export function thinkingExpandedMarkdownCacheChars(): number {
+	return expandedMarkdownCacheChars;
 }
 
 /** 按可见宽度估算折行数，不走 Text 全量 wrap。无换行长段也能计到隐藏行。 */
@@ -478,6 +635,7 @@ export class ThinkingPreviewBlock implements Component {
 				heading: string;
 				bodyKey: string;
 				limit: number;
+				documentMaxLines: number;
 				theme: unknown;
 				lines: string[];
 		  }
@@ -510,7 +668,7 @@ export class ThinkingPreviewBlock implements Component {
 		summaryLines?: string[],
 		showRawThinking = false,
 		headingProvider?: () => string,
-		documentText?: string,
+		documentText?: string | ThinkingDocument,
 	) {
 		this.heading = heading;
 		this.text = text;
@@ -525,7 +683,12 @@ export class ThinkingPreviewBlock implements Component {
 		this.summaryLines = summaryLines;
 		this.showRawThinking = showRawThinking;
 		this.headingProvider = headingProvider;
-		this.document = documentText === undefined ? undefined : parseThinkingDocument(documentText);
+		this.document =
+			documentText === undefined
+				? undefined
+				: typeof documentText === "string"
+					? parseThinkingDocument(documentText)
+					: documentText;
 	}
 
 	private paint(color: string, text: string): string {
@@ -534,35 +697,39 @@ export class ThinkingPreviewBlock implements Component {
 			: text;
 	}
 
-	/** 文档模式：折叠两行 + 展开全文；原文不丢，section 只是索引。 */
-	private documentMeta(): string | undefined {
-		const count = this.document ? thinkingDocumentSectionCount(this.document) : 0;
-		if (this.expanded) {
-			if (this.hintHovered) return "collapse";
-			return count > 1 ? `${count} steps` : undefined;
-		}
-		if (this.hintHovered) return "expand";
-		return count > 1 ? `${count} steps` : undefined;
+	/** 文档模式：折叠只留状态行；展开渲染完整文档。 */
+	private documentMeta(): { action?: string } | undefined {
+		// OpenCode 式折叠：默认不预览正文，只有 hover 时出现展开/收起动作。
+		const action = this.hintHovered ? (this.expanded ? "collapse" : "expand") : undefined;
+		return action ? { action } : undefined;
 	}
 
-	private documentHeadingLines(width: number, meta: string | undefined): string[] {
+	private documentHeadingLines(width: number, meta: { action?: string } | undefined): string[] {
 		const left = this.headingProvider?.() ?? this.heading;
 		const padding = this.padding;
 		const contentWidth = Math.max(1, width - padding * 2);
-		const metaText = meta ? this.paint("dim", meta) : "";
+		const metaText = meta?.action
+			? ` ${this.paint("dim", "·")} ${this.paint("text", meta.action)}`
+			: "";
 		if (!metaText) {
 			return new Text(truncateToWidth(left, contentWidth, "…"), padding, 0).render(width);
 		}
+		// 动作是点击/状态锚点，任何宽度下都保留；优先截断左侧标题。
 		const leftWidth = visibleWidth(left);
 		const metaWidth = visibleWidth(metaText);
-		if (leftWidth + metaWidth + 2 > contentWidth) {
-			return new Text(truncateToWidth(left, contentWidth, "…"), padding, 0).render(width);
-		}
-		const gap = " ".repeat(contentWidth - leftWidth - metaWidth);
-		return new Text(left + gap + metaText, padding, 0).render(width);
+		const line =
+			leftWidth + metaWidth > contentWidth
+				? truncateToWidth(left, Math.max(0, contentWidth - metaWidth), "…") + metaText
+				: left + metaText;
+		return new Text(line, padding, 0).render(width);
 	}
 
-	private renderDocumentSectionBody(body: string, width: number): string[] {
+	private renderMarkdownBodyLines(body: string, width: number): string[] {
+		if (hasCjkText(body) && !hasThinkingMarkdownStructure(body)) {
+			return wrapPlainThinkingText(body, width).map((line) =>
+				line ? this.paint("muted", line) : line,
+			);
+		}
 		if (this.markdownTheme !== undefined) {
 			try {
 				return new Markdown(
@@ -570,7 +737,7 @@ export class ThinkingPreviewBlock implements Component {
 					0,
 					0,
 					this.markdownTheme,
-					{ color: (text) => this.paint("dim", text), italic: false },
+					{ color: (text) => this.paint("muted", text), italic: false },
 					this.markdownTransform !== undefined ? { transform: this.markdownTransform } : undefined,
 				).render(Math.max(1, width));
 			} catch {
@@ -580,30 +747,186 @@ export class ThinkingPreviewBlock implements Component {
 		return wrapTextWithAnsi(body.replace(/\t/g, "   "), Math.max(1, width));
 	}
 
+	private renderDocumentSectionBody(body: string, width: number): string[] {
+		return renderSectionMarkdownCached(
+			body,
+			width,
+			this.followTail,
+			this.theme,
+			this.markdownTheme,
+			() => this.renderMarkdownBodyLines(body, width),
+		);
+	}
+
+	private renderDocumentSectionBlock(
+		doc: ThinkingDocument,
+		section: ThinkingSection,
+		width: number,
+		bodyWidth: number,
+		gutter: string,
+	): string[] {
+		const cached = sectionBlockCache.get(section);
+		if (
+			cached &&
+			cached.width === width &&
+			cached.padding === this.padding &&
+			cached.theme === this.theme &&
+			cached.markdownTheme === this.markdownTheme &&
+			cached.markdownTransform === this.markdownTransform
+		) {
+			return cached.lines;
+		}
+		const lines: string[] = [];
+		const leftPad = this.padding > 0 ? " ".repeat(this.padding) : "";
+		if (section.title) {
+			for (const titleLine of wrapTextWithAnsi(section.title, bodyWidth)) {
+				lines.push(leftPad + gutter + this.paint("text", titleLine));
+			}
+		}
+		if (section.hasBody) {
+			const body = thinkingSectionBody(doc, section);
+			for (const bodyLine of this.renderDocumentSectionBody(body, bodyWidth)) {
+				lines.push(leftPad + gutter + bodyLine);
+			}
+		}
+		sectionBlockCache.set(section, {
+			width,
+			padding: this.padding,
+			theme: this.theme,
+			markdownTheme: this.markdownTheme,
+			markdownTransform: this.markdownTransform,
+			lines,
+		});
+		return lines;
+	}
+
 	private buildDocumentBodyLines(width: number): string[] {
 		const doc = this.document;
 		if (!doc) return [];
 		const padding = this.padding;
 		const contentWidth = Math.max(1, width - padding * 2);
-		const gutterText = "▏ ";
+		// 与工具卡树线同列：`│` 占一列，正文与工具卡标题同列。
+		const gutterText = "│ ";
 		const bodyWidth = Math.max(1, contentWidth - visibleWidth(gutterText));
 		const gutter = this.paint("dim", gutterText);
-		const lines: string[] = [];
+		const leftPad = padding > 0 ? " ".repeat(padding) : "";
+		const separator = leftPad + this.paint("dim", "│");
+		const key = documentBodyCacheKey(this.messageTimestamp, this.runStartIndex);
+		const global = hasThinkingLinkReferenceDefinition(doc.raw);
+		const cached = documentBodyCaches.get(key);
+		const reusable =
+			cached !== undefined &&
+			cached.width === width &&
+			cached.padding === padding &&
+			cached.theme === this.theme &&
+			cached.markdownTheme === this.markdownTheme &&
+			cached.markdownTransform === this.markdownTransform &&
+			cached.global === global;
 
-		for (const section of doc.sections) {
-			const body = thinkingSectionBody(doc, section);
-			if (!section.title && !body) continue;
-			if (lines.length > 0) lines.push(this.paint("dim", "▏"));
-			if (section.title) {
-				for (const titleLine of wrapTextWithAnsi(section.title, bodyWidth)) {
-					lines.push(gutter + this.paint("text", titleLine));
-				}
+		if (global) {
+			// 引用式链接定义可能跨 section；逐段渲染会丢引用，罕见但必须正确。
+			if (reusable && cached.raw === doc.raw) {
+				touchDocumentBodyCache(key, cached);
+				return cached.lines;
 			}
-			if (body) {
-				for (const bodyLine of this.renderDocumentSectionBody(body, bodyWidth)) {
-					lines.push(gutter + bodyLine);
-				}
+			const lines = this.renderMarkdownBodyLines(doc.raw, width).map(
+				(line) => leftPad + gutter + line,
+			);
+			const entry: DocumentBodyCacheEntry = {
+				width,
+				padding,
+				theme: this.theme,
+				markdownTheme: this.markdownTheme,
+				markdownTransform: this.markdownTransform,
+				global: true,
+				raw: doc.raw,
+				sections: [],
+				starts: [],
+				blockChars: [],
+				lines,
+				chars: lineChars(lines),
+			};
+			documentBodyCaches.set(key, entry);
+			touchDocumentBodyCache(key, entry);
+			return lines;
+		}
+
+		const rendered = doc.sections.filter(
+			(section) => section.title !== undefined || section.hasBody,
+		);
+		if (!reusable) {
+			const entry: DocumentBodyCacheEntry = {
+				width,
+				padding,
+				theme: this.theme,
+				markdownTheme: this.markdownTheme,
+				markdownTransform: this.markdownTransform,
+				global: false,
+				raw: "",
+				sections: [],
+				starts: [],
+				blockChars: [],
+				lines: [],
+				chars: 0,
+			};
+			documentBodyCaches.set(key, entry);
+			touchDocumentBodyCache(key, entry);
+			return this.appendDocumentSections(entry, doc, rendered, separator, gutter, bodyWidth);
+		}
+
+		touchDocumentBodyCache(key, cached);
+		return this.appendDocumentSections(cached, doc, rendered, separator, gutter, bodyWidth);
+	}
+
+	/** 复用 section 对象身份：只截断并重建从第一个变化 section 开始的部分。 */
+	private appendDocumentSections(
+		entry: DocumentBodyCacheEntry,
+		doc: ThinkingDocument,
+		rendered: readonly ThinkingSection[],
+		separator: string,
+		gutter: string,
+		bodyWidth: number,
+	): string[] {
+		const lines = entry.lines;
+		const sections = entry.sections;
+		const starts = entry.starts;
+		const blockChars = entry.blockChars;
+		const maxCommon = Math.min(sections.length, rendered.length);
+		let common = 0;
+		while (common < maxCommon && sections[common] === rendered[common]) common++;
+		if (common === sections.length && common === rendered.length) return lines;
+
+		if (common < sections.length) {
+			for (let index = sections.length - 1; index >= common; index--) {
+				entry.chars -= blockChars[index] ?? 0;
 			}
+			lines.length = starts[common] ?? 0;
+			sections.length = common;
+			starts.length = common;
+			blockChars.length = common;
+		}
+
+		for (let index = common; index < rendered.length; index++) {
+			const section = rendered[index]!;
+			starts.push(lines.length);
+			let added = 0;
+			if (lines.length > 0) {
+				lines.push(separator);
+				added += separator.length;
+			}
+			for (const blockLine of this.renderDocumentSectionBlock(
+				doc,
+				section,
+				entry.width,
+				bodyWidth,
+				gutter,
+			)) {
+				lines.push(blockLine);
+				added += blockLine.length;
+			}
+			sections.push(section);
+			blockChars.push(added);
+			entry.chars += added;
 		}
 		return lines;
 	}
@@ -615,8 +938,9 @@ export class ThinkingPreviewBlock implements Component {
 		const contentWidth = Math.max(1, width - padding * 2);
 		const headingText = this.headingProvider?.() ?? this.heading;
 		const meta = this.documentMeta();
-		const limit = Math.max(1, config.thinkingSummaryLimit ?? 1);
-		const collapsedBody = this.expanded ? [] : latestThinkingLines(doc, limit);
+		const limit = Math.max(0, config.thinkingSummaryLimit ?? 0);
+		const documentMaxLines = Math.max(0, config.thinkingDocumentMaxLines ?? 0);
+		const collapsedBody = this.expanded || limit === 0 ? [] : latestThinkingLines(doc, limit);
 		const bodyKey = this.expanded ? doc.raw : collapsedBody.join("\n");
 		if (
 			this.documentMemo?.width === width &&
@@ -625,6 +949,7 @@ export class ThinkingPreviewBlock implements Component {
 			this.documentMemo.heading === headingText &&
 			this.documentMemo.bodyKey === bodyKey &&
 			this.documentMemo.limit === limit &&
+			this.documentMemo.documentMaxLines === documentMaxLines &&
 			this.documentMemo.theme === this.theme
 		) {
 			return this.documentMemo.lines;
@@ -632,10 +957,13 @@ export class ThinkingPreviewBlock implements Component {
 
 		const heading = this.documentHeadingLines(width, meta);
 		if (!this.expanded) {
-			const body = collapsedBody.flatMap((line) => {
-				const clipped = truncateToWidth(line, Math.max(1, contentWidth - 2), "…");
-				return new Text(`  ${this.paint("dim", clipped)}`, padding, 0).render(width);
-			});
+			const gutterText = "│ ";
+			const gutter = this.paint("dim", gutterText);
+			const bodyWidth = Math.max(1, contentWidth - visibleWidth(gutterText));
+			const leftPad = padding > 0 ? " ".repeat(padding) : "";
+			const body = collapsedBody.map(
+				(line) => leftPad + gutter + this.paint("muted", truncateToWidth(line, bodyWidth, "…")),
+			);
 			const lines = body.length ? [...heading, ...body] : heading;
 			this.documentMemo = {
 				width,
@@ -644,23 +972,28 @@ export class ThinkingPreviewBlock implements Component {
 				heading: headingText,
 				bodyKey,
 				limit,
+				documentMaxLines,
 				theme: this.theme,
 				lines,
 			};
 			return lines;
 		}
 
-		const body = renderExpandedMarkdown(
-			this.messageTimestamp,
-			this.runStartIndex,
-			doc.raw,
-			width,
-			() => this.buildDocumentBodyLines(width),
-			this.theme,
-		);
-		const lines = body.length
-			? [...heading, "", ...body.flatMap((line) => new Text(line, padding, 0).render(width))]
-			: heading;
+		const fullBody = this.buildDocumentBodyLines(width);
+		const hidden = documentMaxLines > 0 ? Math.max(0, fullBody.length - documentMaxLines) : 0;
+		const body = hidden > 0 ? fullBody.slice(-documentMaxLines) : fullBody;
+		let lines: string[];
+		if (!body.length) {
+			lines = heading;
+		} else if (hidden > 0) {
+			const hintLine =
+				(padding > 0 ? " ".repeat(padding) : "") +
+				this.paint("dim", "│ ") +
+				this.paint("dim", `… ${hidden} earlier lines hidden`);
+			lines = [...heading, "", hintLine, ...body];
+		} else {
+			lines = [...heading, "", ...body];
+		}
 		this.documentMemo = {
 			width,
 			expanded: this.expanded,
@@ -668,6 +1001,7 @@ export class ThinkingPreviewBlock implements Component {
 			heading: headingText,
 			bodyKey,
 			limit,
+			documentMaxLines,
 			theme: this.theme,
 			lines,
 		};
@@ -987,6 +1321,20 @@ const WIDGET_ID = "compact-thinking-render-loop";
 
 /** Thinking 标题徽标：与 spinner 字形帧 / `✻ Turn took` 行同字（U+273B），项目内保持一致。 */
 const THINKING_BADGE = "✻ ";
+/**
+ * 活动态使用 OpenCode 同款 braille 蛇形点（10 帧循环）。
+ *
+ * 下方 working spinner 是星形 glyph；这里换成 braille 点阵，既能明确区分
+ * “内容在思考”和“状态在运行”，又不会像第二个星形 spinner。
+ */
+const THINKING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const THINKING_SPINNER_STEP_MS = 90;
+
+export function thinkingSpinnerGlyph(elapsedMs: number): string {
+	const step = Math.floor(Math.max(0, elapsedMs) / THINKING_SPINNER_STEP_MS);
+	return THINKING_SPINNER_FRAMES[step % THINKING_SPINNER_FRAMES.length]!;
+}
+
 /** 时长展示下限：亚秒思考不缀时长（Crush 0s 抑制同理），只留中性标题。 */
 const THINKING_DURATION_MIN_MS = 1000;
 
@@ -1046,6 +1394,7 @@ function compactThinking(pi: ExtensionAPI): boolean {
 	let animationFrame = 0;
 	let compactSummaryActive = false;
 	let patchInstalled = true;
+	const thinkingDocuments = new Map<string, ThinkingDocumentBuilder>();
 
 	function thinkingStyle(text: string) {
 		return styleCompactThinkingText(text, activeTheme);
@@ -1076,6 +1425,12 @@ function compactThinking(pi: ExtensionAPI): boolean {
 			: text;
 	}
 
+	function documentStatusStyle(text: string): string {
+		return activeTheme && typeof activeTheme.fg === "function"
+			? activeTheme.fg("text", text)
+			: text;
+	}
+
 	function documentHeadingStyle(text: string): string {
 		return activeTheme && typeof activeTheme.fg === "function"
 			? activeTheme.fg("muted", text)
@@ -1086,30 +1441,17 @@ function compactThinking(pi: ExtensionAPI): boolean {
 		return activeTheme && typeof activeTheme.fg === "function" ? activeTheme.fg("dim", text) : text;
 	}
 
-	/** 文档模式活动标题：只让状态词扫光，section 标题与时长保持静态。 */
+	/** 文档模式活动标题：OpenCode 式 braille 蛇形点，状态词/节标题保持静态。 */
 	function activeDocumentHeading(label: string, title?: string): string {
 		const elapsed = activeThinking ? Math.max(1, Date.now() - activeThinking.startedAt) : undefined;
 		const durationText =
 			elapsed !== undefined && elapsed >= THINKING_DURATION_MIN_MS
 				? formatThoughtDuration(elapsed)
 				: undefined;
-		const chars = Array.from(label);
-		let styledLabel = label;
-		if (activeTheme && typeof activeTheme.fg === "function" && chars.length > 0) {
-			const highlightWidth = Math.max(1, Math.min(5, Math.ceil(chars.length * 0.28)));
-			const start = (animationFrame % (chars.length + highlightWidth)) - highlightWidth;
-			const end = start + highlightWidth;
-			const before = chars.slice(0, Math.max(0, start)).join("");
-			const highlighted = chars.slice(Math.max(0, start), Math.min(chars.length, end)).join("");
-			const after = chars.slice(Math.max(0, end)).join("");
-			styledLabel =
-				(before ? activeTheme.fg("muted", before) : "") +
-				(highlighted ? activeTheme.fg("text", highlighted) : "") +
-				(after ? activeTheme.fg("muted", after) : "");
-		}
+		const badge = documentAccent(`${elapsed !== undefined ? thinkingSpinnerGlyph(elapsed) : "✻"} `);
 		return (
-			documentAccent(THINKING_BADGE) +
-			styledLabel +
+			badge +
+			documentStatusStyle(label) +
 			(title ? `${documentDim(" · ")}${documentHeadingStyle(title)}` : "") +
 			(durationText ? documentDim(` · ${durationText}`) : "")
 		);
@@ -1131,6 +1473,29 @@ function compactThinking(pi: ExtensionAPI): boolean {
 			activeThinking.contentIndex >= startIndex &&
 			activeThinking.contentIndex <= endIndex
 		);
+	}
+
+	/**
+	 * 按 run 缓存增量文档构建器：流式只重解析最后一段，避免每帧全量扫描。
+	 * 文本回退/替换由 builder 内部回退到全量解析。
+	 */
+	function getThinkingDocument(
+		messageTimestamp: number,
+		runStartIndex: number,
+		text: string,
+	): ThinkingDocument {
+		const key = thinkingKey(messageTimestamp, runStartIndex);
+		let builder = thinkingDocuments.get(key);
+		if (!builder) {
+			builder = new ThinkingDocumentBuilder();
+			thinkingDocuments.set(key, builder);
+		}
+		const document = builder.update(text);
+		if (thinkingDocuments.size > 512 && thinkingDocuments.keys().next().value !== key) {
+			const oldest = thinkingDocuments.keys().next().value;
+			if (oldest !== undefined) thinkingDocuments.delete(oldest);
+		}
+		return document;
 	}
 
 	prototype.updateContent = function patchedUpdateContent(
@@ -1266,7 +1631,9 @@ function compactThinking(pi: ExtensionAPI): boolean {
 					: parseStrictSummaryPart(fullText);
 			const documentSource = stripNoiseLines(fullText.replace(THINKING_REDACTED_RE, ""));
 			const documentMode = config.thinkingLiveSummary !== false;
-			const document = documentMode ? parseThinkingDocument(documentSource) : undefined;
+			const document = documentMode
+				? getThinkingDocument(message.timestamp, runStartIndex, documentSource)
+				: undefined;
 			const rawBody = stripNoiseLines(
 				(latestSummary?.body ?? strictSummary?.body ?? fullText).replace(THINKING_REDACTED_RE, ""),
 			);
@@ -1286,8 +1653,10 @@ function compactThinking(pi: ExtensionAPI): boolean {
 					heading = headingProvider();
 				} else {
 					const completedTitle = durationText ? `Thought for ${durationText}` : "Thought";
-					const suffix = currentTitle ? ` · ${currentTitle}` : "";
-					heading = documentAccent(THINKING_BADGE) + documentHeadingStyle(completedTitle + suffix);
+					heading =
+						documentAccent(THINKING_BADGE) +
+						documentStatusStyle(completedTitle) +
+						(currentTitle ? `${documentDim(" · ")}${documentHeadingStyle(currentTitle)}` : "");
 				}
 			} else if (active && latestSummary) {
 				const title = latestSummary.title;
@@ -1328,7 +1697,7 @@ function compactThinking(pi: ExtensionAPI): boolean {
 					undefined,
 					config.showRawThinking === true,
 					headingProvider,
-					documentMode ? documentSource : undefined,
+					document,
 				),
 			);
 
@@ -1562,6 +1931,7 @@ function compactThinking(pi: ExtensionAPI): boolean {
 
 	pi.on("session_start", (_event, ctx) => {
 		restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
+		thinkingDocuments.clear();
 		activeTheme = ctx.ui.theme;
 		if (ctx.mode !== "tui") return;
 
@@ -1583,6 +1953,7 @@ function compactThinking(pi: ExtensionAPI): boolean {
 
 	pi.on("session_tree", (_event, ctx) => {
 		restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
+		thinkingDocuments.clear();
 		refreshMountedTranscript(activeTui);
 		activeTui?.requestRender(true);
 	});
@@ -1601,6 +1972,7 @@ function compactThinking(pi: ExtensionAPI): boolean {
 		latestComponent = undefined;
 		latestComponentTimestamp = undefined;
 		completedDurations.clear();
+		thinkingDocuments.clear();
 		streamingComponents.clear();
 		expandedThinking.clear();
 		fullExpandedThinking.clear();

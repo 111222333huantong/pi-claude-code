@@ -79,6 +79,8 @@ export type Config = {
 	thinkingLiveSummary: boolean;
 	/** 文档模式折叠态保留的正文行数。 */
 	thinkingSummaryLimit: number;
+	/** 文档模式展开态最多保留的尾部行数；0 = 始终显示全文。 */
+	thinkingDocumentMaxLines: number;
 	/** 保留兼容；文档模式始终显示完整原文。 */
 	showRawThinking: boolean;
 	showStartupHeader: boolean;
@@ -175,7 +177,9 @@ export const TOOL_LABEL_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2000"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
-export const THINKING_SUMMARY_LIMIT_VALUES = ["1", "2", "3", "5"];
+export const THINKING_SUMMARY_LIMIT_VALUES = ["0", "1", "2", "3", "5"];
+/** 文档模式展开态尾部窗口预设；0 = 始终显示全文。 */
+export const THINKING_DOCUMENT_MAX_LINES_VALUES = ["0", "200", "500", "1000", "2000", "4000"];
 /** fullscreen 滚轮步进行数预设。 */
 export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** 完成响铃阈值（秒）预设；0 关闭。 */
@@ -218,7 +222,8 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	thinkingExpandedMaxLines: 200,
 	thinkingLiveSummary: true,
-	thinkingSummaryLimit: 1,
+	thinkingSummaryLimit: 0,
+	thinkingDocumentMaxLines: 0,
 	showRawThinking: false,
 	showStartupHeader: true,
 	startupAnimation: true,
@@ -386,8 +391,14 @@ export function normalizeConfig(input: unknown): Config {
 		thinkingSummaryLimit: pickPositiveInt(
 			source.thinkingSummaryLimit,
 			DEFAULT_CONFIG.thinkingSummaryLimit,
-			1,
+			0,
 			50,
+		),
+		thinkingDocumentMaxLines: pickPositiveInt(
+			source.thinkingDocumentMaxLines,
+			DEFAULT_CONFIG.thinkingDocumentMaxLines,
+			0,
+			50_000,
 		),
 		showRawThinking: source.showRawThinking === true,
 		showStartupHeader: source.showStartupHeader !== false,
@@ -470,6 +481,7 @@ export function getCompactThinkingConfig(source: Config = config): CompactThinki
 		thinkingExpandedMaxLines: source.thinkingExpandedMaxLines,
 		thinkingLiveSummary: source.thinkingLiveSummary,
 		thinkingSummaryLimit: source.thinkingSummaryLimit,
+		thinkingDocumentMaxLines: source.thinkingDocumentMaxLines,
 		showRawThinking: source.showRawThinking,
 	};
 }
@@ -549,6 +561,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingExpanded=${source.thinkingExpandedMaxLines}`,
 		`thinkingLive=${source.thinkingLiveSummary ? "on" : "off"}`,
 		`thinkingSummaryLimit=${source.thinkingSummaryLimit}`,
+		`thinkingDocumentMax=${source.thinkingDocumentMaxLines > 0 ? source.thinkingDocumentMaxLines : "off"}`,
 		`thinkingRaw=${source.showRawThinking ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,

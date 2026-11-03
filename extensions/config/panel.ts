@@ -71,6 +71,7 @@ import {
 	STARTUP_SLOGAN_COLORS,
 	STREAM_THROTTLE_MS_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
+	THINKING_DOCUMENT_MAX_LINES_VALUES,
 	THINKING_EXPANDED_MAX_LINES_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	THINKING_SUMMARY_LIMIT_VALUES,
@@ -647,11 +648,21 @@ export async function showCcstylePanel(
 			id: "thinkingSummaryLimit",
 			label: "Collapsed body lines",
 			description:
-				"Number of latest body lines kept under the collapsed thinking status. Default 1.",
+				"Number of latest body lines kept under the collapsed thinking status. 0 = header only (OpenCode-style); default 0.",
 			currentValue: String(config.thinkingSummaryLimit),
 			values: [...THINKING_SUMMARY_LIMIT_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingSummaryLimitSetting, closeSubmenu),
+		};
+		const thinkingDocumentMaxLinesSetting = {
+			id: "thinkingDocumentMaxLines",
+			label: "Document max lines",
+			description:
+				"Expanded thinking keeps this many tail lines. 0 shows the full reasoning document (default).",
+			currentValue: String(config.thinkingDocumentMaxLines),
+			values: [...THINKING_DOCUMENT_MAX_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, thinkingDocumentMaxLinesSetting, closeSubmenu),
 		};
 		const showRawThinkingSetting = {
 			id: "showRawThinking",
@@ -1277,11 +1288,22 @@ export async function showCcstylePanel(
 						thinkingSummaryLimit: pickPositiveInt(
 							value,
 							DEFAULT_CONFIG.thinkingSummaryLimit,
-							1,
+							0,
 							50,
 						),
 					});
 					thinkingSummaryLimitSetting.currentValue = String(config.thinkingSummaryLimit);
+					break;
+				case "thinkingDocumentMaxLines":
+					updateConfig({
+						thinkingDocumentMaxLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.thinkingDocumentMaxLines,
+							0,
+							50_000,
+						),
+					});
+					thinkingDocumentMaxLinesSetting.currentValue = String(config.thinkingDocumentMaxLines);
 					break;
 				case "showRawThinking":
 					updateConfig({ showRawThinking: value === "on" });
@@ -1462,6 +1484,7 @@ export async function showCcstylePanel(
 					thinkingExpandedSetting,
 					thinkingLiveSummarySetting,
 					thinkingSummaryLimitSetting,
+					thinkingDocumentMaxLinesSetting,
 					showRawThinkingSetting,
 				],
 			},

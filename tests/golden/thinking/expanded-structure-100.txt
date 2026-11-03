@@ -1,0 +1,9 @@
+✻ Thought for 9s
+
+│ Checking the fix
+│ - include width in the key
+│ - include the collapsed-line limit
+│
+│ ```ts
+│   const key = `${width}:${limit}`;
+│ ```

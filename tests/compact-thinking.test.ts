@@ -13,8 +13,13 @@ import {
 	splitThinkingChunkBuffer,
 	summarizeThinkingChunk,
 	ThinkingPreviewBlock,
+	thinkingDocumentBodyCacheSize,
+	thinkingExpandedMarkdownCacheChars,
 	thinkingExpandedMarkdownCacheSize,
+	thinkingSectionMarkdownCacheSize,
+	thinkingSpinnerGlyph,
 } from "../extensions/feature/compact-thinking.ts";
+import { ThinkingDocumentBuilder } from "../extensions/feature/thinking-document.ts";
 import { animateCompactThinkingText } from "../extensions/renderer/compact-mode.ts";
 
 const config = {
@@ -442,7 +447,7 @@ test("document thinking collapses to the latest line and expands to full reasoni
 	}
 });
 
-test("document thinking uses accent badge, muted title, dim body, and a left rule", () => {
+test("document thinking uses accent badge, text status, muted body, and a left rule", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-document-theme-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -483,20 +488,27 @@ test("document thinking uses accent badge, muted title, dim body, and a left rul
 		};
 		const component = new AssistantMessageComponent(msg, true) as any;
 		component.updateContent(msg);
-		const collapsed = component.render(100).join("\n");
+		const collapsed = component.render(200).join("\n");
 		assert.match(collapsed, /<accent>✻ /, "badge uses accent");
-		assert.match(collapsed, /<muted>Thought · 验证修复<\/muted>/, "status and title use muted");
-		assert.match(collapsed, /<dim>把宽度放进缓存键。<\/dim>/, "collapsed body uses dim");
+		assert.match(collapsed, /<text>Thought<\/text>/, "status uses text color");
+		assert.match(collapsed, /<muted>验证修复<\/muted>/, "current section stays muted");
+		assert.match(collapsed, /<muted>把宽度放进缓存键。<\/muted>/, "collapsed body uses muted");
+		assert.match(collapsed, /<dim>│ <\/dim>/, "collapsed body keeps the left rule");
 		assert.doesNotMatch(collapsed, /<i>/, "document mode never italicizes thinking");
 
+		thinkingBlockOf(component).setHintHovered(true);
+		const hovered = component.render(200).join("\n");
+		assert.match(hovered, /<text>expand<\/text>/, "hover brightens the expand action");
+		thinkingBlockOf(component).setHintHovered(false);
+
 		thinkingBlockOf(component).setExpanded(true);
-		const expanded = component.render(100).join("\n");
+		const expanded = component.render(200).join("\n");
 		assert.match(
 			expanded,
-			/<dim>▏ <\/dim><text>排查缓存键<\/text>/,
+			/<dim>│ <\/dim><text>排查缓存键<\/text>/,
 			"section title uses text color",
 		);
-		assert.match(expanded, /<dim>失败的测试指向 memo 过的布局。<\/dim>/, "body uses dim");
+		assert.match(expanded, /<muted>失败的测试指向 memo 过的布局。<\/muted>/, "body uses muted");
 		assert.doesNotMatch(expanded, /<i>/, "expanded document does not italicize CJK body");
 	} finally {
 		emit("session_shutdown", {}, ctx);
@@ -504,6 +516,201 @@ test("document thinking uses accent badge, muted title, dim body, and a left rul
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("document thinking collapses to the header only when the summary limit is 0", () => {
+	const { pi } = runtime();
+	const controller = installCompactThinking(pi, {
+		...config,
+		thinkingLiveSummary: true,
+		thinkingSummaryLimit: 0,
+	});
+	controller.updateConfig({ ...config, thinkingSummaryLimit: 0 });
+	clearThinkingPreviewCache();
+	const doc = new ThinkingDocumentBuilder().update(
+		[
+			"**排查缓存键**",
+			"",
+			"失败的测试指向 memo 过的布局。",
+			"",
+			"**验证修复**",
+			"",
+			"把宽度放进缓存键。",
+		].join("\n"),
+	);
+	const block = new ThinkingPreviewBlock(
+		"✻ Thought",
+		doc.raw,
+		0,
+		1,
+		(text) => text,
+		undefined,
+		0,
+		false,
+		undefined,
+		undefined,
+		undefined,
+		false,
+		undefined,
+		doc,
+	);
+	try {
+		const collapsed = block.render(80).join("\n");
+		assert.match(collapsed, /✻ Thought/);
+		assert.doesNotMatch(collapsed, /排查缓存键/);
+		assert.doesNotMatch(collapsed, /│/);
+
+		block.setExpanded(true);
+		const expanded = block.render(80).join("\n");
+		assert.match(expanded, /排查缓存键/);
+		assert.match(expanded, /把宽度放进缓存键。/);
+		assert.match(expanded, /│/);
+	} finally {
+		block.setExpanded(false);
+		clearThinkingPreviewCache();
+	}
+});
+
+test("document thinking caps expanded output with an optional tail window", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-document-tail-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = Array.from({ length: 12 }, (_, index) => `line-${index}`).join("\n\n");
+	try {
+		const controller = installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 1,
+			thinkingDocumentMaxLines: 4,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		thinkingBlockOf(component).setExpanded(true);
+		const capped = renderText(component);
+		assert.ok(
+			capped.some((line) => line.includes("earlier lines hidden")),
+			`expected a tail-window hint, got: ${JSON.stringify(capped)}`,
+		);
+		assert.ok(
+			capped.some((line) => line.endsWith("line-11")),
+			"keeps the newest lines",
+		);
+		assert.ok(
+			!capped.some((line) => line.endsWith("line-0")),
+			"older lines are outside the tail window",
+		);
+
+		controller.updateConfig({
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 1,
+			thinkingDocumentMaxLines: 0,
+		});
+		const full = renderText(component);
+		assert.ok(!full.some((line) => line.includes("earlier lines hidden")));
+		assert.ok(
+			full.some((line) => line.endsWith("line-0")),
+			"0 restores the full document",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("document body cache extends the stable prefix and rebuilds on width changes", () => {
+	clearThinkingPreviewCache();
+	const builder = new ThinkingDocumentBuilder();
+	const timestamp = 987_654;
+	const longBody = "first body check the stable prefix ".repeat(6).trim();
+	const first = builder.update(
+		["**One**", "", longBody, "", "**Two**", "", "second body"].join("\n"),
+	);
+	const blockA = new ThinkingPreviewBlock(
+		"Thought",
+		first.raw,
+		0,
+		timestamp,
+		(text) => text,
+		undefined,
+		0,
+		false,
+		undefined,
+		undefined,
+		undefined,
+		false,
+		undefined,
+		first,
+	);
+	try {
+		blockA.setExpanded(true);
+		blockA.render(60);
+		assert.equal(thinkingDocumentBodyCacheSize(), 1);
+
+		const second = builder.update(
+			[
+				"**One**",
+				"",
+				longBody,
+				"",
+				"**Two**",
+				"",
+				"second body",
+				"",
+				"**Three**",
+				"",
+				"third body",
+			].join("\n"),
+		);
+		assert.strictEqual(second.sections[0], first.sections[0], "finalized section is reused");
+		const blockB = new ThinkingPreviewBlock(
+			"Thought",
+			second.raw,
+			0,
+			timestamp,
+			(text) => text,
+			undefined,
+			0,
+			false,
+			undefined,
+			undefined,
+			undefined,
+			false,
+			undefined,
+			second,
+		);
+		blockB.setExpanded(true);
+		const extended = blockB.render(60).join("\n");
+		assert.match(extended, /first body/);
+		assert.match(extended, /second body/);
+		assert.match(extended, /third body/);
+		assert.equal(thinkingDocumentBodyCacheSize(), 1, "one cache entry per run");
+
+		const narrower = blockB.render(40).join("\n");
+		assert.match(narrower, /first body/);
+		assert.match(narrower, /second body/);
+		assert.match(narrower, /third body/);
+		assert.ok(
+			narrower.split("\n").length > extended.split("\n").length,
+			"narrower width re-wraps the whole document",
+		);
+	} finally {
+		blockA.setExpanded(false);
+		clearThinkingPreviewCache();
+	}
+	assert.equal(thinkingDocumentBodyCacheSize(), 0);
 });
 
 test("document thinking supports more than one collapsed body line", () => {
@@ -542,6 +749,51 @@ test("document thinking supports more than one collapsed body line", () => {
 	}
 });
 
+test("legacy expanded markdown cache respects its character budget", () => {
+	clearThinkingPreviewCache();
+	const markdownTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		underline: (text: string) => text,
+		code: (text: string) => text,
+		codeBlock: (text: string) => text,
+		codeBlockBorder: (text: string) => text,
+		codeBlockIndent: "  ",
+		heading: (text: string) => text,
+		hr: (text: string) => text,
+		link: (text: string) => text,
+		linkUrl: (text: string) => text,
+		listBullet: (text: string) => text,
+		quote: (text: string) => text,
+		quoteBorder: (text: string) => text,
+		strikethrough: (text: string) => text,
+	};
+	const text = "x".repeat(50_000);
+	for (let index = 0; index < 100; index++) {
+		const block = new ThinkingPreviewBlock(
+			"Thought",
+			text,
+			0,
+			500_000 + index,
+			(t) => t,
+			undefined,
+			0,
+			false,
+			markdownTheme as any,
+		);
+		block.setExpanded(true);
+		block.render(80);
+	}
+	assert.ok(thinkingExpandedMarkdownCacheSize() <= 32);
+	assert.ok(
+		thinkingExpandedMarkdownCacheChars() <= 4 * 1024 * 1024 + 60_000,
+		`cache chars stay near the 4 MiB budget, got ${thinkingExpandedMarkdownCacheChars()}`,
+	);
+	clearThinkingPreviewCache();
+});
+
 test("compact summary reuses compact-thinking's sweep animation", () => {
 	const theme = {
 		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
@@ -553,6 +805,24 @@ test("compact summary reuses compact-thinking's sweep animation", () => {
 	assert.notEqual(first, second);
 	assert.equal(first.replace(/<[^>]+>/g, ""), "Thinking...");
 	assert.equal(second.replace(/<[^>]+>/g, ""), "Thinking...");
+});
+
+test("active thinking uses OpenCode's braille snake spinner", () => {
+	// 10 braille frames at 90ms; the working spinner below keeps its own star glyph.
+	assert.equal(thinkingSpinnerGlyph(0), "⠋");
+	assert.equal(thinkingSpinnerGlyph(89), "⠋");
+	assert.equal(thinkingSpinnerGlyph(90), "⠙");
+	assert.equal(thinkingSpinnerGlyph(180), "⠹");
+	assert.equal(thinkingSpinnerGlyph(270), "⠸");
+	assert.equal(thinkingSpinnerGlyph(360), "⠼");
+	assert.equal(thinkingSpinnerGlyph(450), "⠴");
+	assert.equal(thinkingSpinnerGlyph(540), "⠦");
+	assert.equal(thinkingSpinnerGlyph(630), "⠧");
+	assert.equal(thinkingSpinnerGlyph(720), "⠇");
+	assert.equal(thinkingSpinnerGlyph(810), "⠏");
+	// Wraps cleanly back to the first frame.
+	assert.equal(thinkingSpinnerGlyph(900), "⠋");
+	assert.equal(thinkingSpinnerGlyph(-5), "⠋");
 });
 
 function runtime() {
@@ -1605,6 +1875,57 @@ test("expanded thinking renders markdown structure, not raw markers", () => {
 		assert.ok(
 			expanded.some((line) => line.includes("const a = 1")),
 			`code content survives, got: ${JSON.stringify(expanded)}`,
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("document markdown caches finalized sections across re-renders", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-document-cache-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = [
+		"**One**",
+		"",
+		"First section body.",
+		"",
+		"**Two**",
+		"",
+		"Second section body.",
+	].join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: true,
+			previewLines: 3,
+			animationIntervalMs: 30,
+			thinkingExpandedMaxLines: 200,
+			thinkingLiveSummary: true,
+			thinkingSummaryLimit: 1,
+		});
+		emit("session_start", {}, ctx);
+		const msg: any = {
+			role: "assistant",
+			timestamp: Date.now(),
+			content: [{ type: "thinking", thinking: body }],
+		};
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		thinkingBlockOf(component).setExpanded(true);
+		const before = thinkingSectionMarkdownCacheSize();
+		component.render(100);
+		const afterFirst = thinkingSectionMarkdownCacheSize();
+		assert.ok(afterFirst > before, "first expanded render caches section bodies");
+		component.render(100);
+		assert.equal(
+			thinkingSectionMarkdownCacheSize(),
+			afterFirst,
+			"re-render reuses finalized section markdown",
 		);
 	} finally {
 		emit("session_shutdown", {}, ctx);

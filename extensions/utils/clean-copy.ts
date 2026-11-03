@@ -11,18 +11,25 @@
  * 缩进、`+`/`-` diff 标记和其余正文空白。只在缩进后的树线前缀上动手。
  */
 
-/** 树线前缀：可选缩进 + 一个引导符 + 一个可选空格。 */
-const TREE_GUIDE_RE = /^([ \t]*)(?:│|├|└)[ \t]?/;
+/** 树线前缀：可选缩进 + 一个引导符 + 一个可选空格。`▏` 是旧版 thinking 左竖线。 */
+const TREE_GUIDE_RE = /^([ \t]*)(?:│|├|└|▏)[ \t]?/;
 
 /** 行尾展开/收起提示：`… · click to show more`、`ctrl+o to collapse`。 */
 const HINT_SUFFIX_RE =
 	/[ \t]*(?:·[ \t]*)?(?:(?:click|ctrl\+[a-z0-9+/]+|alt\+[a-z0-9+/]+)[ \t]+to[ \t]+(?:show more|render all|collapse))[ \t]*$/i;
+
+/** thinking 标题右侧的裸状态：`  3 steps` / `  expand`（兼容旧版右对齐）。 */
+const META_SUFFIX_RE = /[ \t]{2,}(?:expand|collapse|\d+[ \t]+steps?)[ \t]*$/i;
+
+/** thinking 状态行里的内联元信息：` · 2 steps`、` · 3 steps · expand`（可重复）。 */
+const INLINE_META_SUFFIX_RE = /(?:[ \t]+·[ \t]+(?:\d+[ \t]+steps?|expand|collapse))+[ \t]*$/i;
 
 /** 纯提示行（剥掉后缀后整行只剩提示时丢弃）。 */
 const HINT_ONLY_RES: RegExp[] = [
 	/^(?:…[ \t]*)?\+?\d+[ \t]+more[ \t]+(?:diff[ \t]+)?lines?(?:[ \t]*·.*)?$/,
 	/^…[ \t]*\(\d+[ \t]+earlier[ \t]+lines?\)$/,
 	/^…[ \t]*\d+[ \t]+earlier[ \t]+(?:calls?|lines?)$/,
+	/^…[ \t]*\d+[ \t]+earlier[ \t]+lines?[ \t]+hidden$/,
 	/^…[ \t]*\+\d+[ \t]*more[ \t]+lines?$/,
 	/^(?:↑[ \t]*)?click[ \t]+to[ \t]+(?:show more|render all|collapse)$/i,
 	/^(?:↑[ \t]*)?collapse$/i,
@@ -43,11 +50,14 @@ function isHintOnly(line: string): boolean {
 
 /**
  * 剥掉行首的树线/箭头。`│ ` 只有在有缩进时才剥：
- * 列 0 的 `│ ` 是 Markdown 引用块，属于内容。
+ * 列 0 的 `│ ` 是 Markdown 引用块，属于内容；单独一条 `│` 是 thinking
+ * 的 section 分隔符，转成空行。
  */
 export function stripTreeGuides(line: string): string {
 	let rest = line;
 	let stripped = false;
+	// 单独一条 rail 是 thinking 的 section 分隔，不是正文：保留空行。
+	if (/^[ \t]*│[ \t]*$/.test(rest)) return "";
 	for (;;) {
 		const match = TREE_GUIDE_RE.exec(rest);
 		if (!match) break;
@@ -91,7 +101,10 @@ export function cleanCopiedText(text: string): string {
 			out.push(unwrapBoxLine(line));
 			continue;
 		}
-		const stripped = stripTreeGuides(line).replace(HINT_SUFFIX_RE, "");
+		const stripped = stripTreeGuides(line)
+			.replace(HINT_SUFFIX_RE, "")
+			.replace(INLINE_META_SUFFIX_RE, "")
+			.replace(META_SUFFIX_RE, "");
 		if (isHintOnly(stripped)) continue;
 		out.push(trimEnd(stripped));
 	}

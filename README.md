@@ -129,7 +129,8 @@ npm install --omit=optional pi-claude-code
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
   "thinkingExpandedMaxLines": 200,         // 旧版 raw preview 的展开行数；文档模式忽略
   "thinkingLiveSummary": true,             // 文档模式：折叠两行 + 展开全文
-  "thinkingSummaryLimit": 1,               // 折叠态保留的最新正文行数
+  "thinkingSummaryLimit": 0,               // 折叠态正文行数；0 = 只显示状态行（OpenCode 式）
+  "thinkingDocumentMaxLines": 0,           // 展开态尾部窗口行数；0 = 始终显示全文
   "showRawThinking": false,                // 保留兼容；文档模式始终显示全文
 
   // ui（本 fork 增补）
@@ -169,7 +170,16 @@ npm install --omit=optional pi-claude-code
 > 原文不会被摘要替换；provider 的 `**Section title**` 会作为文档小节保留。
 > 设为 `false` 回到旧版 raw preview（`thinkingExpandedMaxLines` 只在这个模式下生效；
 > `showRawThinking` 仅为兼容保留，文档模式始终显示完整原文）。
-> 折叠正文行数由 `thinkingSummaryLimit` 控制；标题、正文、左侧竖线分别使用 muted / dim / dim，全程不斜体。
+> 折叠默认只显示状态行（OpenCode 式），不预览正文；把 `thinkingSummaryLimit` 设为 1+ 才会在状态行下预览最新 N 行原文。
+> 状态词用 text、当前小节与正文用 muted、
+> 左侧竖线用 dim，与工具卡的标题/正文/树线层级一致，全程不斜体。
+> 竖线 `│` 与工具卡树线同列，正文与工具卡标题/展开节正文同列。
+> 展开态保留同一条淡竖线；折叠态只有状态行，鼠标悬停时的 `expand` / `collapse`
+> 内联在状态行末尾，hover 时提示提亮，整块都可点击。
+> 活动态用 OpenCode 同款 braille 蛇形点（`⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`，90ms 一帧），
+> 状态词保持静态；下方 working spinner 继续用自己的星形 glyph 和动词扫光。
+> 极端长文档可把 `thinkingDocumentMaxLines` 设为 2000 之类的尾部窗口；默认 `0` 仍是完整原文。
+> 流式渲染按两档节奏：正常按 `streamThrottleMs` 合并，积压超过 8 帧时短暂进入 catch-up 立即 drain。
 
 本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）。保存后自动生效；`/statusline worktree on|off` 可立即切换 L2 的 worktree 段：
 

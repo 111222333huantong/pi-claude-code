@@ -134,7 +134,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "animationIntervalMs": 90,               // title animation interval (ms)
   "thinkingExpandedMaxLines": 200,         // legacy raw preview tail lines; ignored in document mode
   "thinkingLiveSummary": true,             // document mode: two-line collapsed status + full document on expand
-  "thinkingSummaryLimit": 1,               // latest body lines kept under the collapsed status
+  "thinkingSummaryLimit": 0,               // collapsed body lines; 0 = header only (OpenCode-style)
+  "thinkingDocumentMaxLines": 0,           // expanded tail window; 0 = full document
   "showRawThinking": false,                // kept for compatibility; document mode always shows full text
 
   // ui (this fork)
@@ -172,13 +173,24 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
 }
 ```
 
-> `thinkingLiveSummary: true` is the document mode: collapsed shows a status line plus the latest body
-> line, and expanding renders the full reasoning document without replacing the original text.
+> `thinkingLiveSummary: true` is the document mode: collapsed shows only the status line (OpenCode-style),
+> and expanding renders the full reasoning document without replacing the original text. Set
+> `thinkingSummaryLimit` to 1+ to preview the latest N original lines under the status line.
 > Provider `**Section title**` blocks are preserved as document sections. Set it to `false` to restore
 > the legacy raw preview (`thinkingExpandedMaxLines` only applies there; `showRawThinking` is
 > kept for compatibility, while document mode always shows the full text).
-> `thinkingSummaryLimit` controls the number of collapsed body lines; title, body and left rule use
-> muted / dim / dim respectively, with no italics.
+> The status word uses text color,
+> the current section and body use muted, and the left rule uses dim — the same hierarchy as tool cards
+> (title / body / tree line), with no italics. The `│` rule sits in the same column as the tool tree,
+> and body text sits in the same column as tool titles and expanded-section bodies. The expanded view
+> keeps the same dim left rule; the collapsed view is header-only, with the hover-only `expand` /
+> `collapse` action inline at the end of the status line. Hovering brightens the action, and the whole
+> block is clickable. While active, the header uses OpenCode's braille snake spinner
+> (`⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, 90ms per frame) while the status word stays static; the working
+> spinner below keeps its own star glyph and verb shimmer.
+> For extreme documents, `thinkingDocumentMaxLines` can cap the expanded view to a tail window
+> (for example 2000); the default `0` still shows the full text. Streaming uses two gears: normal
+> coalescing by `streamThrottleMs`, plus a short catch-up drain once more than 8 frames are pending.
 
 This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle with `/statusline`, or the Features tab in `/ccstyle`). Saved changes apply automatically; `/statusline worktree on|off` toggles the L2 worktree segment immediately:
 

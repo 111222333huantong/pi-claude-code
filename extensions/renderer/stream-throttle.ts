@@ -10,6 +10,8 @@
  * - `isStreaming !== true` 一律直通（`message_end` 会无条件做最终渲染）；
  * - 流式中间帧按 `config.streamThrottleMs` 合并，尾帧用 timer 补一次，
  *   避免模型停顿或流结束时停在旧内容；
+ * - 两档节奏：正常按间隔合并；积压超过 8 帧时进入 250ms 的 catch-up，
+ *   立即 drain，之后回到正常间隔（Codex Smooth/CatchUp 的简化版）；
  * - 只合并 `updateContent`，工具调用识别在 Pi 的 `message_update` 分支里，
  *   不经过这里，因此不会漏工具。
  *
@@ -33,7 +35,16 @@ type ThrottleState = {
 	initialized: boolean;
 	timer: ReturnType<typeof setTimeout> | null;
 	pending: any;
+	/** 自上次渲染以来被合并掉的帧数，用于两档节流。 */
+	dropped: number;
+	/** catch-up 模式的截止时间；期间不等窗口直接渲染。 */
+	catchUpUntil: number;
 };
+
+/** 积压超过这个帧数就进入 catch-up（Codex Smooth/CatchUp 的简化版）。 */
+const CATCH_UP_PENDING_FRAMES = 8;
+/** catch-up 持续时间：快速清掉积压，然后回到正常间隔。 */
+const CATCH_UP_HOLD_MS = 250;
 
 const states = new WeakMap<object, ThrottleState>();
 let now: () => number = () => performance.now();
@@ -59,7 +70,14 @@ function throttleMs(): number {
 function stateOf(component: object): ThrottleState {
 	let state = states.get(component);
 	if (!state) {
-		state = { last: 0, initialized: false, timer: null, pending: undefined };
+		state = {
+			last: 0,
+			initialized: false,
+			timer: null,
+			pending: undefined,
+			dropped: 0,
+			catchUpUntil: 0,
+		};
 		states.set(component, state);
 	}
 	return state;
@@ -109,7 +127,11 @@ export function installStreamThrottle(): StreamThrottleHooks {
 		// 非流式（最终帧、hover/展开、主题切换）必须立即渲染。
 		if (isStreaming !== true) {
 			const state = states.get(this);
-			if (state) cancelPending(state);
+			if (state) {
+				cancelPending(state);
+				state.dropped = 0;
+				state.catchUpUntil = 0;
+			}
 			downstream.call(this, message, isStreaming);
 			return;
 		}
@@ -122,16 +144,24 @@ export function installStreamThrottle(): StreamThrottleHooks {
 
 		const state = stateOf(this);
 		const at = now();
-		// 第一次调用立即渲染；之后按间隔合并。
-		if (!state.initialized || at - state.last >= interval) {
+		const due = !state.initialized || at - state.last >= interval;
+		const inCatchUp = state.initialized && at < state.catchUpUntil;
+		const backlog =
+			state.initialized && !due && (inCatchUp || state.dropped >= CATCH_UP_PENDING_FRAMES);
+		// 正常节奏到点，或积压过多：立即渲染。catch-up 只延长一次，
+		// 避免持续流式时永远停在“每帧都画”。
+		if (due || backlog) {
 			cancelPending(state);
 			state.initialized = true;
 			state.last = at;
+			state.dropped = 0;
+			if (backlog && !inCatchUp) state.catchUpUntil = at + CATCH_UP_HOLD_MS;
 			downstream.call(this, message, true);
 			return;
 		}
 
 		// 中间帧：只保留最新内容，到点补一帧。
+		state.dropped += 1;
 		state.pending = message;
 		if (state.timer) return;
 		const delay = Math.max(0, interval - (at - state.last));
@@ -141,6 +171,7 @@ export function installStreamThrottle(): StreamThrottleHooks {
 			state.pending = undefined;
 			if (!patch.active || pending === undefined) return;
 			state.last = now();
+			state.dropped = 0;
 			downstream.call(this, pending, true);
 		}, delay);
 		state.timer.unref?.();

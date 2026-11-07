@@ -7,6 +7,11 @@ import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { bashLivePreview } from "../extensions/renderer/tool/bash-preview.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { installToolGrouping } from "../extensions/renderer/tool/grouping.ts";
+import {
+	outputTotalLines,
+	tailTextFromResult,
+	textFromResult,
+} from "../extensions/renderer/tool/result.ts";
 import { clearAllAnimations } from "../extensions/renderer/tool/tool-state.ts";
 
 initTheme("dark");
@@ -45,6 +50,10 @@ function plainTool(name: string, id: string, args: any = {}) {
 
 function partial(tool: any, text: string) {
 	tool.updateResult({ content: [{ type: "text", text }], isError: false }, true);
+}
+
+function partialWithDetails(tool: any, text: string, details: any) {
+	tool.updateResult({ content: [{ type: "text", text }], details, isError: false }, true);
 }
 
 function settled(tool: any, text: string, isError = false) {
@@ -412,4 +421,77 @@ test("bashLivePreview: 尾部空行追加不改变 total/header", () => {
 	bashLivePreview("tail-a\ntail-b", 5);
 	assert.equal(bashLivePreview("tail-a\ntail-b\n\n\n", 5).total, 2);
 	assert.equal(bashLivePreview("tail-a\ntail-b\n\n\n", 5).header, null);
+});
+
+test("tailTextFromResult 保留尾部而不是头部", () => {
+	const text = ["HEAD-ONLY", ...Array.from({ length: 3_000 }, (_, i) => `row-${i}`)].join("\n");
+	const tail = tailTextFromResult({ content: [{ type: "text", text }] });
+	assert.ok(!tail.startsWith("HEAD-ONLY"), "头部行不应出现");
+	assert.ok(tail.endsWith("row-2999"), "最后一行必须保留");
+	// 切窗口时不留下半行：首字符必须是一行开头。
+	assert.match(tail.split("\n")[0]!, /^row-\d+$/);
+	// 短输出与 textFromResult 完全一致。
+	const short = { content: [{ type: "text", text: "a\nb" }] };
+	assert.equal(tailTextFromResult(short), textFromResult(short));
+});
+
+test("outputTotalLines 读取 Pi 截断详情里的真实总行数", () => {
+	assert.equal(outputTotalLines({ details: { truncation: { totalLines: 5000 } } }), 5000);
+	assert.equal(outputTotalLines({ details: { truncation: { totalLines: 0 } } }), 0);
+	assert.equal(outputTotalLines({ details: undefined }), undefined);
+	assert.equal(outputTotalLines({ details: { truncation: { totalLines: "x" } } }), undefined);
+});
+
+test("settled bash: 超过 16KB 的展开输出保留末尾", () => {
+	const previousMode = config.mode;
+	const previousLimit = config.expandedOutputMaxLines;
+	config.mode = "on";
+	// 放大行数上限，让断言只看「尾部是否进入可见正文」，不受 10 行预览影响。
+	config.expandedOutputMaxLines = 10_000;
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const bash = startedBash("bash-settled-long");
+		// 约 60KB：超过 textFromResult 的 16KB 头部上限，旧实现会裁掉末尾。
+		const text = [
+			...Array.from({ length: 6_000 }, (_, i) => `log-${String(i).padStart(4, "0")}`),
+			"FATAL: tail error",
+		].join("\n");
+		bash.updateResult({ content: [{ type: "text", text }], isError: false }, false);
+		bash.setExpanded(true);
+		const out = render(bash).map(strip).join("\n");
+		assert.match(out, /FATAL: tail error/, "展开输出必须包含末尾");
+	} finally {
+		config.mode = previousMode;
+		config.expandedOutputMaxLines = previousLimit;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
+});
+
+test("running bash: 输出超过 16KB 仍跟随尾部，并用真实总行数", () => {
+	const previousMode = config.mode;
+	const previousFlag = config.liveToolPreview;
+	config.mode = "on";
+	config.liveToolPreview = true;
+	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
+	try {
+		const bash = startedBash("bash-live-long");
+		// 3000 行约 24KB：超过 textFromResult 的 16KB 头部上限。
+		partialWithDetails(
+			bash,
+			Array.from({ length: 3_000 }, (_, i) => `row-${String(i + 1).padStart(4, "0")}`).join("\n"),
+			{ truncation: { totalLines: 5_000 } },
+		);
+		render(bash);
+		bash.updateDisplay();
+		const text = render(bash).map(strip).join("\n");
+		assert.match(text, /row-3000/, "显示最后一行");
+		assert.match(text, /· 5000 lines/, "标题用真实总行数");
+		assert.match(text, /… \(4995 earlier lines\)/, "头部按真实总数计算");
+	} finally {
+		config.mode = previousMode;
+		config.liveToolPreview = previousFlag;
+		clearAllAnimations();
+		hooks.shutdown();
+	}
 });

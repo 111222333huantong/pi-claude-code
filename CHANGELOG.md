@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+### 修复
+
+- bash live 尾预览在输出超过 16KB 后不再停住：`textFromResult` 的 16KB 上限取的是
+  头部，而 Pi 的 bash 结果本身已是「最后 2000 行 / 50KB」，旧实现会再截成前 16KB，
+  后续新输出永远不出现。现在 live 预览、运行中展开视图和落定后的 shell 结果行都
+  改取尾部（`tailTextFromResult`）；展开态放宽到 49KB，`show more` 能翻到保留窗口
+  的末尾。
+- bash 标题里的 `· N lines` 与 `… (N earlier lines)` 改用 Pi
+  `details.truncation.totalLines` 的真实总行数；此前只看 16KB 窗口，长命令会少报。
+
 ### 兼容与打包
 
 - 开发基线升到 Pi 1.5.0（`@earendil-works/pi-ai` / `pi-coding-agent` /

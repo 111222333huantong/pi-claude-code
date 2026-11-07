@@ -46,8 +46,10 @@ import {
 	failureSummaryText,
 	formatToolDuration,
 	insetComponent,
+	outputTotalLines,
 	renderCollapsedToolResult,
 	renderCollapsedToolResultToWidth,
+	tailTextFromResult,
 	textFromResult,
 	toolViewportWidth,
 } from "./result.ts";
@@ -248,7 +250,10 @@ function slowResultDurationText(toolName: string, context: any): string {
  * shell 的已用时间挂到视图尾部；取值函数每帧重算，秒数才跟着动画 tick 走。
  */
 function renderRunningExpandedResult(toolName: string, result: any, context: any, theme: any): any {
-	const text = textFromResult(result);
+	// shell 输出是滚动的：Pi 的结果本身保留尾部，展示也取尾部才看得到最新进展。
+	const text = SHELL_TOOL_NAMES.has(toolName)
+		? tailTextFromResult(result, 32_768)
+		: textFromResult(result);
 	const view = renderExpandedToolResult(
 		text.trim() ? text : "Pending…",
 		theme,
@@ -732,12 +737,24 @@ export function createCcstyleTool(
 				// bash live 尾预览（本 fork 特性）：执行中取输出尾部窗口；空输出回落 Pending 行。
 				if (SHELL_TOOL_NAMES.has(toolName) && config.liveToolPreview !== false) {
 					const liveLimit = Math.max(1, config.liveToolPreviewLines || BASH_LIVE_PREVIEW_LINES);
-					const live = bashLivePreview(textFromResult(result), liveLimit);
+					// 取尾部而不是头部：Pi 只保留最后 2000 行 / 50KB，再截头部会让
+					// live 预览在输出超过 16KB 后停住。
+					const live = bashLivePreview(tailTextFromResult(result), liveLimit);
 					if (live.total > 0) {
+						// 截断后的 total 只是窗口内行数；优先用 Pi 给的真实总数。
+						const total = Math.max(live.total, outputTotalLines(result) ?? 0);
+						const preview =
+							total === live.total
+								? live
+								: {
+										total,
+										header: `… (${total - live.tail.length} earlier lines)`,
+										tail: live.tail,
+									};
 						const liveState = context?.state ?? {};
-						liveState._liveLineCount = live.total;
+						liveState._liveLineCount = preview.total;
 						if (context != null) context.state = liveState;
-						return bashLivePreviewBody(live, theme, false);
+						return bashLivePreviewBody(preview, theme, false);
 					}
 				}
 				// 折叠行保留行尾 show-more 提示与已用时间：hint 是鼠标命中锚点。
@@ -779,7 +796,12 @@ export function createCcstyleTool(
 					return expanded ? expandedBodyComponent(richResult) : insetComponent(richResult);
 			}
 
-			const text = textFromResult(result, expanded);
+			// shell 的 content 由 Pi 从尾部截断（最后 2000 行 / 50KB）；再按头部截
+			// 16KB 会把命令末尾的结果/报错裁掉。展开时给足扩容上限，让 show more 能
+			// 翻到完整保留窗口。
+			const text = SHELL_TOOL_NAMES.has(toolName)
+				? tailTextFromResult(result, expanded ? 49_152 : 16_384)
+				: textFromResult(result, expanded);
 			const args = context?.args;
 			// 失败分流（本 fork）：用户动作中断/拒绝收敛为 dim 短语，真错误才走红。
 			const failureKind = isError ? classifyToolFailure(text) : null;

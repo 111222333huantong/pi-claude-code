@@ -1,11 +1,11 @@
 /**
  * 流式渲染节流。
  *
- * Pi 1.4 的交互层在每个 `message_update` 都调用
- * `AssistantMessageComponent.updateContent()`，而该方法会 `clear()` 内容容器并
- * `new Markdown(...)`；Markdown 的实例级缓存因此永远不命中，整段文本每个 token
- * 都重新 lex/wrap/measure（上游 issue #6665）。扩展侧最安全的兜底是把中间帧
- * 合并到 ~10fps：
+ * Pi 的交互层在每个 `message_update` 都调用
+ * `AssistantMessageComponent.updateContent()`。1.4 会 `clear()` 内容容器并
+ * `new Markdown(...)`，Markdown 的实例级缓存永远不命中；1.5 改为复用 markdown
+ * slot，但每个 token 仍会 `setText()` 重跑整段 lex/wrap/measure（上游 issue
+ * #6665 只修了实例复用）。扩展侧最安全的兜底仍是把中间帧合并到 ~10fps：
  *
  * - `isStreaming !== true` 一律直通（`message_end` 会无条件做最终渲染）；
  * - 流式中间帧按 `config.streamThrottleMs` 合并，尾帧用 timer 补一次，
@@ -15,7 +15,8 @@
  * - 只合并 `updateContent`，工具调用识别在 Pi 的 `message_update` 分支里，
  *   不经过这里，因此不会漏工具。
  *
- * 这是上游修复前的 stopgap：`streamThrottleMs = 0` 可完全关闭。
+ * `streamThrottleMs = 0` 可完全关闭。1.5 下的热路径基准仍显示：40 帧长回复
+ * 不节流 ~244ms，默认 100ms 节流 ~48ms。
  */
 
 import { getAssistantMessagePrototype } from "../compat/pi-internals.ts";

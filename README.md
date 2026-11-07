@@ -229,7 +229,7 @@ pi -e .              # 只跑一次，不改 settings.json
 Features 页关掉 `enableCustomFooter`——两者互斥。
 
 **长回复时 CPU 占用高、滚动卡顿？**
-Pi 1.x 每个 token 都会重建整段 Markdown。本扩展默认把它合并到约 10fps
+Pi 1.x 每个 token 都会重跑整段 Markdown 的 lex/wrap（1.5 起复用渲染槽位，整段重算仍在）。本扩展默认把它合并到约 10fps
 （`streamThrottleMs: 100`）；想更跟手可调到 `50`，想更省 CPU 调到 `150`/`250`，
 设 `0` 则恢复逐 token 重绘。
 

@@ -240,7 +240,8 @@ off `enableCustomFooter` on the Features tab of `/ccstyle` — they are mutually
 exclusive.
 
 **High CPU or choppy scrolling during long replies?**
-Pi 1.x rebuilds the whole Markdown body on every token. This extension merges
+Pi 1.x re-lexes and re-wraps the whole Markdown body on every token (1.5 reuses
+render slots, but the full recompute remains). This extension merges
 those redraws to roughly 10fps (`streamThrottleMs: 100`). Use `50` for a snappier
 stream, `150`/`250` to save more CPU, or `0` to redraw every token.
 

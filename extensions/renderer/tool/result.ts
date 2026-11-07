@@ -83,6 +83,30 @@ export function textFromResult(result: any, expanded = false): string {
 	return `${content}\nDetails:\n${details}`;
 }
 
+/**
+ * 运行中 shell 尾预览专用：先保留尾部窗口再清理终端序列。
+ *
+ * `textFromResult` 的 16KB 上限取的是头部，而 Pi 的 bash 结果本身已经是
+ * 「最后 2000 行 / 50KB」；再截头部会让长命令的 live 尾预览停在最多 34KB
+ * 之前的输出，后面的新行永远不出现。这里反向取尾部，并丢掉被切开的半行。
+ */
+export function tailTextFromResult(result: any, maxChars = 16_384): string {
+	const text = rawTextFromResult(result);
+	if (text.length <= maxChars) return sanitizeToolResultText(text);
+	const window = text.slice(-maxChars);
+	const newline = window.indexOf("\n");
+	return sanitizeToolResultText(newline === -1 ? window : window.slice(newline + 1));
+}
+
+/**
+ * Pi 的 bash 输出累加器在 `details.truncation.totalLines` 里给出真实总行数
+ * （含已被尾部截断丢弃的行）。拿不到时返回 undefined。
+ */
+export function outputTotalLines(result: any): number | undefined {
+	const total = result?.details?.truncation?.totalLines;
+	return typeof total === "number" && Number.isFinite(total) && total >= 0 ? total : undefined;
+}
+
 /** 中断原文（`This operation was aborted` 等）→ 折叠行收敛为 `Operation aborted`（与 compact-mode 同词）。 */
 export function isAbortedResultText(text: string): boolean {
 	return /operation was aborted|request was aborted|aborted by user/i.test(text.trim());

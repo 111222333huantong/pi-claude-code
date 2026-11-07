@@ -219,7 +219,7 @@ pi -e .              # one run, does not edit settings.json
 
 ## Compatibility
 
-- Node.js `>=22.19.0`, Pi `>=1.2.0`
+- Node.js `>=22.19.0`, Pi `>=1.2.0` (1.4.x / 1.5.x tested)
 
 ## FAQ
 

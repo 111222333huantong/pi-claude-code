@@ -3,6 +3,24 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## Unreleased
+
+### 兼容与打包
+
+- 开发基线升到 Pi 1.5.0（`@earendil-works/pi-ai` / `pi-coding-agent` /
+  `pi-tui`）：完整 `npm run ci` 与热路径基准通过。1.5 的流式渲染优化与本包
+  `streamThrottleMs` 并存，基准里 40 帧长回复仍是 `~244ms`（不节流）对
+  `~48ms`（默认 10fps），节流继续有效。1.5 起扩展自行注册的工具参数走
+  pi-schema 校验；本包只复用官方 `write` definition，不受 TypeBox 收窄影响。
+- `@shikijs/cli` 4.5.0 → 4.6.0（`@shikijs/cli` 与 `shiki` 同步升级）。
+- `files` 纳入 `CHANGELOG.md`：Pi 1.5 起会读取包根 changelog，在升级后的
+  “Extension Updates”里展示更新说明。此前 tarball 不含该文件，提示永远为空。
+- 新增 `tests/package-manifest.test.ts`：校验 `pi.extensions` / `pi.themes`
+  指向的文件存在、`themes/` 与清单一一对应、extension 内的相对导入不会跑出
+  `extensions/`（跑出去的文件不会进 tarball）。
+- CI 增加 `npm run bench:check`（`continue-on-error`，仅报告）：热路径基准
+  相对 1.8x 容差回退时会留下明显日志，但不阻断发布。
+
 ## 1.6.0 — 2026-11-07
 
 ### 上游合并（v1.0.16）

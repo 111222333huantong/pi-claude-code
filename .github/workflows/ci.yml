@@ -48,6 +48,11 @@ jobs:
         run: npm test
 
       - run: npm run bench:thinking
+      # 热路径基准只报警不阻断：归一化后跨机器可比，但共享 runner 偶发抖动
+      # 不该拦住发布；回退超过 1.8x 容差时会在这里留下明显日志。
+      - name: Benchmark hot paths (report only)
+        continue-on-error: true
+        run: npm run bench:check
       - run: npm pack --dry-run
 
       - name: Coverage report

@@ -15,6 +15,7 @@ import { stripAnsi } from "../../utils/ansi-text.ts";
 import { oneLine } from "../../utils/format.ts";
 import { toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { expandedLineLimit } from "../transcript-scope.ts";
 import { mcpToolTitle } from "./mcp-title.ts";
 import {
 	humanizeToolLabel,
@@ -164,7 +165,7 @@ export function codemodeCodeLines(
 		if (text) statements.push(text);
 	}
 	if (statements.length === 0) return [];
-	const limit = Math.max(1, config.expandedInputMaxLines);
+	const limit = Math.max(1, expandedLineLimit(config.expandedInputMaxLines));
 	const visible = statements.slice(0, limit);
 	const rail = `${INDENT}${fg("dim", "│")} `;
 	const lines = visible.map((statement) =>

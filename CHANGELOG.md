@@ -5,9 +5,9 @@
 
 ## Unreleased
 
-### 上游合并（v1.0.15）
+### 上游合并（v1.0.16）
 
-- 合并 `upstream/main b996151`（v1.0.13 → v1.0.15，27 个提交）：
+- 合并 `upstream/main 5e3ef6b`（v1.0.13 → v1.0.16，38 个提交）：
   - footer 新增会话累计 token 芯片 `footerSessionTokens`（默认关，`Σ 402k`）。
   - 新增 CC Dark HC / CC Light HC 两套高对比主题。
   - 运行中的工具卡可展开查看完整 Input / Output；折叠行保留行尾 `click to show more`

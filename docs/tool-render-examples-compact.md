@@ -19,14 +19,6 @@
 
 ```text
  ● checking the diff
-
- Thinking...
-
- ✓ Bash npm test
-   ↳ 1 line returned · click to show more
-
- ✓ Read a.ts
-   ↳ Read 2 lines · click to show more
 ```
 
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。

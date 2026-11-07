@@ -988,8 +988,8 @@ export async function showCcstylePanel(
 			id: "footerNerdIcons",
 			label: "Nerd Font icons",
 			description: config.footerNerdIcons
-				? "Git and cache chips use Nerd Font glyphs. Turn off for plain text."
-				: "Git and cache chips use plain text. No Nerd Font required.",
+				? "Git, cache and token chips use Nerd Font glyphs. Turn off for plain text."
+				: "Git, cache and token chips use plain text. No Nerd Font required.",
 			currentValue: config.footerNerdIcons ? "on" : "off",
 			values: ["on", "off"],
 		};
@@ -1186,8 +1186,8 @@ export async function showCcstylePanel(
 				updateConfig({ footerNerdIcons: enabled });
 				footerNerdIconsSetting.currentValue = enabled ? "on" : "off";
 				footerNerdIconsSetting.description = enabled
-					? "Git and cache chips use Nerd Font glyphs. Turn off for plain text."
-					: "Git and cache chips use plain text. No Nerd Font required.";
+					? "Git, cache and token chips use Nerd Font glyphs. Turn off for plain text."
+					: "Git, cache and token chips use plain text. No Nerd Font required.";
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}

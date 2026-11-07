@@ -65,6 +65,7 @@ import {
 	retireLiveToolCall,
 } from "./tool/tool-state.ts";
 import { disposeTranscriptGutter, refreshTranscriptGutter } from "./transcript-gutter.ts";
+import { installTranscriptMode, teardownTranscriptMode } from "./transcript-mode.ts";
 import { installUserMessageRender, refreshUserMessages } from "./user-message.ts";
 
 /**
@@ -348,6 +349,8 @@ export default function (
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
+		// 浏览模式与鼠标交互同为输入监听，跟着一起装。
+		installTranscriptMode(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
@@ -380,6 +383,7 @@ export default function (
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
+		installTranscriptMode(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
@@ -434,6 +438,8 @@ export default function (
 		teardownToolMouseInteraction(mouseOwner);
 		// 右内缩是实例级包装，独立于渲染层所有权，在守卫前统一释放。
 		disposeTranscriptGutter();
+		// Ctrl+O 浏览模式同样独立于渲染层所有权。
+		teardownTranscriptMode();
 		const current = installation;
 		if (current?.defaultMode.isOwner() !== true) return;
 		current.defaultMode.shutdown();

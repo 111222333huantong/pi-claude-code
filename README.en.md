@@ -82,7 +82,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | Clipboard paste             | Ctrl+V pastes clipboard images or text (Windows only); images become attachments          | Automatic (Windows)                             |
 | Path hyperlinks             | File paths in tool titles become clickable OSC8 links (zero width change)                 | `/ccstyle` Features tab, off by default         |
 | Statusline (this fork)      | Two-line footer: model/ctx/cost/run/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
-| Status bar (upstream)       | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
+| Status bar (upstream)       | Shows model, context, cache, cost, the conversation token total, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache/token Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
 | Theme                       | Bundled CC Dark / CC Light / CC Dark HC / CC Light HC / Catppuccin Mocha / Catppuccin Latte themes                   | `/settings` → Theme                             |
 
 > Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
@@ -163,10 +163,10 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerTokenRate": true,                 // output rate chip; false hides it
   "footerTokenRateMode": "average",        // average: whole-prompt avg; live: trailing 1s rate
   "footerTokenRateTtft": true,             // append TTFT to the rate chip; false shows tok/s only
-  "footerSessionTokens": false,            // conversation token total chip (Σ 402k); off by default
+  "footerSessionTokens": false,            // conversation token total chip (Nerd Font glyph, Σ in plain text); off by default
   "footerCurrency": "USD",                 // display currency for the footer cost
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
-  "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
+  "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache/tokens; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
   "footerHiddenKeys": [],                  // hidden chip keys
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout

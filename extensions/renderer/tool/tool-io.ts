@@ -1,6 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { expandedLineLimit } from "../transcript-scope.ts";
 import { createCodeBlockHighlighter } from "./diff/diff-highlight.ts";
 import { showMoreHintText } from "./names.ts";
 import { renderCollapsedToolResult, toolViewportWidth } from "./result.ts";
@@ -641,8 +642,8 @@ export function renderExpandedToolResult(
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
 	const { text: inputBody, codeBlock } = formatToolInputBody(args);
 	const outputBody = body;
-	const maxOutputLines = config.expandedOutputMaxLines;
-	const maxInputLines = config.expandedInputMaxLines;
+	const maxOutputLines = expandedLineLimit(config.expandedOutputMaxLines, context);
+	const maxInputLines = expandedLineLimit(config.expandedInputMaxLines, context);
 
 	// Prefer structured Input/Output when we have args or non-empty output.
 	if (inputBody.trim() || outputBody.trim()) {

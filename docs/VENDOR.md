@@ -16,7 +16,7 @@
   2026-10-14 merge `upstream/main 281d23f`（v1.0.3），本包升版 1.1.0；
   2026-10-23 merge `upstream/main 6519fad`（v1.0.9）；
   2026-10-29 merge `upstream/main 90957cd`（v1.0.12），本包升版 1.4.0；
-  2026-11-07 merge `upstream/main b996151`（v1.0.15），本包升版 1.6.0）。
+  2026-11-07 merge `upstream/main 5e3ef6b`（v1.0.16），本包升版 1.6.0）。
 - **Local delta**（fork 后自有部分，持续增长）：状态栏、后续全部改动由本 fork 维护
   （README 已声明）。1.1.0 合并要点见本文件 §8。
 
@@ -232,16 +232,19 @@
 - **结果**：`npm run lint`、`npm run typecheck`、`npm test` 全绿
   （785 例：784 过 / 1 跳过）。
 
-## 12. 1.6.0 合并记录（2026-11-07，`upstream/main b996151` v1.0.15）
+## 12. 1.6.0 合并记录（2026-11-07，`upstream/main 5e3ef6b` v1.0.16）
 
-- **基线**：`90957cd`（v1.0.12）→ `b996151`（v1.0.15），27 个上游提交
-  （含两个 PR merge）。本地 127 个提交，一次 merge 合入，无 rebase。
+- **基线**：`90957cd`（v1.0.12）→ `5e3ef6b`（v1.0.16），38 个上游提交
+  （含三个 PR merge）。本地 127 个提交，一次 merge 合入，无 rebase。
 - **以上游为准**：footer 会话累计 token 芯片（`footerSessionTokens` 默认关，
   新 `session-tokens.ts`）、CC Dark HC / CC Light HC 主题、运行中工具展开
   Input/Output（`ExpandedToolIoView.footer` 支持取值函数）、compact 收尾等活干完
   （`endRequest` / `roundHasLiveWork` / `retryDeferredFinalize`）、同一条消息
   流式期间不拆回合、已收尾回合的外露行排到摘要行下、工具组子卡首行只剩图标时
-  丢弃空行、贴底展开视口保持跟随、写前快照 abort 检查、Agent 摘要组件自渲染。
+  丢弃空行、贴底展开视口保持跟随、写前快照 abort 检查、Agent 摘要组件自渲染；
+  v1.0.16 另加 Ctrl+O 全屏会话记录浏览（`transcript-mode` / `transcript-scope`）、
+  token 芯片跟随 Nerd Font 开关、diff 加减色统一取 `success`/`error`，
+  并修运行中空白输出不再显示 Done、pending tool 空窗不提前 Ran for。
 - **本地保留**：compact 拆分文件（`compact-summary/card/tool-lines/live`）不动，
   上游状态机改动折回 `compact-mode.ts`；`subscribeTicker` 共享时钟保留，仅把
   `roundTickNeeded` / `retryDeferredFinalize` 接进 tick。
@@ -255,7 +258,7 @@
   `subagent-notification-fixtures` 的补充用例；上游删除的低收益用例不恢复。
 - **版本**：`pi-claude-code` 1.5.0 → 1.6.0。
 - **结果**：`npm run lint`（0 error）、`npm run typecheck`、`npm test` 全绿
-  （906 例：905 过 / 1 跳过）。
+  （928 例：927 过 / 1 跳过）。
 
 ## 待办
 

@@ -71,13 +71,14 @@ npm install --omit=optional pi-claude-code
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
+| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开                                             | `Ctrl+O`                                        |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
 | 剪贴板粘贴                | Ctrl+V 直粘剪贴板图片或文字（仅 Windows），图片自动转附件                             | 自动生效（Windows）                             |
 | 路径超链接              | 工具标题里的文件路径变为可点击 OSC8 链接（零宽度变化）                                | `/ccstyle` Features 页，默认关                  |
 | 状态栏（本 fork）         | 两行 footer：model/ctx/cost/run/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
-| 状态栏（上游）            | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`（关掉 `/statusline` 后生效） |
+| 状态栏（上游）            | 显示：模型、上下文、缓存、费用、本次对话累计 token、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存/token 图标可关 Nerd Font | `/ccstyle`（关掉 `/statusline` 后生效） |
 | 主题                  | 随包提供 CC Dark / CC Light / CC Dark HC / CC Light HC / Catppuccin Mocha / Catppuccin Latte 六套主题      | `/settings` → Theme                             |
 
 > 本包 fork 自 [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions)（MIT），状态栏及后续改动由本 fork 维护。
@@ -159,7 +160,7 @@ npm install --omit=optional pi-claude-code
   "footerSessionTokens": false,            // 会话累计 token 芯片（Σ 402k）；默认关
   "footerCurrency": "USD",                 // 底栏费用的显示币种
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
-  "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
+  "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布

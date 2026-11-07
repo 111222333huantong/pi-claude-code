@@ -42,6 +42,15 @@ import { Spacer } from "@earendil-works/pi-tui";
 import { getAssistantMessagePrototype, getToolExecutionPrototype } from "../compat/pi-internals.ts";
 import { config } from "../config/config.ts";
 import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
+import { isTranscriptComponent } from "./transcript-scope.ts";
+
+const COMPACT_ROUND_TAIL_KEY = Symbol.for("ccstyle.compactRoundTail");
+
+/** compact 挂进对话区的回合尾行（摘要行与槽位卡），浏览层跳过它。 */
+export function isCompactRoundTail(value: unknown): boolean {
+	return Boolean(value && typeof value === "object" && (value as any)[COMPACT_ROUND_TAIL_KEY]);
+}
+
 import { walkComponentTree } from "../utils/component-tree.ts";
 import {
 	ASSISTANT_REENTRY_KEY,
@@ -626,15 +635,22 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	/**
 	 * 回合还有活干：成员消息仍在流式，或本回合的工具还没拿到最终结果。
 	 * 收尾要么按事实等活干完，要么摘要行就会把仍在跑的工具报成 Ran for。
+	 * pendingLiveTool 是「toolCall 已写进消息、组件还没挂上」的空窗：流停了也要等它合上。
+	 * 只在 renderRoundLive 里按缺组件重算；空闲回放不会再补组件，不因此停在 Running。
 	 */
 	const roundHasLiveWork = (round: CompactRound): boolean => {
+		if (round.pendingLiveTool && !sessionIdle()) return true;
 		for (const component of round.messages.keys()) {
 			if (component?.isStreaming === true) return true;
 		}
 		const ids = roundToolCallIds(round);
 		if (ids.size === 0) return false;
 		for (const tool of trackedToolComponents) {
-			if (typeof tool?.toolCallId === "string" && ids.has(tool.toolCallId) && isRunningTool(tool)) {
+			const id = tool?.toolCallId;
+			if (typeof id !== "string" || !ids.has(id)) continue;
+			if (isRunningTool(tool)) return true;
+			// 组件已挂上、还没 markExecutionStarted：声明期 id 仍在等派发。
+			if (!sessionIdle() && isLiveToolCall(id) && (!tool.result || tool.isPartial === true)) {
 				return true;
 			}
 		}
@@ -772,6 +788,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 		const tail: MountedRoundTail = { host: undefined, container: undefined, parts: [], round };
 		const host: any = {
+			[COMPACT_ROUND_TAIL_KEY]: true,
 			outputPad: Number(round.anchor?.outputPad) || 0,
 			children: [],
 			render: (width: number) => tail.parts.flatMap((part: any) => part?.render?.(width) ?? []),
@@ -1440,6 +1457,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			return patch.assistantNative.call(this, message, isStreaming);
 		}
 		self.lastMessage = message;
+		// 浏览层副本：不进回合跟踪，按原生方式渲染完整消息。
+		if (isTranscriptComponent(this)) return passThroughAssistant(this, message, isStreaming);
 		trackedAssistantComponents.add(this);
 		if (!patch.active || config.mode !== "compact") {
 			return passThroughAssistant(this, message, isStreaming);
@@ -1584,7 +1603,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	patch.toolInstalledRender = function (this: any, width: number) {
-		if (!patch.active || config.mode !== "compact") {
+		if (!patch.active || config.mode !== "compact" || isTranscriptComponent(this)) {
 			return patch.toolOriginalRender.call(this, width);
 		}
 		const name = String(this.toolName ?? "");
@@ -1613,6 +1632,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	patch.toolInstalledUpdateDisplay = function (this: any) {
+		// 浏览层副本：不受回合展开规则约束，也不进组件跟踪。
+		if (isTranscriptComponent(this)) return patch.toolOriginalUpdateDisplay.call(this);
 		const id = String(this.toolCallId ?? "");
 		if (
 			patch.active &&

@@ -5,6 +5,23 @@
 
 ## Unreleased
 
+### 上游合并（v1.0.15）
+
+- 合并 `upstream/main b996151`（v1.0.13 → v1.0.15，27 个提交）：
+  - footer 新增会话累计 token 芯片 `footerSessionTokens`（默认关，`Σ 402k`）。
+  - 新增 CC Dark HC / CC Light HC 两套高对比主题。
+  - 运行中的工具卡可展开查看完整 Input / Output；折叠行保留行尾 `click to show more`
+    与已用时间。
+  - compact 回合收尾等到消息流式结束、工具真正跑完；同一条消息先正文后 toolCall
+    不再拆成两条摘要行；已收尾回合的外露 edit/write/ask 行排到摘要行之下。
+  - 工具组子卡首行只剩状态图标时不再多出空行。
+  - 展开工具卡贴底点击时保持跟随视口，不再把新内容推出屏幕。
+  - 写前快照期间 abort 会阻止落盘并抛错，不留下错误的快照。
+  - Agent 回合摘要改为组件自渲染，数字语义色不再被 Markdown 剥掉。
+  - 思考完成态可单独设置 `completedPreviewLines`（`follow` = 跟随 `previewLines`）。
+- 本地适配：`completedPreviewLines` 同时作用于文档模式折叠正文；fork 的
+  pending diff 预告片、bash live 尾预览、耗时与短 `agent_id` 口径保持不变。
+
 ### 新增
 
 - 流式正文节流：新增 `streamThrottleMs`（默认 `100`，约 10fps）。Pi 1.x 每个

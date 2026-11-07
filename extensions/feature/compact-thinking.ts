@@ -70,6 +70,8 @@ type AssistantMessageComponentLike = InstanceType<typeof AssistantMessageCompone
 export type CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
+	/** 思考完成后的折叠预览行数；null = 跟随 previewLines（保持旧行为）。 */
+	completedPreviewLines: number | null;
 	animationIntervalMs: number;
 	/** 展开态最大行数（旧版 raw preview 的 tail 窗口；文档模式忽略）。 */
 	thinkingExpandedMaxLines: number;
@@ -151,6 +153,7 @@ type PatchedPrototype = typeof AssistantMessageComponent.prototype & {
 const COMPACT_THINKING_DEFAULTS: Required<CompactThinkingConfig> = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
+	completedPreviewLines: null,
 	animationIntervalMs: 90,
 	thinkingExpandedMaxLines: 200,
 	// Tests and direct library callers keep the old raw renderer unless they opt in.
@@ -517,9 +520,10 @@ function layoutThinkingPreview(
 	width: number,
 	padding: number,
 	/** true=取尾部窗口（流式追随最新，视觉上随内容滚动），false=取头部窗口（完成后停在起点）。 */
-	followTail = false,
+	followTail: boolean,
+	previewLines: number,
 ): { visible: string[]; hiddenLines: number } {
-	if (!text || config.previewLines <= 0) return { visible: [], hiddenLines: 0 };
+	if (!text || previewLines <= 0) return { visible: [], hiddenLines: 0 };
 	// 折叠预览丢弃空行：段落间隔不占窗口，窗口全给内容行（展开全文保留原样）。
 	const dense = text
 		.split(/\r\n|\r|\n/)
@@ -528,7 +532,7 @@ function layoutThinkingPreview(
 	if (!dense) return { visible: [], hiddenLines: 0 };
 	const contentWidth = Math.max(1, width - padding * 2);
 	const budget = Math.max(
-		width * (config.previewLines + PREVIEW_BUDGET_SLACK_LINES),
+		width * (previewLines + PREVIEW_BUDGET_SLACK_LINES),
 		PREVIEW_BUDGET_MIN_CHARS,
 	);
 	let source = dense;
@@ -561,12 +565,12 @@ function layoutThinkingPreview(
 		};
 		cachePreview(cacheKey, entry);
 	}
-	const hiddenLines = entry.hiddenOutside + Math.max(0, entry.lines.length - config.previewLines);
+	const hiddenLines = entry.hiddenOutside + Math.max(0, entry.lines.length - previewLines);
 	const visible =
 		hiddenLines > 0
 			? followTail
-				? entry.lines.slice(-config.previewLines)
-				: entry.lines.slice(0, config.previewLines)
+				? entry.lines.slice(-previewLines)
+				: entry.lines.slice(0, previewLines)
 			: entry.lines;
 	return { visible, hiddenLines };
 }
@@ -689,6 +693,13 @@ export class ThinkingPreviewBlock implements Component {
 				: typeof documentText === "string"
 					? parseThinkingDocument(documentText)
 					: documentText;
+	}
+
+	/** 活动块用 previewLines；完成块用 completedPreviewLines（null 跟随 previewLines）。 */
+	private effectivePreviewLines(): number {
+		return this.followTail
+			? config.previewLines
+			: (config.completedPreviewLines ?? config.previewLines);
 	}
 
 	private paint(color: string, text: string): string {
@@ -938,7 +949,10 @@ export class ThinkingPreviewBlock implements Component {
 		const contentWidth = Math.max(1, width - padding * 2);
 		const headingText = this.headingProvider?.() ?? this.heading;
 		const meta = this.documentMeta();
-		const limit = Math.max(0, config.thinkingSummaryLimit ?? 0);
+		const activeLimit = Math.max(0, config.thinkingSummaryLimit ?? 0);
+		const limit = this.followTail
+			? activeLimit
+			: Math.max(0, config.completedPreviewLines ?? activeLimit);
 		const documentMaxLines = Math.max(0, config.thinkingDocumentMaxLines ?? 0);
 		const collapsedBody = this.expanded || limit === 0 ? [] : latestThinkingLines(doc, limit);
 		const bodyKey = this.expanded ? doc.raw : collapsedBody.join("\n");
@@ -1049,7 +1063,11 @@ export class ThinkingPreviewBlock implements Component {
 	): string[] {
 		const hint = this.expanded
 			? undefined
-			: hiddenPreviewHint(hiddenLines, Boolean(this.text) && config.previewLines <= 0, kind);
+			: hiddenPreviewHint(
+					hiddenLines,
+					Boolean(this.text) && this.effectivePreviewLines() <= 0,
+					kind,
+				);
 		if (!hint) return new Text(headingText, padding, 0).render(width);
 		const rawHint = hint.prefix + hint.action + hint.suffix;
 		const contentWidth = Math.max(1, width - padding * 2);
@@ -1092,7 +1110,7 @@ export class ThinkingPreviewBlock implements Component {
 		width: number,
 		padding: number,
 	): { lines: string[]; hiddenLines: number; tailHint?: string; markdown?: boolean } {
-		if (!this.text || (config.previewLines <= 0 && !this.expanded)) {
+		if (!this.text || (this.effectivePreviewLines() <= 0 && !this.expanded)) {
 			return { lines: [], hiddenLines: 0 };
 		}
 		if (this.expanded) {
@@ -1141,7 +1159,13 @@ export class ThinkingPreviewBlock implements Component {
 			}
 			return { lines: full, hiddenLines: 0, markdown: this.markdownTheme !== undefined };
 		}
-		const preview = layoutThinkingPreview(this.text, width, padding, this.followTail);
+		const preview = layoutThinkingPreview(
+			this.text,
+			width,
+			padding,
+			this.followTail,
+			this.effectivePreviewLines(),
+		);
 		return { lines: preview.visible, hiddenLines: preview.hiddenLines };
 	}
 
@@ -1193,7 +1217,7 @@ export class ThinkingPreviewBlock implements Component {
 		const summaryKey = summaryMode ? bodyLines.join("\n") : "";
 		if (
 			this.collapsedMemo?.width === width &&
-			this.collapsedMemo.previewLines === config.previewLines &&
+			this.collapsedMemo.previewLines === this.effectivePreviewLines() &&
 			this.collapsedMemo.hintHovered === this.hintHovered &&
 			this.collapsedMemo.expandAction === expandAction &&
 			this.collapsedMemo.followTail === this.followTail &&
@@ -1219,7 +1243,7 @@ export class ThinkingPreviewBlock implements Component {
 			: heading;
 		this.collapsedMemo = {
 			width,
-			previewLines: config.previewLines,
+			previewLines: this.effectivePreviewLines(),
 			hintHovered: this.hintHovered,
 			expandAction,
 			followTail: this.followTail,
@@ -1602,6 +1626,8 @@ function compactThinking(pi: ExtensionAPI): boolean {
 			}
 			const runEndIndex = i - 1;
 			i--;
+			// Keep this run-scoped snapshot: a timestamp-only render query would mark
+			// earlier thinking runs active when one message alternates text and thinking.
 			const active = isActiveRun(message, runStartIndex, runEndIndex);
 			// OpenAI can spend several seconds reasoning before it emits the first
 			// summary token. Keep an empty active block visible as animated

@@ -12,7 +12,7 @@
 # pi-claude-code
 
 > Claude Code's terminal feel, inside Pi: tool cards and collapsing, rich diffs,
-> a compact turn view, a two-line statusline and four themes. No extra built-in
+> a compact turn view, a two-line statusline and six themes. No extra built-in
 > tools — install and `/reload`.
 
 **Why install it**
@@ -83,7 +83,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | Path hyperlinks             | File paths in tool titles become clickable OSC8 links (zero width change)                 | `/ccstyle` Features tab, off by default         |
 | Statusline (this fork)      | Two-line footer: model/ctx/cost/run/mcp/ext + cwd/git, plain text, theme-aware                | `/statusline`                                   |
 | Status bar (upstream)       | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle` (applies when `/statusline` is off)                                      |
-| Theme                       | Bundled CC Dark / CC Light / Catppuccin Mocha / Catppuccin Latte themes                   | `/settings` → Theme                             |
+| Theme                       | Bundled CC Dark / CC Light / CC Dark HC / CC Light HC / Catppuccin Mocha / Catppuccin Latte themes                   | `/settings` → Theme                             |
 
 > Forked from [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions) (MIT); the statusline and later changes are maintained in this fork.
 
@@ -131,6 +131,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview content lines (blanks skipped); 0 hides
+  "completedPreviewLines": null,           // completed preview lines; null = follow previewLines, 0 = header only
   "animationIntervalMs": 90,               // title animation interval (ms)
   "thinkingExpandedMaxLines": 200,         // legacy raw preview tail lines; ignored in document mode
   "thinkingLiveSummary": true,             // document mode: two-line collapsed status + full document on expand
@@ -162,12 +163,13 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerTokenRate": true,                 // output rate chip; false hides it
   "footerTokenRateMode": "average",        // average: whole-prompt avg; live: trailing 1s rate
   "footerTokenRateTtft": true,             // append TTFT to the rate chip; false shows tok/s only
+  "footerSessionTokens": false,            // conversation token total chip (Σ 402k); off by default
   "footerCurrency": "USD",                 // display currency for the footer cost
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
   "footerHiddenKeys": [],                  // hidden chip keys
-  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // chip order per line; builtins and plugins share one layout
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout
   "footerLine2Keys": ["cwd", "git"],       // cwd: directory and session; git: branch and changes. Either can move to any line
   "footerLine3Keys": [],                   // painted only when a chip is visible
 }

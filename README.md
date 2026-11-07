@@ -12,7 +12,7 @@
 # pi-claude-code
 
 > 把 Claude Code 的终端观感搬进 Pi：工具卡与折叠、rich diff、compact 紧凑模式、
-> 两行状态栏和四套主题。不新增内置工具，装完 `/reload` 即用。
+> 两行状态栏和六套主题。不新增内置工具，装完 `/reload` 即用。
 
 **为什么装它**
 
@@ -78,7 +78,7 @@ npm install --omit=optional pi-claude-code
 | 路径超链接              | 工具标题里的文件路径变为可点击 OSC8 链接（零宽度变化）                                | `/ccstyle` Features 页，默认关                  |
 | 状态栏（本 fork）         | 两行 footer：model/ctx/cost/run/mcp/ext + cwd/git，无图标纯文字，主题跟随                | `/statusline`                                   |
 | 状态栏（上游）            | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`（关掉 `/statusline` 后生效） |
-| 主题                  | 随包提供 CC Dark / CC Light / Catppuccin Mocha / Catppuccin Latte 四套主题      | `/settings` → Theme                             |
+| 主题                  | 随包提供 CC Dark / CC Light / CC Dark HC / CC Light HC / Catppuccin Mocha / Catppuccin Latte 六套主题      | `/settings` → Theme                             |
 
 > 本包 fork 自 [`minuque/pi-cc-extensions`](https://github.com/minuque/pi-cc-extensions)（MIT），状态栏及后续改动由本 fork 维护。
 
@@ -126,6 +126,7 @@ npm install --omit=optional pi-claude-code
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
   "previewLines": 3,                       // 预览内容行数（空行不占窗口），0 隐藏
+  "completedPreviewLines": null,           // 完成态预览行数；null = 跟随 previewLines，0 = 只显示状态行
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
   "thinkingExpandedMaxLines": 200,         // 旧版 raw preview 的展开行数；文档模式忽略
   "thinkingLiveSummary": true,             // 文档模式：折叠两行 + 展开全文
@@ -155,12 +156,13 @@ npm install --omit=optional pi-claude-code
   "footerTokenRate": true,                 // 输出速率芯片；false 隐藏
   "footerTokenRateMode": "average",        // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
   "footerTokenRateTtft": true,             // 速率芯片是否带 TTFT；false 只显示 tok/s
+  "footerSessionTokens": false,            // 会话累计 token 芯片（Σ 402k）；默认关
   "footerCurrency": "USD",                 // 底栏费用的显示币种
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
-  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
   "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
   "footerLine3Keys": []                    // 有可见芯片才占行
 }

@@ -7,6 +7,7 @@ import {
 	bindAgentSummary,
 	classifyTool,
 	summaryMarkdown,
+	summarySegments,
 } from "../extensions/feature/agent-summary/core.ts";
 import agentSummaryFeature, {
 	AGENT_SUMMARY_ENTRY_TYPE,
@@ -56,46 +57,61 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 	} satisfies AgentSummaryData);
 });
 
-test("summaryMarkdown renders the agent summary entry", () => {
+test("summarySegments：bash→read→edit→write→other→failed，首段大写", () => {
 	const data: AgentSummaryData = {
 		commands: 3,
 		reads: 2,
 		edits: 1,
 		writes: 1,
-		others: 0,
-		failed: 0,
+		others: 1,
+		failed: 1,
 		durationMs: 42_000,
 	};
+	assert.deepEqual(summarySegments(data), [
+		{ text: "Ran 3 commands", tone: "success" },
+		{ text: "read 2 files", tone: "success" },
+		{ text: "edited 1 file", tone: "success" },
+		{ text: "wrote 1 file", tone: "success" },
+		{ text: "1 other tool", tone: "success" },
+		{ text: "1 failed", tone: "failed" },
+	]);
+	assert.deepEqual(
+		summarySegments({ ...data, commands: 0, reads: 0, edits: 0, writes: 0, others: 0, failed: 0 }),
+		[],
+	);
 	// 无 outputTokens（旧 entry / usage 缺失）→ 整数秒旧格式。
 	assert.equal(
 		summaryMarkdown(data),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
 	);
 	// 有 outputTokens → 精确时长 + tok/s（整回合平均口径）。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 52.5s · 30.4 tok/s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 52.5s · 30.4 tok/s*",
 	);
 	// tokens=0 → 省略速率段，退回整数秒。
 	assert.equal(
 		summaryMarkdown({ ...data, outputTokens: 0 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
 	);
 	// 时长 <1s → 省略速率段。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 400, outputTokens: 1_596 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed*",
 	);
 	// 有 ttftMs → 追加 TTFT 段；无/零 → 省略。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596, ttftMs: 812 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 52.5s · 30.4 tok/s · TTFT 812ms*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 52.5s · 30.4 tok/s · TTFT 812ms*",
 	);
 	assert.equal(
 		summaryMarkdown({ ...data, ttftMs: 0 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
 	);
-	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
+	assert.equal(
+		summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0, others: 0, failed: 0 }),
+		"",
+	);
 });
 
 test("bindAgentSummary 事件绑定：before_agent_start 重置、agent_end 记 usage、agent_settled 回调", async () => {
@@ -209,12 +225,17 @@ test("agent-summary 注册 renderer，agent_settled 输出引用块", async () =
 
 	assert.equal(appended.length, 1);
 	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE)!;
-	const component = renderer(
-		{ data: (appended[0] as any).data },
-		{ expanded: false },
-		{ getFgAnsi: (color: string) => (color === "success" ? "\x1b[32m" : "\x1b[31m") },
-	);
-	const plain = stripAnsi((component as any).render(120).map(String).join("\n"));
+	const theme = {
+		getFgAnsi: (color: string) => (color === "success" ? "\x1b[32m" : "\x1b[31m"),
+		fg: (_color: string, text: string) => text,
+		italic: (text: string) => text,
+	};
+	const component = renderer({ data: (appended[0] as any).data }, { expanded: false }, theme);
+	const raw = (component as any).render(120).map(String).join("\n");
+	// 数字必须自己带语义色：Markdown 会剥掉终端序列，这里不能再依赖它。
+	assert.match(raw, /\x1b\[32m1\x1b\[0m command/);
+	assert.match(raw, /│/);
+	const plain = stripAnsi(raw);
 	assert.doesNotMatch(plain, /[┌├└]/);
 	assert.doesNotMatch(plain, /TIP/);
 	assert.match(plain, /Ran 1 command, read 1 file/);

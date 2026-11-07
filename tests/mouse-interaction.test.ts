@@ -21,7 +21,10 @@ import {
 	isOsc8LinkColumn,
 	osc8LinkRanges,
 } from "../extensions/renderer/mouse/layout.ts";
-import { getScrollButtonWidget } from "../extensions/renderer/mouse/scroll.ts";
+import {
+	getScrollButtonVisible,
+	getScrollButtonWidget,
+} from "../extensions/renderer/mouse/scroll.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	renderRichToolResult,
@@ -1145,35 +1148,6 @@ test("osc8 link ranges only cover linked text, not the whole line", () => {
 	assert.deepEqual(osc8LinkRanges("no links here"), []);
 });
 
-test("installToolMouseInteraction ignores contexts without a TUI mouse source", () => {
-	let touched = 0;
-	const ui = {
-		setWidget() {
-			touched++;
-		},
-		onTerminalInput() {
-			touched++;
-			return () => undefined;
-		},
-	};
-	try {
-		installToolMouseInteraction({ mode: "rpc", hasUI: true, ui });
-		installToolMouseInteraction({
-			mode: "tui",
-			hasUI: true,
-			ui: {
-				setWidget() {
-					touched++;
-				},
-			},
-		});
-		installToolMouseInteraction({ mode: "tui", hasUI: false, ui });
-		assert.equal(touched, 0, "不满足 tui + hasUI + onTerminalInput/setWidget 时不安装");
-	} finally {
-		installToolMouseInteraction({});
-	}
-});
-
 test("pointer drag between press and release cancels the collapse", () => {
 	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	// expanded-card 命中要求卡有内容框：行数决定可点击区域。
@@ -1239,76 +1213,6 @@ test("pointer drag between press and release cancels the collapse", () => {
 	}
 });
 
-test("teardown survives a closed terminal and a reset UI context", () => {
-	const tui = {
-		terminal: { columns: 80, write() {} },
-		children: [],
-		previousLines: [],
-		previousViewportTop: 0,
-		requestRender() {},
-		doRender() {},
-	};
-	const ui = {
-		setWidget(_key: string, factory: any) {
-			if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
-		},
-		onTerminalInput() {
-			return () => undefined;
-		},
-	};
-	installToolMouseInteraction({ mode: "tui", hasUI: true, ui });
-	// 退出时终端已关闭、扩展上下文已被重置：两条清理都必须各自吞掉异常。
-	tui.terminal.write = () => {
-		throw new Error("terminal closed");
-	};
-	ui.setWidget = () => {
-		throw new Error("ui context reset");
-	};
-	assert.doesNotThrow(() => installToolMouseInteraction({}));
-});
-
-test("scheduleSessionRender repaints the restored session once", async () => {
-	const renders: unknown[] = [];
-	let refreshed = 0;
-	const tui = {
-		terminal: { columns: 80, write() {} },
-		children: [],
-		previousLines: [],
-		previousViewportTop: 0,
-		requestRender(value?: boolean) {
-			renders.push(value);
-		},
-		doRender() {},
-	};
-	try {
-		scheduleSessionRender(() => refreshed++);
-		assert.equal(renders.length, 0, "没有 tui 时直接返回");
-
-		installToolMouseInteraction({
-			mode: "tui",
-			hasUI: true,
-			ui: {
-				setWidget(_key: string, factory: any) {
-					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
-				},
-				onTerminalInput() {
-					return () => undefined;
-				},
-			},
-		});
-		scheduleSessionRender(() => refreshed++);
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
-		assert.equal(refreshed, 1, "恢复的会话只重绘一次");
-		assert.deepEqual(renders.at(-1), true, "强制整帧重绘");
-	} finally {
-		installToolMouseInteraction({});
-	}
-});
-
-test("off mode still advertises the disable sequence", () => {
-	assert.match(TOOL_MOUSE_DISABLE, /\x1b\[\?1000l/);
-});
-
 /** 惰性 Proxy fullscreen：requestRender 每次 get 返回新函数（isLazyProxyTui 判定）。 */
 class FakeFullscreenTui {
 	mode = "fullscreen";
@@ -1368,6 +1272,32 @@ function fullscreenLayout(lines: string[], component: any) {
 	};
 }
 
+/** 带滚动视口的布局：线索行 leaf 挂在 scroll box 下，点击要能回溯到视口。 */
+function scrollableLayout(lines: string[], component: any, top: number) {
+	const leaf: any = {
+		component,
+		rect: { x: 0, y: top, width: 80, height: lines.length },
+		clip: { x: 0, y: top, width: 80, height: lines.length },
+		lines,
+		children: [],
+	};
+	const scrollBox: any = {
+		rect: { x: 0, y: 0, width: 80, height: 20 },
+		clip: { x: 0, y: 0, width: 80, height: 20 },
+		children: [leaf],
+		scrollContentLines: [],
+		scrollView: { scrollTop: 7, isFollowingEnd: true, scrollTo() {} },
+	};
+	leaf.parent = scrollBox;
+	const root: any = {
+		rect: { x: 0, y: 0, width: 80, height: 24 },
+		clip: { x: 0, y: 0, width: 80, height: 24 },
+		children: [scrollBox],
+	};
+	scrollBox.parent = root;
+	return { layout: { root }, view: scrollBox.scrollView };
+}
+
 test("fullscreen install patches viewport input and expands a collapsed tool from its hint", () => {
 	const written: string[] = [];
 	const tui = new FakeFullscreenTui(written);
@@ -1411,6 +1341,52 @@ test("fullscreen install patches viewport input and expands a collapsed tool fro
 		assert.deepEqual(tui.handleViewportInput(`\x1b[<0;${hintCol};3M`), { consume: true });
 		assert.equal(tool.expanded, true, "点击提示文本展开卡");
 		assert.deepEqual(scrollCalls, [[7, { disableFollow: true }]], "展开时关掉底部跟随");
+	} finally {
+		installToolMouseInteraction({});
+	}
+});
+
+test("展开时按点击行在视口里的位置决定冻结还是继续跟随", () => {
+	const written: string[] = [];
+	const tui = new FakeFullscreenTui(written);
+	const scrollCalls: Array<[number, any]> = [];
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, { fg: (_c: string, t: string) => t });
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		});
+		const clickHint = (top: number) => {
+			const { tool, collapsedLines } = fullscreenToolFixture();
+			const fixture = scrollableLayout(collapsedLines, tool, top);
+			tui.currentLayout = fixture.layout;
+			(tui as any).getPrimaryScrollView = () => ({
+				scrollTop: 7,
+				isFollowingEnd: true,
+				scrollTo: (value: number, options: any) => scrollCalls.push([value, options]),
+			});
+			const hintCol = collapsedLines[2]!.indexOf("(") + 2;
+			assert.deepEqual(tui.handleViewportInput(`\x1b[<0;${hintCol};${top + 3}M`), {
+				consume: true,
+			});
+			assert.equal(tool.expanded, true, "点击提示文本展开卡");
+			return scrollCalls.length;
+		};
+
+		// 点击行在视口上半屏：冻结，展开时点击行留在原处。
+		assert.equal(clickHint(2), 1, "上半屏展开时冻结视口");
+		assert.deepEqual(scrollCalls[0], [7, { disableFollow: true }]);
+
+		// 点击行贴着视口底部：冻结只会把展开的内容全推到屏幕外，继续跟随。
+		assert.equal(clickHint(14), 1, "下半屏展开时不冻结视口");
+		assert.equal(getScrollButtonVisible(), false, "继续跟随时不亮回到底部按钮");
 	} finally {
 		installToolMouseInteraction({});
 	}

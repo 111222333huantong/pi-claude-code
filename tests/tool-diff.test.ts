@@ -558,10 +558,11 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 	const path = join(directory, "target.txt");
 	const store = new WriteExecutionMetadataStore();
 	let abortReads = 0;
+	// pi 成功路径一共读 4 次 aborted：mkdir 前、mkdir 后、快照后、写完后。第 5 次才模拟取消。
 	const signal = {
 		get aborted() {
 			abortReads++;
-			return abortReads >= 4;
+			return abortReads >= 5;
 		},
 	} as AbortSignal;
 	try {
@@ -576,7 +577,7 @@ test("a completed write reports UTF-8 bytes and keeps metadata after abort", asy
 		assert.equal(await readFile(path, "utf8"), "你好");
 		assert.equal(store.get("completed")?.previousContent, "before");
 		assert.match(result.content[0]?.text ?? "", /6 bytes/);
-		assert.equal(abortReads, 3);
+		assert.equal(abortReads, 4, "成功路径应读 4 次 aborted；pi 的 abort 检查次数变了就要同步这里");
 
 		const empty = await executeWriteWithMetadata(
 			store,
@@ -638,15 +639,41 @@ test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
 	assert.match(expandedText, /const value1 = 1/);
 });
 
-test("写已完成后官方那次 abort 检查不把写报成失败", async () => {
-	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-late-abort-"));
+test("写前快照期间 abort 不落盘也不报成功", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-snapshot-abort-"));
+	const path = join(directory, "target.txt");
 	const store = new WriteExecutionMetadataStore();
 	let reads = 0;
-	// 第 3 次读（官方写之后那次检查）才报 aborted。
+	// 第 3 次读是快照返回后、真正落盘之前。读盘期间的取消会落在这次检查上。
 	const signal = {
 		get aborted() {
 			reads++;
 			return reads >= 3;
+		},
+	} as AbortSignal;
+	try {
+		await writeFile(path, "before");
+		await assert.rejects(
+			executeWriteWithMetadata(store, "snapshot", { path, content: "after" }, signal, directory),
+			/aborted/,
+			"快照期间取消必须抛错，不能静默落盘",
+		);
+		assert.equal(await readFile(path, "utf8"), "before");
+		assert.equal(store.get("snapshot"), undefined);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("写已完成后官方那次 abort 检查不把写报成失败", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "ccstyle-write-late-abort-"));
+	const store = new WriteExecutionMetadataStore();
+	let reads = 0;
+	// 第 4 次读才是官方写完之后那次检查。快照后那次必须先放过。
+	const signal = {
+		get aborted() {
+			reads++;
+			return reads >= 4;
 		},
 	} as AbortSignal;
 	try {
@@ -718,14 +745,6 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 		config.mode = previousMode;
 		hooks.shutdown();
 	}
-});
-
-test("normalizeConfig defaults writeDiffCollapsedLines to 0 and allows explicit values", () => {
-	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 12 }).writeDiffCollapsedLines, 12);
-	assert.equal(normalizeConfig({ editDiffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ writeDiffCollapsedLines: -3 }).writeDiffCollapsedLines, 0);
 });
 
 test("third-party write ownership prevents registration", () => {

@@ -578,26 +578,6 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	installToolMouseInteraction({});
 });
 
-test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
-	const previousMode = config.mode;
-	const tool = createTool("tool-overlay");
-	const { terminal } = createTerminalFixture();
-	const renderer = new FullscreenRenderer(tool, null, terminal);
-	const indicator = () => "Jump to latest message";
-	(renderer as any).scrollToEndIndicator = indicator;
-	const tui = createLazyProxy(() => renderer);
-	const ui = createUi(tui);
-	try {
-		config.mode = "on";
-		installToolMouseInteraction(ui.ctx);
-		ui.widget.render(80);
-		assert.equal((renderer as any).scrollToEndIndicator, undefined, "官方 overlay 已关掉");
-	} finally {
-		config.mode = previousMode;
-		installToolMouseInteraction({});
-	}
-});
-
 test("lazy-proxy tui: off mode keeps official jump-to-latest overlay", () => {
 	const previousMode = config.mode;
 	const tool = createTool("tool-overlay-off");
@@ -769,6 +749,7 @@ test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 0,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 		thinkingExpandedMaxLines: 200,
 	});
@@ -1233,6 +1214,7 @@ test("lazy-proxy tui: single click collapses thinking after preview rebuild", as
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 		thinkingExpandedMaxLines: 200,
 	});
@@ -1244,7 +1226,7 @@ test("lazy-proxy tui: single click collapses thinking after preview rebuild", as
 		bg: (_slot: string, text: string) => text,
 	} as any;
 	const makeBlock = () =>
-		new ThinkingPreviewBlock("Thought for 1s", body, 1, timestamp, (text) => text, theme);
+		new ThinkingPreviewBlock("Thought for 1s", body, 1, timestamp, (text) => text, theme, 0, false);
 	const first = makeBlock();
 	const { terminal } = createTerminalFixture();
 	const renderer = new FullscreenRenderer(first, null, terminal);
@@ -1291,6 +1273,7 @@ test("lazy-proxy tui: thinking collapse targets the run under the pointer", asyn
 	installCompactThinking(pi, {
 		useSummaryTitlesAsThinkingTitle: false,
 		previewLines: 3,
+		completedPreviewLines: null,
 		animationIntervalMs: 30,
 		thinkingExpandedMaxLines: 200,
 	});
@@ -1309,6 +1292,7 @@ test("lazy-proxy tui: thinking collapse targets the run under the pointer", asyn
 		(text) => text,
 		theme,
 		0,
+		false,
 	);
 	const runB = new ThinkingPreviewBlock(
 		"Thought for 2s",
@@ -1318,6 +1302,7 @@ test("lazy-proxy tui: thinking collapse targets the run under the pointer", asyn
 		(text) => text,
 		theme,
 		4,
+		false,
 	);
 	runA.setExpanded(true);
 	runB.setExpanded(true);

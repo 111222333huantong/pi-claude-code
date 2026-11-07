@@ -5,7 +5,9 @@
  * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
  * 失败单独累计；另记回合耗时与输出 tokens（tok/s = output ÷ 回合耗时）。
  *
- * 呈现：`summaryMarkdown` Markdown（可 box 引用块），尾段 `· 52.5s · 30.4 tok/s`。
+ * 呈现：`summarySegments` 分段（文字 + 语义色），渲染层自己拼行并上色；
+ * `summaryMarkdown` 保留给旧调用与测试。尾段 `· 52.5s · 30.4 tok/s`。
+ * 不要经 Markdown 渲染：pi 的 Markdown 组件会剥掉输入里的终端序列，数字会失去语义色。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -163,30 +165,46 @@ function tokenRate(data: AgentSummaryData): number | null {
 	return rate < 0.05 ? null : rate;
 }
 
-export function summaryMarkdown(
-	data: AgentSummaryData,
-	colors: { success: string; failed: string } = { success: "", failed: "" },
-): string {
+/** 摘要段：一段文字 + 语义色；数字上色由渲染层完成。 */
+export type SummarySegment = { text: string; tone: "success" | "failed" };
+
+export function summarySegments(data: AgentSummaryData): SummarySegment[] {
 	const parts = summaryParts(data);
-	if (parts.length === 0) return "";
+	if (parts.length === 0) return [];
 	const capitalizeFirst = (part: string, first: boolean) => {
 		const verb = part.match(/^[a-z]+/)?.[0] ?? "";
 		return first && verb ? verb[0].toUpperCase() + verb.slice(1) + part.slice(verb.length) : part;
 	};
-	const paintNumber = (code: string, part: string) =>
-		code ? part.replace(/(\d+)/, `${code}$1\x1b[0m`) : part;
-	const text = parts
-		.map((part, index) => capitalizeFirst(part, index === 0))
-		.map((part) => paintNumber(part.endsWith("failed") ? colors.failed : colors.success, part))
-		.join(", ");
-	// 尾段：有速率 → `· 52.5s · 30.4 tok/s · TTFT 812ms`；无速率 → 旧格式 `· 49s`（旧 entry 兼容）。
+	return parts.map((part, index) => ({
+		text: capitalizeFirst(part, index === 0),
+		tone: part.endsWith("failed") ? "failed" : "success",
+	}));
+}
+
+/** 统计尾段：有速率 → `52.5s · 30.4 tok/s · TTFT 812ms`；无速率 → 旧格式 `49s`（旧 entry 兼容）。 */
+export function summaryTail(data: AgentSummaryData): string {
 	const rate = tokenRate(data);
 	const ttft =
 		typeof data.ttftMs === "number" && data.ttftMs > 0 ? ` · TTFT ${formatTtft(data.ttftMs)}` : "";
-	const tail =
-		rate !== null
-			? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s${ttft}`
-			: `${formatDuration(data.durationMs)}${ttft}`;
+	return rate !== null
+		? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s${ttft}`
+		: `${formatDuration(data.durationMs)}${ttft}`;
+}
+
+export function summaryMarkdown(
+	data: AgentSummaryData,
+	colors: { success: string; failed: string } = { success: "", failed: "" },
+): string {
+	const segments = summarySegments(data);
+	if (segments.length === 0) return "";
+	const paintNumber = (code: string, part: string) =>
+		code ? part.replace(/(\d+)/, `${code}$1\x1b[0m`) : part;
+	const text = segments
+		.map((segment) =>
+			paintNumber(segment.tone === "failed" ? colors.failed : colors.success, segment.text),
+		)
+		.join(", ");
+	const tail = summaryTail(data);
 	const line = tail ? `${text} · ${tail}` : text;
 	return `> *${line}*`;
 }

@@ -35,6 +35,7 @@ import { readStatuslineConfig, writeStatuslineConfig } from "../feature/statusli
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import { capitalizeKey, expandShortcutText, selectCancelShortcutText } from "../utils/key-hints.ts";
 import {
+	COMPLETED_THINKING_PREVIEW_LINES_VALUES,
 	COMPLETION_BELL_AFTER_SEC_VALUES,
 	type CompactStyleMode,
 	type Config,
@@ -61,6 +62,7 @@ import {
 	LIVE_TOOL_PREVIEW_LINES_VALUES,
 	MAX_STARTUP_SLOGAN_LENGTH,
 	mergeExcludeRendererCandidates,
+	pickCompletedPreviewLines,
 	pickEditDiffCollapsedLines,
 	pickPositiveInt,
 	pickPositiveNumber,
@@ -124,6 +126,12 @@ function footerTokenRateTtftDescription(enabled: boolean): string {
 	return enabled
 		? "Append time to first token, e.g. (TTFT: 812ms) or (TTFT: 1.2s). Turn off to show the rate only."
 		: "Time to first token hidden. The rate chip shows tok/s only.";
+}
+
+function footerSessionTokensDescription(enabled: boolean): string {
+	return enabled
+		? "Cumulative tokens used in this conversation, summed from the session's usage.totalTokens. Turn off to hide it."
+		: "Conversation token total hidden.";
 }
 
 function footerGitStatsDescription(mode: FooterGitStatsMode): string {
@@ -384,28 +392,31 @@ function buildValueInputSubmenu(
 	};
 }
 
-/** 数值项：预填当前值，空输入取消，非数字留下错误。 */
+/** 数值项：预填当前值，空输入取消，非法输入留下错误；allowFollow 时额外接受 follow。 */
 function buildNumberInputSubmenu(
 	theme: any,
 	setting: { label: string; currentValue: string },
 	closeSubmenu: (selected?: string) => void,
 	allowAuto = false,
+	allowFollow = false,
 ) {
 	return buildValueInputSubmenu(
 		theme,
 		{
 			prompt: `  ${setting.label} — custom value:`,
 			initial: setting.currentValue,
-			hint: "  Enter to apply · Esc to go back",
+			hint: allowFollow
+				? "  Enter to apply · Esc to go back · follow = Preview lines"
+				: "  Enter to apply · Esc to go back",
 			accept: (raw) =>
 				raw === ""
 					? undefined
-					: allowAuto && raw === "auto"
-						? "auto"
+					: (allowAuto && raw === "auto") || (allowFollow && raw === "follow")
+						? raw
 						: Number.isFinite(Number(raw))
 							? raw
 							: null,
-			invalid: (raw) => `Invalid ${allowAuto ? "value" : "number"}: "${raw}"`,
+			invalid: (raw) => `Invalid ${allowAuto || allowFollow ? "value" : "number"}: "${raw}"`,
 		},
 		closeSubmenu,
 	);
@@ -612,10 +623,22 @@ export async function showCcstylePanel(
 			label: "Preview lines",
 			description:
 				"Raw preview lines when the summary stream is off (blank lines skipped); 0 hides the body.",
+
 			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingPreviewSetting, closeSubmenu),
+		};
+		const completedThinkingPreviewSetting = {
+			id: "completedPreviewLines",
+			label: "Completed preview",
+			description:
+				"Thinking preview lines once the run finishes; follow = same as Preview lines. Enter to type a custom value or follow.",
+			currentValue:
+				config.completedPreviewLines === null ? "follow" : String(config.completedPreviewLines),
+			values: [...COMPLETED_THINKING_PREVIEW_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, completedThinkingPreviewSetting, closeSubmenu, false, true),
 		};
 		const thinkingAnimationSetting = {
 			id: "animationIntervalMs",
@@ -1014,6 +1037,13 @@ export async function showCcstylePanel(
 			currentValue: config.footerTokenRateTtft ? "on" : "off",
 			values: ["on", "off"],
 		};
+		const footerSessionTokensSetting = {
+			id: "footerSessionTokens",
+			label: "Conversation tokens",
+			description: footerSessionTokensDescription(config.footerSessionTokens),
+			currentValue: config.footerSessionTokens ? "on" : "off",
+			values: ["on", "off"],
+		};
 		const pluginChipsSetting = {
 			id: "footerPluginChips",
 			label: "Footer chips",
@@ -1129,6 +1159,14 @@ export async function showCcstylePanel(
 				updateConfig({ footerTokenRateTtft: enabled });
 				footerTokenRateTtftSetting.currentValue = enabled ? "on" : "off";
 				footerTokenRateTtftSetting.description = footerTokenRateTtftDescription(enabled);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerSessionTokens") {
+				const enabled = value === "on";
+				updateConfig({ footerSessionTokens: enabled });
+				footerSessionTokensSetting.currentValue = enabled ? "on" : "off";
+				footerSessionTokensSetting.description = footerSessionTokensDescription(enabled);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -1261,6 +1299,13 @@ export async function showCcstylePanel(
 				case "previewLines":
 					updateConfig({ previewLines: pickPositiveInt(value, DEFAULT_CONFIG.previewLines, 0) });
 					thinkingPreviewSetting.currentValue = String(config.previewLines);
+					break;
+				case "completedPreviewLines":
+					updateConfig({
+						completedPreviewLines: value === "follow" ? null : pickCompletedPreviewLines(value),
+					});
+					completedThinkingPreviewSetting.currentValue =
+						config.completedPreviewLines === null ? "follow" : String(config.completedPreviewLines);
 					break;
 				case "animationIntervalMs":
 					updateConfig({
@@ -1480,6 +1525,7 @@ export async function showCcstylePanel(
 				items: [
 					thinkingTitleSetting,
 					thinkingPreviewSetting,
+					completedThinkingPreviewSetting,
 					thinkingAnimationSetting,
 					thinkingExpandedSetting,
 					thinkingLiveSummarySetting,
@@ -1496,6 +1542,7 @@ export async function showCcstylePanel(
 					footerTokenRateSetting,
 					footerTokenRateModeSetting,
 					footerTokenRateTtftSetting,
+					footerSessionTokensSetting,
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
 					footerNerdIconsSetting,

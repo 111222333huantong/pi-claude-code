@@ -72,6 +72,8 @@ export type Config = {
 	toolLabelClip: number;
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
+	/** 思考完成后的折叠预览行数；null = 跟随 previewLines（保持旧行为）。 */
+	completedPreviewLines: number | null;
 	animationIntervalMs: number;
 	/** 展开中间态 tail 窗口行数；再推进一次才全文。 */
 	thinkingExpandedMaxLines: number;
@@ -129,6 +131,8 @@ export type Config = {
 	footerTokenRateMode: FooterTokenRateMode;
 	/** 速率芯片是否带 TTFT。关则只显示速率。 */
 	footerTokenRateTtft: boolean;
+	/** 会话累计 token 芯片（累加会话条目的 usage.totalTokens）。默认关。 */
+	footerSessionTokens: boolean;
 	/** ISO 4217 显示币种。USD 时不换算。 */
 	footerCurrency: string;
 	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
@@ -176,6 +180,8 @@ export const EXPANDED_OUTPUT_MAX_LINES_VALUES = ["10", "20", "40", "80", "120"];
 export const TOOL_LABEL_CLIP_VALUES = ["0", "40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_EXPANDED_MAX_LINES_VALUES = ["40", "100", "200", "500", "2000"];
+/** 完成态思考预览预设；follow = 跟随 previewLines。 */
+export const COMPLETED_THINKING_PREVIEW_LINES_VALUES = ["follow", ...THINKING_PREVIEW_LINES_VALUES];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 export const THINKING_SUMMARY_LIMIT_VALUES = ["0", "1", "2", "3", "5"];
 /** 文档模式展开态尾部窗口预设；0 = 始终显示全文。 */
@@ -219,6 +225,7 @@ export const DEFAULT_CONFIG: Config = {
 	toolLabelClip: 0,
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
+	completedPreviewLines: null,
 	animationIntervalMs: 90,
 	thinkingExpandedMaxLines: 200,
 	thinkingLiveSummary: true,
@@ -256,6 +263,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerTokenRate: true,
 	footerTokenRateMode: "average",
 	footerTokenRateTtft: true,
+	footerSessionTokens: false,
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
 	footerNerdIcons: true,
@@ -295,6 +303,13 @@ export function pickToolLabelClip(value: unknown): number {
 export function pickPositiveNumber(value: unknown, fallback: number, min = 1): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
 	return Number.isFinite(n) ? Math.max(min, n) : fallback;
+}
+
+/** 思考完成后的预览行数。null（缺失/空/非法）= 跟随 previewLines，保持旧配置行为。 */
+export function pickCompletedPreviewLines(value: unknown): number | null {
+	if (value === undefined || value === null || value === "") return null;
+	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null;
 }
 
 function normalizeCurrency(value: unknown): string {
@@ -377,6 +392,7 @@ export function normalizeConfig(input: unknown): Config {
 			0,
 			Number.MAX_SAFE_INTEGER,
 		),
+		completedPreviewLines: pickCompletedPreviewLines(source.completedPreviewLines),
 		animationIntervalMs: pickPositiveNumber(
 			source.animationIntervalMs,
 			DEFAULT_CONFIG.animationIntervalMs,
@@ -461,6 +477,7 @@ export function normalizeConfig(input: unknown): Config {
 			DEFAULT_CONFIG.footerTokenRateMode,
 		),
 		footerTokenRateTtft: source.footerTokenRateTtft !== false,
+		footerSessionTokens: source.footerSessionTokens === true,
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
 		footerNerdIcons: source.footerNerdIcons !== false,
@@ -477,6 +494,7 @@ export function getCompactThinkingConfig(source: Config = config): CompactThinki
 	return {
 		useSummaryTitlesAsThinkingTitle: source.useSummaryTitlesAsThinkingTitle,
 		previewLines: source.previewLines,
+		completedPreviewLines: source.completedPreviewLines,
 		animationIntervalMs: source.animationIntervalMs,
 		thinkingExpandedMaxLines: source.thinkingExpandedMaxLines,
 		thinkingLiveSummary: source.thinkingLiveSummary,
@@ -557,6 +575,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`toolLabelClip=${source.toolLabelClip}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
+		`thinkingPreviewDone=${source.completedPreviewLines ?? "follow"}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`thinkingExpanded=${source.thinkingExpandedMaxLines}`,
 		`thinkingLive=${source.thinkingLiveSummary ? "on" : "off"}`,
@@ -591,6 +610,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
 		`footerTokenRateMode=${source.footerTokenRateMode}`,
 		`footerTokenRateTtft=${source.footerTokenRateTtft ? "on" : "off"}`,
+		`footerSessionTokens=${source.footerSessionTokens ? "on" : "off"}`,
 		`footerCurrency=${source.footerCurrency}`,
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,

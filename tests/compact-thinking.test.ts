@@ -7,6 +7,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 
 import {
+	type CompactThinkingConfig,
 	clearThinkingPreviewCache,
 	extractProviderThinkingTitles,
 	installCompactThinking,
@@ -22,9 +23,10 @@ import {
 import { ThinkingDocumentBuilder } from "../extensions/feature/thinking-document.ts";
 import { animateCompactThinkingText } from "../extensions/renderer/compact-mode.ts";
 
-const config = {
+const config: CompactThinkingConfig = {
 	useSummaryTitlesAsThinkingTitle: false,
 	previewLines: 0,
+	completedPreviewLines: null,
 	animationIntervalMs: 30,
 	thinkingExpandedMaxLines: 200,
 };
@@ -66,6 +68,9 @@ test("collapsed thinking previews memoize complete output until invalidated", ()
 			0,
 			1,
 			(text) => text,
+			undefined,
+			0,
+			false,
 		);
 		const first = preview.render(12);
 		assert.ok(
@@ -96,6 +101,58 @@ test("collapsed thinking previews memoize complete output until invalidated", ()
 	}
 });
 
+test("completed blocks follow completedPreviewLines while active blocks keep previewLines", () => {
+	const originalConfig = { ...config };
+	const { pi } = runtime();
+	const controller = installCompactThinking(pi, {
+		...originalConfig,
+		previewLines: 3,
+		completedPreviewLines: 0,
+	});
+	controller.updateConfig({ ...originalConfig, previewLines: 3, completedPreviewLines: 0 });
+	clearThinkingPreviewCache();
+	try {
+		const body = Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n");
+		const active = new ThinkingPreviewBlock(
+			"Thinking...",
+			body,
+			0,
+			1,
+			(text) => text,
+			undefined,
+			0,
+			true,
+		);
+		assert.equal(
+			active.render(40).filter((line) => /line-\d/.test(line)).length,
+			3,
+			"active block keeps its previewLines body",
+		);
+
+		const completed = new ThinkingPreviewBlock(
+			"Thought for 1s",
+			body,
+			0,
+			2,
+			(text) => text,
+			undefined,
+			0,
+			false,
+		);
+		assert.ok(
+			!completed.render(40).some((line) => /line-\d/.test(line)),
+			"completedPreviewLines 0 hides the completed body",
+		);
+
+		controller.updateConfig({ ...originalConfig, previewLines: 3, completedPreviewLines: 1 });
+		const restyled = completed.render(40).filter((line) => /line-\d/.test(line));
+		assert.equal(restyled.length, 1, "completedPreviewLines change restyles completed blocks");
+	} finally {
+		controller.updateConfig({ ...originalConfig, completedPreviewLines: null });
+		clearThinkingPreviewCache();
+	}
+});
+
 test("thinking 展开态按消息时间戳与 run 序号记，换实例后仍生效", () => {
 	const originalConfig = { ...config };
 	const { pi } = runtime();
@@ -104,9 +161,36 @@ test("thinking 展开态按消息时间戳与 run 序号记，换实例后仍生
 	try {
 		const body = "alpha beta gamma delta epsilon";
 		// 同一个 run 的两个实例：内容重建会换掉实例，旧实例还留在布局里
-		const stale = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 0);
-		const live = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 0);
-		const nextRun = new ThinkingPreviewBlock("Thought", body, 0, 7, (text) => text, undefined, 1);
+		const stale = new ThinkingPreviewBlock(
+			"Thought",
+			body,
+			0,
+			7,
+			(text) => text,
+			undefined,
+			0,
+			false,
+		);
+		const live = new ThinkingPreviewBlock(
+			"Thought",
+			body,
+			0,
+			7,
+			(text) => text,
+			undefined,
+			0,
+			false,
+		);
+		const nextRun = new ThinkingPreviewBlock(
+			"Thought",
+			body,
+			0,
+			7,
+			(text) => text,
+			undefined,
+			1,
+			false,
+		);
 		assert.equal(live.expanded, false, "默认收起");
 		assert.equal(
 			live.render(40).some((line) => line.includes("alpha")),
@@ -286,6 +370,7 @@ test("provider summary titles drive the collapsed status and full document", () 
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: true,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -375,6 +460,7 @@ test("document thinking collapses to the latest line and expands to full reasoni
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -475,6 +561,7 @@ test("document thinking uses accent badge, text status, muted body, and a left r
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: true,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -582,6 +669,7 @@ test("document thinking caps expanded output with an optional tail window", () =
 		const controller = installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -610,6 +698,7 @@ test("document thinking caps expanded output with an optional tail window", () =
 		controller.updateConfig({
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -724,6 +813,7 @@ test("document thinking supports more than one collapsed body line", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -981,6 +1071,82 @@ function themeCtx(sessionManager: any = { getBranch: () => [], getEntries: () =>
 		},
 	};
 }
+
+test("text_start rebuilds live thinking with completed preview lines", () => {
+	initTheme("dark");
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const controller = installCompactThinking(pi, {
+		...config,
+		previewLines: 3,
+		completedPreviewLines: 0,
+	});
+	try {
+		emit("session_start", {}, ctx);
+		const message = previewMessage(Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n"));
+		const component = new AssistantMessageComponent(message, true);
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		const activeBlock = thinkingBlockOf(component);
+		assert.equal(renderText(component).filter((line) => /^line-\d+$/.test(line)).length, 3);
+
+		// No manual updateContent here: finishThinking must rebuild this same component.
+		message.content.push({ type: "text", text: "" });
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "text_start", contentIndex: 1 },
+		});
+		assert.notStrictEqual(thinkingBlockOf(component), activeBlock);
+		const completed = renderText(component);
+		assert.equal(completed.filter((line) => /^line-\d+$/.test(line)).length, 0);
+		// 本地亚秒思考不缀时长：标题可能是 "Thought" 或 "Thought for Ns"。
+		assert.match(completed.join("\n"), /Thought(?: for .+)? · click to show more/);
+		thinkingBlockOf(component).setExpanded(true);
+		assert.equal(renderText(component).filter((line) => /^line-\d+$/.test(line)).length, 8);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		controller.updateConfig({ ...config });
+	}
+});
+
+test("a later thinking run does not reactivate completed previews in the same message", () => {
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const controller = installCompactThinking(pi, {
+		...config,
+		previewLines: 3,
+		completedPreviewLines: 0,
+	});
+	try {
+		emit("session_start", {}, ctx);
+		const message = previewMessage("first-run-body");
+		const component = new AssistantMessageComponent(message, true);
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		message.content.push({ type: "text", text: "between runs" });
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "text_start", contentIndex: 1 },
+		});
+		message.content.push({ type: "thinking", thinking: "second-run-body" });
+		component.updateContent(message, true);
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 2 },
+		});
+		const lines = renderText(component).join("\n");
+		assert.doesNotMatch(lines, /first-run-body/);
+		assert.match(lines, /second-run-body/);
+		assert.match(lines, /Thought/);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		controller.updateConfig({ ...config });
+	}
+});
 
 test("session tree restores durations from all entries so old messages keep Thought for", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-restore-"));
@@ -1355,6 +1521,7 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1430,6 +1597,7 @@ test("previewLines 0 still offers click to show more and expands the body", () =
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 0,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1485,6 +1653,7 @@ test("thinking preview expands the full body and keeps that state across updateC
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1552,6 +1721,7 @@ test("thinking preview shows the head window, not the tail", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1590,6 +1760,7 @@ test("streaming preview follows the tail, finalized preview rests on the head", 
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1653,6 +1824,7 @@ test("thinking polish: sub-second hides duration, noise/redacted filtered, stric
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: true,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1735,6 +1907,7 @@ test("expanded thinking uses a tail window before the full body", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 5,
 		});
@@ -1806,6 +1979,7 @@ test("preview skips blank lines and refills the window with content", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1853,6 +2027,7 @@ test("expanded thinking renders markdown structure, not raw markers", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: true,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});
@@ -1903,6 +2078,7 @@ test("document markdown caches finalized sections across re-renders", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: true,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 			thinkingLiveSummary: true,
@@ -1946,6 +2122,7 @@ test("expanded markdown render is cached across re-renders", () => {
 		installCompactThinking(pi, {
 			useSummaryTitlesAsThinkingTitle: false,
 			previewLines: 3,
+			completedPreviewLines: null,
 			animationIntervalMs: 30,
 			thinkingExpandedMaxLines: 200,
 		});

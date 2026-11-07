@@ -93,7 +93,7 @@ export async function executeWriteWithMetadata(
 		if (meta) meta.elapsedMs = performance.now() - startedAt;
 	};
 	const definition = createWriteToolDefinition(cwd, {
-		operations: writeSnapshotOperations(store, toolCallId),
+		operations: writeSnapshotOperations(store, toolCallId, signal),
 	}) as any;
 	try {
 		await definition.execute(toolCallId, params, signal, undefined, { cwd });
@@ -114,12 +114,16 @@ export async function executeWriteWithMetadata(
 function writeSnapshotOperations(
 	store: WriteExecutionMetadataStore,
 	toolCallId: string,
+	signal: AbortSignal | undefined,
 ): WriteOperations {
 	return {
 		mkdir: (dir) => mkdir(dir, { recursive: true }).then(() => {}),
 		writeFile: async (absolutePath, content) => {
 			store.delete(toolCallId);
 			const metadata = await capturePreviousContent(absolutePath);
+			// 官方只在进 operations 之前查 abort（紧接着这次调用，中间没有 await），
+			// 快照读盘期间的取消只能在这里补：抛错，不写文件，也不留 metadata。
+			if (signal?.aborted) throw new Error("Operation aborted");
 			await writeFile(absolutePath, content, "utf8");
 			// 写已生效：后续 abort 不得把这次写报成失败，快照先落下。
 			store.set(toolCallId, metadata);

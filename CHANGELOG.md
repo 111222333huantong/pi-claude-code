@@ -3,7 +3,7 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
-## Unreleased
+## 1.6.0 — 2026-11-07
 
 ### 上游合并（v1.0.16）
 

@@ -28,7 +28,6 @@ import {
 	isTranscriptModeActive,
 	TranscriptView,
 	teardownTranscriptMode,
-	transcriptMetaText,
 } from "../extensions/renderer/transcript-mode.ts";
 import { expandedLineLimit, withTranscriptScope } from "../extensions/renderer/transcript-scope.ts";
 
@@ -181,16 +180,6 @@ test("浏览层搜索：无命中显示 0/0，普通字符在搜索模式里进�
 	assert.equal(t.closed(), 0);
 });
 
-test("浏览层滚上去后提示 G bottom，回到底部消失", () => {
-	const t = makeView(30);
-	t.view.render(100);
-	assert.doesNotMatch(stripAnsi(t.view.render(100)[11]!), /G bottom/);
-	t.view.handleInput("g");
-	assert.match(stripAnsi(t.view.render(100)[11]!), /G bottom/);
-	t.view.handleInput("G");
-	assert.doesNotMatch(stripAnsi(t.view.render(100)[11]!), /G bottom/);
-});
-
 test("浏览层帮助：? 打开，? 或 esc 关闭", () => {
 	const t = makeView(30);
 	t.view.render(80);
@@ -291,34 +280,6 @@ test("浏览层作用域内展开内容不限行数", () => {
 		expandedLineLimit(20, { state: { ccstyleTranscript: true } }),
 		Number.MAX_SAFE_INTEGER,
 	);
-});
-
-test("回复元信息：本地时间 · 模型 · 耗时，空消息不占行", () => {
-	const timestamp = new Date(2026, 10, 7, 9, 5, 0).getTime();
-	const message = {
-		role: "assistant",
-		timestamp,
-		model: "claude-sonnet-4-5",
-		durationMs: 4_200,
-		content: [{ type: "text", text: "hello" }],
-	};
-	assert.equal(transcriptMetaText(message), "09:05 · claude-sonnet-4-5 · 4.2s");
-	assert.equal(transcriptMetaText({ role: "assistant", timestamp: 0 }), "");
-
-	const chat = new Container();
-	chat.children.push(new AssistantMessageComponent(message as any, false));
-	const items = collectTranscriptItems(chat);
-	assert.equal(items[0]!.meta, "09:05 · claude-sonnet-4-5 · 4.2s");
-	const view = new TranscriptView({
-		rows: () => 12,
-		items: () => items,
-		theme: undefined,
-		close: () => {},
-		focused: () => true,
-	});
-	const text = view.render(80).map(stripAnsi).join("\n");
-	assert.match(text, /^ {2}09:05 · claude-sonnet-4-5 · 4\.2s$/m);
-	assert.match(text, /hello/);
 });
 
 test("on 模式：工具副本全展开且不限行数，对话区工具不变", () => {

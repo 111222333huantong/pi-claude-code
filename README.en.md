@@ -76,7 +76,7 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                   | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
-| Transcript viewer           | Full-screen transcript with expanded tools, per-reply time/model/duration, `/` search, and `?` help | `Ctrl+O`                                        |
+| Transcript viewer           | Full-screen transcript with expanded tools, `/` search, and `?` help                       | `Ctrl+O`                                        |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
 | Loaded resources            | Animated mascot header with a Loaded resource panel                                       | `/loaded`                                       |
 | Image paster                | Pasted/dropped image paths become first-class attachments with collapsible history previews | Automatic                                     |

@@ -35,7 +35,6 @@ import { stripToolFrameMarkers } from "./mouse/packets.ts";
 import { fullscreenLazyTui, getToolMouseTui } from "./mouse/scroll.ts";
 import { ToolGroupComponent } from "./tool/grouping.ts";
 import { expandShortcutText } from "./tool/names.ts";
-import { formatToolDuration } from "./tool/result.ts";
 import { markTranscriptComponent, withTranscriptScope } from "./transcript-scope.ts";
 
 const EXPAND_ACTION = "app.tools.expand";
@@ -90,35 +89,8 @@ export function isTranscriptExitKey(data: string): boolean {
 // 副本
 // ---------------------------------------------------------------------------
 
-type TranscriptItem = {
-	view: any;
-	prompt: boolean;
-	/** 回复上方的元信息行（本地时间 · 模型 · 耗时）；没有可显示内容时省略。 */
-	meta?: string;
-};
+type TranscriptItem = { view: any; prompt: boolean };
 type CloneEntry = { view: any; signature: unknown[] };
-
-/** 浏览层里每条回复的元信息：`14:32 · claude-sonnet-4-5 · 4.2s`（借用 Claude Code Ctrl+O 的做法）。 */
-export function transcriptMetaText(message: any): string {
-	if (!message || typeof message !== "object") return "";
-	const parts: string[] = [];
-	const timestamp = message.timestamp;
-	if (typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0) {
-		const date = new Date(timestamp);
-		parts.push(
-			`${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
-		);
-	}
-	const model =
-		typeof message.responseModel === "string" && message.responseModel
-			? message.responseModel
-			: message.model;
-	if (typeof model === "string" && model) parts.push(model);
-	if (typeof message.durationMs === "number" && message.durationMs >= 1_000) {
-		parts.push(formatToolDuration(message.durationMs));
-	}
-	return parts.join(" · ");
-}
 
 const clones = new WeakMap<object, CloneEntry>();
 
@@ -218,15 +190,7 @@ export function collectTranscriptItems(container: any): TranscriptItem[] {
 			pushTool(child);
 		} else if (child instanceof AssistantMessageComponent) {
 			const view = cloneAssistant(child);
-			if (view) {
-				// lastMessage 是 Pi 的内部字段（compat 层同款），类型上私有、运行时可读。
-				const message = (child as any).lastMessage;
-				items.push({
-					view,
-					prompt: false,
-					meta: transcriptMetaText(message) || undefined,
-				});
-			}
+			if (view) items.push({ view, prompt: false });
 		} else if (child && typeof child.render === "function") {
 			items.push({ view: child, prompt: child instanceof UserMessageComponent });
 		}
@@ -530,7 +494,6 @@ export class TranscriptView {
 			return [...body.slice(0, this.bodyHeight), "", this.hintLine(width)];
 		}
 
-		const theme = this.options.theme;
 		const lines: string[] = [];
 		const plain: string[] = [];
 		const promptRows: number[] = [];
@@ -539,13 +502,6 @@ export class TranscriptView {
 				const viewLines: string[] = item.view
 					.render(width)
 					.map((line: string) => stripToolFrameMarkers(line));
-				// 只有真的画出了内容才带元信息行，避免空回复上方留下孤零零的时间。
-				if (item.meta && viewLines.length > 0) {
-					const metaLine =
-						typeof theme?.fg === "function" ? theme.fg("dim", `  ${item.meta}`) : `  ${item.meta}`;
-					lines.push(metaLine);
-					plain.push(stripTerminalSequences(metaLine));
-				}
 				if (item.prompt) promptRows.push(lines.length);
 				for (const line of viewLines) {
 					lines.push(line);
@@ -599,12 +555,10 @@ export class TranscriptView {
 					this.searchMatches.length > 0 && this.searchIndex >= 0 ? this.searchIndex + 1 : 0
 				}/${this.searchMatches.length}`
 			: "";
-		// 翻到上面后给一个回到底部的键；贴底时不再提示。放在前面，窄屏截断也看得见。
-		const bottom = this.scrollTop < this.maxScroll() ? " · G bottom" : "";
 		// 窄屏从右侧截断：位置与退出方式放在最前。
 		return truncateToWidth(
 			dim(
-				`  Showing detailed transcript${position}${search}${bottom} · esc/q to exit · / search · ? help · j/k scroll`,
+				`  Showing detailed transcript${position}${search} · esc/q to exit · / search · ? help · j/k scroll`,
 			),
 			width,
 		);

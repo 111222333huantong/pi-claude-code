@@ -150,6 +150,31 @@ test("浏览层搜索：/ 输入、命中跳转、enter 保留、n/N 循环", ()
 	assert.equal(t.body()[1], "row-20");
 });
 
+test("浏览层搜索：Kitty 键盘协议的 CSI-u 序列也能识别", () => {
+	const t = makeView(30);
+	t.view.render(80);
+	t.view.handleInput("\x1b[47u"); // "/"
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/▏ 0\/0/);
+	// 普通字母在 Kitty 协议下也是 CSI-u：r o w - 2
+	for (const code of [114, 111, 119, 45, 50]) t.view.handleInput(`\x1b[${code}u`);
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/row-2▏ 2\/11/);
+	t.view.handleInput("\x1b[13u"); // enter
+	t.view.handleInput("\x1b[110u"); // n
+	t.view.render(80);
+	assert.equal(t.body()[1], "row-21");
+	t.view.handleInput("\x1b[110:78;2u"); // shift+n → N
+	t.view.render(80);
+	assert.equal(t.body()[1], "row-20");
+	// Shift+/ 可能上报 47 + shifted 63 + shift 修饰。
+	t.view.handleInput("\x1b[47:63;2u");
+	assert.ok(
+		t.view
+			.render(80)
+			.map(stripAnsi)
+			.some((line) => line.includes("Transcript shortcuts")),
+	);
+});
+
 test("浏览层搜索：esc 取消并回到进入搜索前的滚动位置", () => {
 	const t = makeView(30);
 	t.view.render(80);

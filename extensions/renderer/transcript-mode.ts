@@ -22,6 +22,7 @@ import {
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
+	decodeKittyPrintable,
 	getKeybindings,
 	isKeyRelease,
 	matchesKey,
@@ -83,6 +84,23 @@ export function transcriptScrollAction(data: string): ScrollAction | undefined {
 
 export function isTranscriptExitKey(data: string): boolean {
 	return matchesAny(data, EXIT_KEYS) || getKeybindings().matches(data, EXPAND_ACTION as any);
+}
+
+/**
+ * 可打印输入：原始单字符（含中文/emoji）或 Kitty CSI-u 解码结果。
+ *
+ * 启用 Kitty 键盘协议的终端（kitty / WezTerm / Ghostty / iTerm2…）会把普通字母
+ * 也编码成 `ESC[97u`；直接拿 `data === "/"` 比较会全部失配，搜索框收不到字。
+ */
+export function printableInput(data: string): string | undefined {
+	const decoded = decodeKittyPrintable(data);
+	if (decoded !== undefined) return decoded;
+	if (data.length === 1) {
+		const code = data.charCodeAt(0);
+		return code >= 32 && code !== 127 ? data : undefined;
+	}
+	// 粘贴的多字符文本：不含控制字符才收（保留中文/emoji）。
+	return /[\x00-\x1F\x7F]/.test(data) ? undefined : data;
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +342,8 @@ export class TranscriptView {
 			this.handleSearchInput(data);
 			return;
 		}
-		if (data === "?") {
+		const char = printableInput(data);
+		if (char === "?") {
 			this.helpOpen = !this.helpOpen;
 			return;
 		}
@@ -336,12 +355,12 @@ export class TranscriptView {
 			this.close();
 			return;
 		}
-		if (data === "/") {
+		if (char === "/") {
 			this.beginSearch();
 			return;
 		}
-		if (this.searchQuery && (data === "n" || data === "N")) {
-			this.stepSearch(data === "n" ? 1 : -1);
+		if (this.searchQuery && (char === "n" || char === "N")) {
+			this.stepSearch(char === "n" ? 1 : -1);
 			return;
 		}
 		const action = transcriptScrollAction(data);
@@ -367,30 +386,28 @@ export class TranscriptView {
 	}
 
 	private handleSearchInput(data: string): void {
-		if (matchesKey(data, "escape") || data === "\x03") {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 			this.cancelSearch();
 			return;
 		}
-		// 方向键/功能键是 ESC 开头的多字节序列：别把剩下的 "[A" 写进查询。
-		if (data.length > 1 && data.startsWith("\x1b")) return;
-		if (data === "\r" || data === "\n") {
+		if (matchesKey(data, "enter")) {
 			this.searchMode = false;
 			return;
 		}
-		if (data === "\x7f" || data === "\b") {
+		if (matchesKey(data, "backspace")) {
 			this.searchQuery = this.searchQuery.slice(0, -1);
 			this.previewSearch();
 			return;
 		}
-		if (data === "\x15") {
+		if (matchesKey(data, "ctrl+u")) {
 			this.searchQuery = "";
 			this.searchMatches = [];
 			this.searchIndex = -1;
 			this.scrollTo(this.searchOrigin);
 			return;
 		}
-		// 控制字符不进搜索词；其余（含 CJK、emoji、粘贴的多字符）照收。
-		const printable = data.replace(/[\x00-\x1F\x7F]/g, "");
+		// 方向键等非打印序列返回 undefined；其余（CJK、emoji、粘贴文本）照收。
+		const printable = printableInput(data);
 		if (!printable) return;
 		this.searchQuery += printable;
 		this.previewSearch();

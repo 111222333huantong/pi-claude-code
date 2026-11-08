@@ -21,14 +21,7 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import {
-	decodeKittyPrintable,
-	getKeybindings,
-	isKeyRelease,
-	matchesKey,
-	stripTerminalSequences,
-	truncateToWidth,
-} from "@earendil-works/pi-tui";
+import { getKeybindings, isKeyRelease, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { config } from "../config/config.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import { isCompactRoundTail } from "./compact-mode.ts";
@@ -84,23 +77,6 @@ export function transcriptScrollAction(data: string): ScrollAction | undefined {
 
 export function isTranscriptExitKey(data: string): boolean {
 	return matchesAny(data, EXIT_KEYS) || getKeybindings().matches(data, EXPAND_ACTION as any);
-}
-
-/**
- * 可打印输入：原始单字符（含中文/emoji）或 Kitty CSI-u 解码结果。
- *
- * 启用 Kitty 键盘协议的终端（kitty / WezTerm / Ghostty / iTerm2…）会把普通字母
- * 也编码成 `ESC[97u`；直接拿 `data === "/"` 比较会全部失配，搜索框收不到字。
- */
-export function printableInput(data: string): string | undefined {
-	const decoded = decodeKittyPrintable(data);
-	if (decoded !== undefined) return decoded;
-	if (data.length === 1) {
-		const code = data.charCodeAt(0);
-		return code >= 32 && code !== 127 ? data : undefined;
-	}
-	// 粘贴的多字符文本：不含控制字符才收（保留中文/emoji）。
-	return /[\x00-\x1F\x7F]/.test(data) ? undefined : data;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,16 +248,6 @@ export class TranscriptView {
 	private closed = false;
 	/** 上一帧画出的滚动位置：与本帧不同就通知选区跟随。 */
 	private renderedScrollTop: number | undefined;
-	/** 按 `/` 进入的增量搜索状态（Claude Code Ctrl+O 的 less 风格搜索）。 */
-	private searchMode = false;
-	private searchQuery = "";
-	private searchMatches: number[] = [];
-	private searchIndex = -1;
-	/** 进入搜索前的滚动位置：Esc 取消时回到这里。 */
-	private searchOrigin = 0;
-	/** 上一帧正文的纯文本副本，搜索只扫它，不重放 ANSI。 */
-	private searchable: string[] = [];
-	private helpOpen = false;
 
 	private readonly options: TranscriptViewOptions;
 
@@ -338,151 +304,13 @@ export class TranscriptView {
 
 	handleInput(data: string): void {
 		if (isKeyRelease(data)) return;
-		if (this.searchMode) {
-			this.handleSearchInput(data);
-			return;
-		}
-		const char = printableInput(data);
-		if (char === "?") {
-			this.helpOpen = !this.helpOpen;
-			return;
-		}
-		if (this.helpOpen && matchesKey(data, "escape")) {
-			this.helpOpen = false;
-			return;
-		}
 		if (isTranscriptExitKey(data)) {
 			this.close();
-			return;
-		}
-		if (char === "/") {
-			this.beginSearch();
-			return;
-		}
-		if (this.searchQuery && (char === "n" || char === "N")) {
-			this.stepSearch(char === "n" ? 1 : -1);
 			return;
 		}
 		const action = transcriptScrollAction(data);
 		if (action) this.apply(action);
 		// 其余按键不做任何事：浏览层不编辑输入框。
-	}
-
-	private beginSearch(): void {
-		this.searchMode = true;
-		this.searchQuery = "";
-		this.searchMatches = [];
-		this.searchIndex = -1;
-		this.searchOrigin = this.scrollTop;
-		this.helpOpen = false;
-	}
-
-	private cancelSearch(): void {
-		this.searchMode = false;
-		this.searchQuery = "";
-		this.searchMatches = [];
-		this.searchIndex = -1;
-		this.scrollTo(this.searchOrigin);
-	}
-
-	private handleSearchInput(data: string): void {
-		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
-			this.cancelSearch();
-			return;
-		}
-		if (matchesKey(data, "enter")) {
-			this.searchMode = false;
-			return;
-		}
-		if (matchesKey(data, "backspace")) {
-			this.searchQuery = this.searchQuery.slice(0, -1);
-			this.previewSearch();
-			return;
-		}
-		if (matchesKey(data, "ctrl+u")) {
-			this.searchQuery = "";
-			this.searchMatches = [];
-			this.searchIndex = -1;
-			this.scrollTo(this.searchOrigin);
-			return;
-		}
-		// 方向键等非打印序列返回 undefined；其余（CJK、emoji、粘贴文本）照收。
-		const printable = printableInput(data);
-		if (!printable) return;
-		this.searchQuery += printable;
-		this.previewSearch();
-	}
-
-	private findMatches(): number[] {
-		const needle = this.searchQuery.trim().toLowerCase();
-		if (!needle) return [];
-		const matches: number[] = [];
-		for (let index = 0; index < this.searchable.length; index++) {
-			if (this.searchable[index]!.toLowerCase().includes(needle)) matches.push(index);
-		}
-		return matches;
-	}
-
-	/** 输入过程中从进入搜索时的位置往后找第一条命中，避免每敲一个字符就跳到文件头。 */
-	private previewSearch(): void {
-		this.searchMatches = this.findMatches();
-		if (!this.searchMatches.length) {
-			this.searchIndex = -1;
-			return;
-		}
-		const target =
-			this.searchMatches.find((row) => row >= this.searchOrigin) ?? this.searchMatches[0]!;
-		this.searchIndex = this.searchMatches.indexOf(target);
-		this.scrollTo(Math.max(0, target - 1));
-	}
-
-	private stepSearch(direction: 1 | -1): void {
-		this.searchMatches = this.findMatches();
-		const count = this.searchMatches.length;
-		if (!count) {
-			this.searchIndex = -1;
-			return;
-		}
-		let index = this.searchIndex;
-		if (index < 0 || index >= count) {
-			index =
-				direction > 0
-					? this.searchMatches.findIndex((row) => row >= this.scrollTop)
-					: this.searchMatches.findLastIndex((row) => row <= this.scrollTop);
-			if (index < 0) index = direction > 0 ? 0 : count - 1;
-		} else {
-			index = (index + direction + count) % count;
-		}
-		this.searchIndex = index;
-		this.scrollTo(Math.max(0, this.searchMatches[index]! - 1));
-	}
-
-	private helpLines(width: number): string[] {
-		const theme = this.options.theme;
-		const paint = (text: string, color = "dim") =>
-			typeof theme?.fg === "function" ? theme.fg(color, text) : text;
-		const entries: Array<[string, string]> = [
-			["j / k, ↑ / ↓", "scroll one line"],
-			["ctrl+d / ctrl+u", "half page"],
-			["space / b", "page"],
-			["g / G", "top / bottom"],
-			["{ / }", "previous / next prompt"],
-			["/", "search transcript"],
-			["n / N", "next / previous match"],
-			["?", "toggle this help"],
-			["esc / q", "exit transcript"],
-		];
-		const labelWidth = Math.max(...entries.map(([label]) => label.length));
-		return [
-			paint("  Transcript shortcuts", "text"),
-			"",
-			...entries.map(
-				([label, description]) =>
-					`  ${paint(label.padEnd(labelWidth), "text")}   ${paint(description)}`,
-			),
-			"",
-			paint(`  ${expandShortcutText()} also closes the transcript`),
-		].map((line) => truncateToWidth(line, width));
 	}
 
 	/**
@@ -504,38 +332,16 @@ export class TranscriptView {
 		// 底部两行：空一行隔开正文，下面是提示。
 		const rows = Math.max(3, this.options.rows());
 		this.bodyHeight = rows - 2;
-
-		if (this.helpOpen) {
-			const body = this.helpLines(width);
-			while (body.length < this.bodyHeight) body.push("");
-			return [...body.slice(0, this.bodyHeight), "", this.hintLine(width)];
-		}
-
 		const lines: string[] = [];
-		const plain: string[] = [];
 		const promptRows: number[] = [];
 		withTranscriptScope(() => {
 			for (const item of this.options.items()) {
-				const viewLines: string[] = item.view
-					.render(width)
-					.map((line: string) => stripToolFrameMarkers(line));
 				if (item.prompt) promptRows.push(lines.length);
-				for (const line of viewLines) {
-					lines.push(line);
-					plain.push(stripTerminalSequences(line));
-				}
+				for (const line of item.view.render(width)) lines.push(stripToolFrameMarkers(line));
 			}
 		});
 		this.totalLines = lines.length;
 		this.promptRows = promptRows;
-		// 搜索只扫上一帧的纯文本副本；流式内容增长时同步刷新命中数。
-		this.searchable = plain;
-		if (this.searchQuery) {
-			this.searchMatches = this.findMatches();
-			if (this.searchIndex >= this.searchMatches.length) {
-				this.searchIndex = this.searchMatches.length - 1;
-			}
-		}
 		if (this.followEnd) this.scrollTop = this.maxScroll();
 		else this.scrollTop = Math.min(this.scrollTop, this.maxScroll());
 		// 按键、滚轮、跟随新内容都会改滚动位置，统一在画出时结算一次。
@@ -552,30 +358,14 @@ export class TranscriptView {
 	private hintLine(width: number): string {
 		const theme = this.options.theme;
 		const dim = (text: string) => (typeof theme?.fg === "function" ? theme.fg("dim", text) : text);
-		if (this.searchMode) {
-			const total = this.searchMatches.length;
-			const current = total > 0 && this.searchIndex >= 0 ? this.searchIndex + 1 : 0;
-			return truncateToWidth(
-				dim(`  /${this.searchQuery}▏ ${current}/${total} · enter keep · esc cancel`),
-				width,
-			);
-		}
-		if (this.helpOpen) {
-			return truncateToWidth(dim("  Transcript shortcuts · ? or esc to close"), width);
-		}
 		const position =
 			this.totalLines > this.bodyHeight
 				? ` (${Math.min(100, Math.round(((this.scrollTop + this.bodyHeight) / this.totalLines) * 100))}%)`
 				: "";
-		const search = this.searchQuery
-			? ` · /${this.searchQuery} ${
-					this.searchMatches.length > 0 && this.searchIndex >= 0 ? this.searchIndex + 1 : 0
-				}/${this.searchMatches.length}`
-			: "";
 		// 窄屏从右侧截断：位置与退出方式放在最前。
 		return truncateToWidth(
 			dim(
-				`  Showing detailed transcript${position}${search} · esc/q to exit · / search · ? help · j/k scroll`,
+				`  Showing detailed transcript${position} · esc/q to exit · ${expandShortcutText()} to toggle · j/k scroll`,
 			),
 			width,
 		);

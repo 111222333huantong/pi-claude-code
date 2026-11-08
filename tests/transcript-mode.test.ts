@@ -28,6 +28,7 @@ import {
 	isTranscriptModeActive,
 	TranscriptView,
 	teardownTranscriptMode,
+	transcriptMetaText,
 } from "../extensions/renderer/transcript-mode.ts";
 import { expandedLineLimit, withTranscriptScope } from "../extensions/renderer/transcript-scope.ts";
 
@@ -124,8 +125,87 @@ test("浏览层铺满屏幕：正文停在底部，最后一行是提示", () =>
 	assert.equal(lines[10], "");
 	assert.match(
 		stripAnsi(lines[11]!),
-		/Showing detailed transcript \(100%\) · esc\/q to exit · ctrl\+o to toggle · j\/k scroll$/,
+		/Showing detailed transcript \(100%\) · esc\/q to exit · \/ search · \? help · j\/k scroll$/,
 	);
+});
+
+test("浏览层搜索：/ 输入、命中跳转、enter 保留、n/N 循环", () => {
+	const t = makeView(30);
+	t.view.render(80);
+	// 初始停在底部，正文首行是 row-20。
+	assert.equal(t.body()[0], "row-20");
+	t.view.handleInput("/");
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/▏ 0\/0 · enter keep · esc cancel/);
+	for (const char of "row-2") t.view.handleInput(char);
+	// row-2 / row-20..row-29 共 11 处；当前位置之后的第一条是 row-20（总第 2 条）。
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/row-2▏ 2\/11 · enter keep/);
+	assert.equal(t.body()[1], "row-20");
+	t.view.handleInput("\r");
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/row-2 2\/11/);
+	t.view.handleInput("n");
+	t.view.render(80);
+	assert.equal(t.body()[0], "row-20");
+	assert.equal(t.body()[1], "row-21");
+	t.view.handleInput("N");
+	t.view.render(80);
+	assert.equal(t.body()[1], "row-20");
+});
+
+test("浏览层搜索：esc 取消并回到进入搜索前的滚动位置", () => {
+	const t = makeView(30);
+	t.view.render(80);
+	const origin = t.body()[0];
+	t.view.handleInput("/");
+	for (const char of "row-0") t.view.handleInput(char);
+	t.view.render(80);
+	assert.notEqual(t.body()[0], origin);
+	t.view.handleInput("\x1b");
+	const hint = stripAnsi(t.view.render(80)[11]!);
+	assert.equal(t.body()[0], origin);
+	assert.doesNotMatch(hint, /row-0/);
+	assert.match(hint, /esc\/q to exit/);
+});
+
+test("浏览层搜索：无命中显示 0/0，普通字符在搜索模式里进查询", () => {
+	const t = makeView(30);
+	t.view.render(80);
+	t.view.handleInput("/");
+	for (const char of "zzz") t.view.handleInput(char);
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/zzz▏ 0\/0/);
+	// 搜索模式里 q / ? / n 都只是查询字符，不会退出或翻页。
+	t.view.handleInput("q");
+	t.view.handleInput("?");
+	// 方向键是 ESC 开头的转义序列，不能把 "[A" 写进查询。
+	t.view.handleInput("\x1b[A");
+	assert.match(stripAnsi(t.view.render(80)[11]!), /\/zzzq\?▏ 0\/0/);
+	assert.equal(t.closed(), 0);
+});
+
+test("浏览层滚上去后提示 G bottom，回到底部消失", () => {
+	const t = makeView(30);
+	t.view.render(100);
+	assert.doesNotMatch(stripAnsi(t.view.render(100)[11]!), /G bottom/);
+	t.view.handleInput("g");
+	assert.match(stripAnsi(t.view.render(100)[11]!), /G bottom/);
+	t.view.handleInput("G");
+	assert.doesNotMatch(stripAnsi(t.view.render(100)[11]!), /G bottom/);
+});
+
+test("浏览层帮助：? 打开，? 或 esc 关闭", () => {
+	const t = makeView(30);
+	t.view.render(80);
+	t.view.handleInput("?");
+	let lines = t.view.render(80).map(stripAnsi);
+	assert.ok(lines.some((line) => line.includes("Transcript shortcuts")));
+	assert.ok(lines.some((line) => line.includes("search transcript")));
+	t.view.handleInput("?");
+	lines = t.view.render(80).map(stripAnsi);
+	assert.ok(!lines.some((line) => line.includes("Transcript shortcuts")));
+	t.view.handleInput("?");
+	t.view.handleInput("\x1b");
+	lines = t.view.render(80).map(stripAnsi);
+	assert.ok(!lines.some((line) => line.includes("Transcript shortcuts")));
+	assert.equal(t.closed(), 0, "esc 只关帮助，不退出浏览层");
 });
 
 test("浏览层按键：逐行、半页、整页、首尾、跳消息", () => {
@@ -211,6 +291,34 @@ test("浏览层作用域内展开内容不限行数", () => {
 		expandedLineLimit(20, { state: { ccstyleTranscript: true } }),
 		Number.MAX_SAFE_INTEGER,
 	);
+});
+
+test("回复元信息：本地时间 · 模型 · 耗时，空消息不占行", () => {
+	const timestamp = new Date(2026, 10, 7, 9, 5, 0).getTime();
+	const message = {
+		role: "assistant",
+		timestamp,
+		model: "claude-sonnet-4-5",
+		durationMs: 4_200,
+		content: [{ type: "text", text: "hello" }],
+	};
+	assert.equal(transcriptMetaText(message), "09:05 · claude-sonnet-4-5 · 4.2s");
+	assert.equal(transcriptMetaText({ role: "assistant", timestamp: 0 }), "");
+
+	const chat = new Container();
+	chat.children.push(new AssistantMessageComponent(message as any, false));
+	const items = collectTranscriptItems(chat);
+	assert.equal(items[0]!.meta, "09:05 · claude-sonnet-4-5 · 4.2s");
+	const view = new TranscriptView({
+		rows: () => 12,
+		items: () => items,
+		theme: undefined,
+		close: () => {},
+		focused: () => true,
+	});
+	const text = view.render(80).map(stripAnsi).join("\n");
+	assert.match(text, /^ {2}09:05 · claude-sonnet-4-5 · 4\.2s$/m);
+	assert.match(text, /hello/);
 });
 
 test("on 模式：工具副本全展开且不限行数，对话区工具不变", () => {

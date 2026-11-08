@@ -21,7 +21,13 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, isKeyRelease, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	getKeybindings,
+	isKeyRelease,
+	matchesKey,
+	stripTerminalSequences,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { config } from "../config/config.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import { isCompactRoundTail } from "./compact-mode.ts";
@@ -29,6 +35,7 @@ import { stripToolFrameMarkers } from "./mouse/packets.ts";
 import { fullscreenLazyTui, getToolMouseTui } from "./mouse/scroll.ts";
 import { ToolGroupComponent } from "./tool/grouping.ts";
 import { expandShortcutText } from "./tool/names.ts";
+import { formatToolDuration } from "./tool/result.ts";
 import { markTranscriptComponent, withTranscriptScope } from "./transcript-scope.ts";
 
 const EXPAND_ACTION = "app.tools.expand";
@@ -83,8 +90,35 @@ export function isTranscriptExitKey(data: string): boolean {
 // 副本
 // ---------------------------------------------------------------------------
 
-type TranscriptItem = { view: any; prompt: boolean };
+type TranscriptItem = {
+	view: any;
+	prompt: boolean;
+	/** 回复上方的元信息行（本地时间 · 模型 · 耗时）；没有可显示内容时省略。 */
+	meta?: string;
+};
 type CloneEntry = { view: any; signature: unknown[] };
+
+/** 浏览层里每条回复的元信息：`14:32 · claude-sonnet-4-5 · 4.2s`（借用 Claude Code Ctrl+O 的做法）。 */
+export function transcriptMetaText(message: any): string {
+	if (!message || typeof message !== "object") return "";
+	const parts: string[] = [];
+	const timestamp = message.timestamp;
+	if (typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0) {
+		const date = new Date(timestamp);
+		parts.push(
+			`${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+		);
+	}
+	const model =
+		typeof message.responseModel === "string" && message.responseModel
+			? message.responseModel
+			: message.model;
+	if (typeof model === "string" && model) parts.push(model);
+	if (typeof message.durationMs === "number" && message.durationMs >= 1_000) {
+		parts.push(formatToolDuration(message.durationMs));
+	}
+	return parts.join(" · ");
+}
 
 const clones = new WeakMap<object, CloneEntry>();
 
@@ -184,7 +218,15 @@ export function collectTranscriptItems(container: any): TranscriptItem[] {
 			pushTool(child);
 		} else if (child instanceof AssistantMessageComponent) {
 			const view = cloneAssistant(child);
-			if (view) items.push({ view, prompt: false });
+			if (view) {
+				// lastMessage 是 Pi 的内部字段（compat 层同款），类型上私有、运行时可读。
+				const message = (child as any).lastMessage;
+				items.push({
+					view,
+					prompt: false,
+					meta: transcriptMetaText(message) || undefined,
+				});
+			}
 		} else if (child && typeof child.render === "function") {
 			items.push({ view: child, prompt: child instanceof UserMessageComponent });
 		}
@@ -248,6 +290,16 @@ export class TranscriptView {
 	private closed = false;
 	/** 上一帧画出的滚动位置：与本帧不同就通知选区跟随。 */
 	private renderedScrollTop: number | undefined;
+	/** 按 `/` 进入的增量搜索状态（Claude Code Ctrl+O 的 less 风格搜索）。 */
+	private searchMode = false;
+	private searchQuery = "";
+	private searchMatches: number[] = [];
+	private searchIndex = -1;
+	/** 进入搜索前的滚动位置：Esc 取消时回到这里。 */
+	private searchOrigin = 0;
+	/** 上一帧正文的纯文本副本，搜索只扫它，不重放 ANSI。 */
+	private searchable: string[] = [];
+	private helpOpen = false;
 
 	private readonly options: TranscriptViewOptions;
 
@@ -304,13 +356,152 @@ export class TranscriptView {
 
 	handleInput(data: string): void {
 		if (isKeyRelease(data)) return;
+		if (this.searchMode) {
+			this.handleSearchInput(data);
+			return;
+		}
+		if (data === "?") {
+			this.helpOpen = !this.helpOpen;
+			return;
+		}
+		if (this.helpOpen && matchesKey(data, "escape")) {
+			this.helpOpen = false;
+			return;
+		}
 		if (isTranscriptExitKey(data)) {
 			this.close();
+			return;
+		}
+		if (data === "/") {
+			this.beginSearch();
+			return;
+		}
+		if (this.searchQuery && (data === "n" || data === "N")) {
+			this.stepSearch(data === "n" ? 1 : -1);
 			return;
 		}
 		const action = transcriptScrollAction(data);
 		if (action) this.apply(action);
 		// 其余按键不做任何事：浏览层不编辑输入框。
+	}
+
+	private beginSearch(): void {
+		this.searchMode = true;
+		this.searchQuery = "";
+		this.searchMatches = [];
+		this.searchIndex = -1;
+		this.searchOrigin = this.scrollTop;
+		this.helpOpen = false;
+	}
+
+	private cancelSearch(): void {
+		this.searchMode = false;
+		this.searchQuery = "";
+		this.searchMatches = [];
+		this.searchIndex = -1;
+		this.scrollTo(this.searchOrigin);
+	}
+
+	private handleSearchInput(data: string): void {
+		if (matchesKey(data, "escape") || data === "\x03") {
+			this.cancelSearch();
+			return;
+		}
+		// 方向键/功能键是 ESC 开头的多字节序列：别把剩下的 "[A" 写进查询。
+		if (data.length > 1 && data.startsWith("\x1b")) return;
+		if (data === "\r" || data === "\n") {
+			this.searchMode = false;
+			return;
+		}
+		if (data === "\x7f" || data === "\b") {
+			this.searchQuery = this.searchQuery.slice(0, -1);
+			this.previewSearch();
+			return;
+		}
+		if (data === "\x15") {
+			this.searchQuery = "";
+			this.searchMatches = [];
+			this.searchIndex = -1;
+			this.scrollTo(this.searchOrigin);
+			return;
+		}
+		// 控制字符不进搜索词；其余（含 CJK、emoji、粘贴的多字符）照收。
+		const printable = data.replace(/[\x00-\x1F\x7F]/g, "");
+		if (!printable) return;
+		this.searchQuery += printable;
+		this.previewSearch();
+	}
+
+	private findMatches(): number[] {
+		const needle = this.searchQuery.trim().toLowerCase();
+		if (!needle) return [];
+		const matches: number[] = [];
+		for (let index = 0; index < this.searchable.length; index++) {
+			if (this.searchable[index]!.toLowerCase().includes(needle)) matches.push(index);
+		}
+		return matches;
+	}
+
+	/** 输入过程中从进入搜索时的位置往后找第一条命中，避免每敲一个字符就跳到文件头。 */
+	private previewSearch(): void {
+		this.searchMatches = this.findMatches();
+		if (!this.searchMatches.length) {
+			this.searchIndex = -1;
+			return;
+		}
+		const target =
+			this.searchMatches.find((row) => row >= this.searchOrigin) ?? this.searchMatches[0]!;
+		this.searchIndex = this.searchMatches.indexOf(target);
+		this.scrollTo(Math.max(0, target - 1));
+	}
+
+	private stepSearch(direction: 1 | -1): void {
+		this.searchMatches = this.findMatches();
+		const count = this.searchMatches.length;
+		if (!count) {
+			this.searchIndex = -1;
+			return;
+		}
+		let index = this.searchIndex;
+		if (index < 0 || index >= count) {
+			index =
+				direction > 0
+					? this.searchMatches.findIndex((row) => row >= this.scrollTop)
+					: this.searchMatches.findLastIndex((row) => row <= this.scrollTop);
+			if (index < 0) index = direction > 0 ? 0 : count - 1;
+		} else {
+			index = (index + direction + count) % count;
+		}
+		this.searchIndex = index;
+		this.scrollTo(Math.max(0, this.searchMatches[index]! - 1));
+	}
+
+	private helpLines(width: number): string[] {
+		const theme = this.options.theme;
+		const paint = (text: string, color = "dim") =>
+			typeof theme?.fg === "function" ? theme.fg(color, text) : text;
+		const entries: Array<[string, string]> = [
+			["j / k, ↑ / ↓", "scroll one line"],
+			["ctrl+d / ctrl+u", "half page"],
+			["space / b", "page"],
+			["g / G", "top / bottom"],
+			["{ / }", "previous / next prompt"],
+			["/", "search transcript"],
+			["n / N", "next / previous match"],
+			["?", "toggle this help"],
+			["esc / q", "exit transcript"],
+		];
+		const labelWidth = Math.max(...entries.map(([label]) => label.length));
+		return [
+			paint("  Transcript shortcuts", "text"),
+			"",
+			...entries.map(
+				([label, description]) =>
+					`  ${paint(label.padEnd(labelWidth), "text")}   ${paint(description)}`,
+			),
+			"",
+			paint(`  ${expandShortcutText()} also closes the transcript`),
+		].map((line) => truncateToWidth(line, width));
 	}
 
 	/**
@@ -332,16 +523,46 @@ export class TranscriptView {
 		// 底部两行：空一行隔开正文，下面是提示。
 		const rows = Math.max(3, this.options.rows());
 		this.bodyHeight = rows - 2;
+
+		if (this.helpOpen) {
+			const body = this.helpLines(width);
+			while (body.length < this.bodyHeight) body.push("");
+			return [...body.slice(0, this.bodyHeight), "", this.hintLine(width)];
+		}
+
+		const theme = this.options.theme;
 		const lines: string[] = [];
+		const plain: string[] = [];
 		const promptRows: number[] = [];
 		withTranscriptScope(() => {
 			for (const item of this.options.items()) {
+				const viewLines: string[] = item.view
+					.render(width)
+					.map((line: string) => stripToolFrameMarkers(line));
+				// 只有真的画出了内容才带元信息行，避免空回复上方留下孤零零的时间。
+				if (item.meta && viewLines.length > 0) {
+					const metaLine =
+						typeof theme?.fg === "function" ? theme.fg("dim", `  ${item.meta}`) : `  ${item.meta}`;
+					lines.push(metaLine);
+					plain.push(stripTerminalSequences(metaLine));
+				}
 				if (item.prompt) promptRows.push(lines.length);
-				for (const line of item.view.render(width)) lines.push(stripToolFrameMarkers(line));
+				for (const line of viewLines) {
+					lines.push(line);
+					plain.push(stripTerminalSequences(line));
+				}
 			}
 		});
 		this.totalLines = lines.length;
 		this.promptRows = promptRows;
+		// 搜索只扫上一帧的纯文本副本；流式内容增长时同步刷新命中数。
+		this.searchable = plain;
+		if (this.searchQuery) {
+			this.searchMatches = this.findMatches();
+			if (this.searchIndex >= this.searchMatches.length) {
+				this.searchIndex = this.searchMatches.length - 1;
+			}
+		}
 		if (this.followEnd) this.scrollTop = this.maxScroll();
 		else this.scrollTop = Math.min(this.scrollTop, this.maxScroll());
 		// 按键、滚轮、跟随新内容都会改滚动位置，统一在画出时结算一次。
@@ -358,14 +579,32 @@ export class TranscriptView {
 	private hintLine(width: number): string {
 		const theme = this.options.theme;
 		const dim = (text: string) => (typeof theme?.fg === "function" ? theme.fg("dim", text) : text);
+		if (this.searchMode) {
+			const total = this.searchMatches.length;
+			const current = total > 0 && this.searchIndex >= 0 ? this.searchIndex + 1 : 0;
+			return truncateToWidth(
+				dim(`  /${this.searchQuery}▏ ${current}/${total} · enter keep · esc cancel`),
+				width,
+			);
+		}
+		if (this.helpOpen) {
+			return truncateToWidth(dim("  Transcript shortcuts · ? or esc to close"), width);
+		}
 		const position =
 			this.totalLines > this.bodyHeight
 				? ` (${Math.min(100, Math.round(((this.scrollTop + this.bodyHeight) / this.totalLines) * 100))}%)`
 				: "";
+		const search = this.searchQuery
+			? ` · /${this.searchQuery} ${
+					this.searchMatches.length > 0 && this.searchIndex >= 0 ? this.searchIndex + 1 : 0
+				}/${this.searchMatches.length}`
+			: "";
+		// 翻到上面后给一个回到底部的键；贴底时不再提示。放在前面，窄屏截断也看得见。
+		const bottom = this.scrollTop < this.maxScroll() ? " · G bottom" : "";
 		// 窄屏从右侧截断：位置与退出方式放在最前。
 		return truncateToWidth(
 			dim(
-				`  Showing detailed transcript${position} · esc/q to exit · ${expandShortcutText()} to toggle · j/k scroll`,
+				`  Showing detailed transcript${position}${search}${bottom} · esc/q to exit · / search · ? help · j/k scroll`,
 			),
 			width,
 		);

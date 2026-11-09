@@ -441,6 +441,7 @@ test("write create and overwrite render distinct rich diffs", () => {
 		theme,
 		{ toolCallId: "create", args: { path: "new.ts", content: "new\n" } },
 		store,
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedPreviewLines: 0 },
 	);
 	const overwrite = renderRichToolResult(
 		"write",
@@ -449,6 +450,7 @@ test("write create and overwrite render distinct rich diffs", () => {
 		theme,
 		{ toolCallId: "overwrite", args: { path: "old.ts", content: "new\n" } },
 		store,
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedPreviewLines: 0 },
 	);
 	assert.match(output(create).join("\n"), /created/);
 	assert.match(output(create).join("\n"), /more/);
@@ -609,6 +611,7 @@ test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
 	const display: ToolDisplayConfig = {
 		...DEFAULT_TOOL_DISPLAY_CONFIG,
 		writeDiffCollapsedLines: 0,
+		diffCollapsedPreviewLines: 0,
 	};
 	const collapsed = renderRichToolResult(
 		"write",
@@ -739,8 +742,8 @@ test("default-mode write collapsed uses title stats and created hint", () => {
 			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		// 折叠 0 行预览时计数在正文那行，标题不重复。
 		assert.doesNotMatch(text, /Write out\.ts \(\+\d+ -\d+\)/);
-		assert.match(text, /↳ diff \+1 -0 · created · click to show more/);
-		assert.doesNotMatch(text, /▌/);
+		assert.match(text, /↳ \+1 -0 · created · click to show more/);
+		assert.match(text, /▌\s+1 │ hi/, "默认给新建文件一行预览");
 	} finally {
 		config.mode = previousMode;
 		hooks.shutdown();

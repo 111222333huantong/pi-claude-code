@@ -78,7 +78,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
 
 ```text
  ✓ Edit sample.ts
-   ↳ diff · +2 · -1 · unified [━━━━━━━━]
+   ↳ +2 -1
  ─────────────────────────────────────────────
  @@ -1,3 +1,4 @@
     1 │ import { run } from "./runner";
@@ -89,11 +89,14 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
  ─────────────────────────────────────────────
 ```
 
-`editDiffCollapsedLines: 0` shows a one-line change-count summary and expand hint; expanding still shows the full diff:
+`editDiffCollapsedLines: 0` shows a one-line change-count summary, an expand hint, and up to 3 preview lines (`diffCollapsedPreviewLines`); expanding still shows the full diff:
 
 ```text
  ✓ Edit sample.ts
-   ↳ diff +2 -1 · click to show more
+   ↳ +2 -1 · click to show more
+    1 │ import { run } from "./runner";
+ ▌  2 │ const threshold = 41;
+ ▌  2 │ const threshold = 42;
 ```
 
 长 diff 提示：

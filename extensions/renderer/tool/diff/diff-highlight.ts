@@ -8,6 +8,7 @@ import {
 	type DiffPalette,
 	type DiffTheme,
 	getLineBackground,
+	keepFaintAcrossResets,
 	resolveShikiTheme,
 } from "./diff-palette.ts";
 import type { DiffLineEntry, ParsedDiffEntry } from "./diff-parse.ts";
@@ -193,5 +194,9 @@ export function highlightDiffLine(
 		rowBg,
 		containerBgAnsi,
 	);
-	return { highlighted, rowBg };
+	// 上下文行压暗，让 +/- 行在长 diff 里先跳出来；改动行保持原亮度。
+	return {
+		highlighted: entry.lineKind === "context" ? keepFaintAcrossResets(highlighted) : highlighted,
+		rowBg,
+	};
 }

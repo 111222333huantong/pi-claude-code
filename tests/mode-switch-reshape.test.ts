@@ -139,7 +139,7 @@ test("on → compact reshapes to summary; compact → on restores tool cards", (
 		assert.match(renderText(a1).join("\n"), /click to show more/);
 		assert.deepEqual(renderText(bash), []);
 		assert.doesNotMatch(renderText(edit).join("\n"), /edit sample\.ts \(\+\d+ -\d+\)/);
-		assert.match(renderText(edit).join("\n"), /↳ diff \+1 -1 · .*to show more/);
+		assert.match(renderText(edit).join("\n"), /↳ \+1 -1 · .*to show more/);
 		assert.match(renderText(aFinal).join("\n"), /task done/);
 
 		// → on：工具卡恢复，摘要消失

@@ -68,7 +68,8 @@ test("myers overwrite: 远距离两处改动折成 2 hunk（context:3，旧全�
 });
 
 test("myers overwrite: 内容一致时全量 context（不显示 empty file）", () => {
-	const rows = renderOverwriteExpanded("a\nb", "a\nb").join("\n");
+	// 上下文行现在带 faint SGR，判词前先剥掉控制序列。
+	const rows = stripVTControlCharacters(renderOverwriteExpanded("a\nb", "a\nb").join("\n"));
 	assert.match(rows, /\ba\b/);
 	assert.match(rows, /\bb\b/);
 	assert.doesNotMatch(rows, /empty file/);

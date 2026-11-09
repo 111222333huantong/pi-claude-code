@@ -27,8 +27,10 @@ export interface ToolDisplayConfig {
 	diffSplitMinWidth: number;
 	/** Edit-only collapsed body lines. 0 = change counts and an expand hint. */
 	editDiffCollapsedLines: EditDiffCollapsedLines;
-	/** Write-only collapsed body lines. 0 = `↳ created · click to show more`. */
+	/** Write-only collapsed body lines. 0 = summary line plus `diffCollapsedPreviewLines`. */
 	writeDiffCollapsedLines: number;
+	/** 折叠时先露几行改动，给“这改得对不对”一个即时判断；0 = 只留摘要。 */
+	diffCollapsedPreviewLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 }
@@ -45,9 +47,10 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	editDiffCollapsedLines: "auto",
 	/**
 	 * Write create/overwrite collapsed body.
-	 * 0 = `↳ created · click to show more` (stats stay on the title).
+	 * 0 = change summary + expand hint, followed by the shared collapsed preview.
 	 */
 	writeDiffCollapsedLines: 0,
+	diffCollapsedPreviewLines: 3,
 	diffWordWrap: true,
 	/**
 	 * Expanded TaskList body cap. Tool Input/Output and diffs use their own settings;
@@ -65,6 +68,7 @@ export type Config = {
 	diffSplitMinWidth: number;
 	editDiffCollapsedLines: EditDiffCollapsedLines;
 	writeDiffCollapsedLines: number;
+	diffCollapsedPreviewLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 	expandedInputMaxLines: number;
@@ -218,6 +222,7 @@ export const DEFAULT_CONFIG: Config = {
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
 	editDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines,
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
+	diffCollapsedPreviewLines: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedPreviewLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
 	expandedInputMaxLines: 5,
@@ -362,6 +367,12 @@ export function normalizeConfig(input: unknown): Config {
 			DEFAULT_CONFIG.writeDiffCollapsedLines,
 			0,
 			500,
+		),
+		diffCollapsedPreviewLines: pickPositiveInt(
+			source.diffCollapsedPreviewLines,
+			DEFAULT_CONFIG.diffCollapsedPreviewLines,
+			0,
+			20,
 		),
 		diffWordWrap: source.diffWordWrap !== false,
 		expandedPreviewMaxLines: pickPositiveInt(
@@ -512,6 +523,7 @@ export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig
 		diffSplitMinWidth: source.diffSplitMinWidth,
 		editDiffCollapsedLines: source.editDiffCollapsedLines,
 		writeDiffCollapsedLines: source.writeDiffCollapsedLines,
+		diffCollapsedPreviewLines: source.diffCollapsedPreviewLines,
 		diffWordWrap: source.diffWordWrap,
 		expandedPreviewMaxLines: source.expandedPreviewMaxLines,
 	};
@@ -568,6 +580,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`diffSplitMin=${source.diffSplitMinWidth}`,
 		`editCollapsed=${source.editDiffCollapsedLines}`,
 		`writeCollapsed=${source.writeDiffCollapsedLines}`,
+		`collapsedPreview=${source.diffCollapsedPreviewLines}`,
 		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
 		`expandedMax=${source.expandedPreviewMaxLines}`,
 		`expandedInput=${source.expandedInputMaxLines}`,

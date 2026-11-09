@@ -3064,7 +3064,7 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		const collapsed = collapsedRaw.join("\n");
 		assert.match(collapsed, /edit a\.ts/);
 		assert.doesNotMatch(collapsed, /edit a\.ts.*\(\+\d+ -\d+\)/, "标题不再重复计数");
-		assert.match(collapsed, /↳ diff \+1 -1 · .*to show more/);
+		assert.match(collapsed, /↳ \+1 -1 · .*to show more/);
 		assert.doesNotMatch(collapsed, /Input|Output|Details:/);
 
 		// 计数上色：+ 取 success、- 取 error，与 footer 的 git 计数同源。
@@ -3113,8 +3113,8 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		assert.match(titlePlain, /^ ✓ edit a\.ts/, "expanded title uses Box pad only");
 		assert.doesNotMatch(titlePlain, /\(\+\d+ -\d+\)/);
 		// ↳ 头行与标题文字列对齐（Box pad 1 + 缩进 2），body 行保持贴左。
-		const diffHeader = expandedPlain.find((line) => line.includes("↳ diff")) ?? "";
-		assert.match(diffHeader, /^ {3}↳ diff/, `↳ 与标题文字列同列: ${diffHeader}`);
+		const diffHeader = expandedPlain.find((line) => line.includes("↳")) ?? "";
+		assert.match(diffHeader, /^ {3}↳ \+/, `↳ 与标题文字列同列: ${diffHeader}`);
 		const expanded = expandedPlain.join("\n");
 		assert.match(expanded, /old/);
 		assert.match(expanded, /new/);
@@ -3155,7 +3155,7 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		metadata.set("w1", { fileExistedBeforeWrite: true, previousContent: "" });
 		write.updateResult({ content: [], isError: false });
 		const writeCollapsed = renderText(write).join("\n");
-		assert.match(writeCollapsed, /↳ diff \+0 -0 · overwritten · .*to show more/);
+		assert.match(writeCollapsed, /↳ \+0 -0 · overwritten · .*to show more/);
 		assert.doesNotMatch(writeCollapsed, /write b\.ts.*\(\+\d+ -\d+\)/);
 
 		// write 折叠预览跟 mode=on 共用 writeDiffCollapsedLines。
@@ -3167,7 +3167,7 @@ test("compact edit/write：计数只在正文显示一处，0 行预览带颜色
 		metadata.set("w-limit", { fileExistedBeforeWrite: false });
 		longWrite.updateResult({ content: [], isError: false });
 		const statsOnly = renderText(longWrite).join("\n");
-		assert.match(statsOnly, /↳ diff \+40 -0 · created · .*to show more/);
+		assert.match(statsOnly, /↳ \+40 -0 · created · .*to show more/);
 		assert.doesNotMatch(statsOnly, /write long\.ts.*\(\+\d+ -\d+\)/);
 		assert.doesNotMatch(statsOnly, /const value10 = 10/);
 		config.writeDiffCollapsedLines = 4;

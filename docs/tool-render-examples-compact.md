@@ -56,7 +56,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
 
 ```text
  ✓ edit sample.ts
-   ↳ diff · +1 · -1 · unified [━━━━━━━━]
+   ↳ +1 -1
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1
@@ -64,14 +64,17 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
  ───────────────────────────────────────────────────────────────────────
 
  ✓ write out.ts
-   ↳ diff +1 -0 · created · click to show more
+   ↳ +1 -0 · created · click to show more
+ ▌  1 │ hi
 ```
 
-`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header:
+`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header, and `diffCollapsedPreviewLines` still previews the change:
 
 ```text
  ✓ edit sample.ts
-   ↳ diff +1 -1 · click to show more
+   ↳ +1 -1 · click to show more
+ ▌  1 │ const x = 1
+ ▌  1 │ const x = 2
 ```
 
 挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：
@@ -79,7 +82,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
 ```text
  ● updated sample.ts
  ✓ edit sample.ts
-   ↳ diff · +1 · -1 · unified [━━━━━━━━]
+   ↳ +1 -1
  ───────────────────────────────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1
@@ -92,7 +95,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
 
 ```text
  ✓ edit sample.ts
-   ↳ diff · +1 · -1 · unified [━━━━━━━━]
+   ↳ +1 -1
  ────────────────────────────────────────────
  @@ -1 +1 @@
  ▌  1 │ const x = 1

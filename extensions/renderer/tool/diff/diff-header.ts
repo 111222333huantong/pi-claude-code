@@ -60,12 +60,18 @@ function renderDiffStatBar(stats: DiffStats, width: number, theme: DiffTheme): s
 	);
 }
 
-function buildDiffSummaryBasePieces(stats: DiffStats, theme: DiffTheme): string[] {
+/**
+ * 小 diff 只留 `↳ +2 -1`：标题上方已经知道是哪个文件、做了什么，
+ * 再挂 `diff · unified [━━━━]` 只会把真正要看的内容往下挤。
+ */
+const METER_MIN_CHANGES = 10;
+
+function buildDiffSummaryLine(stats: DiffStats, theme: DiffTheme): string {
 	return [
-		theme.fg("toolOutput", `↳ ${emphasis(theme, "diff")}`),
+		theme.fg("toolOutput", "↳"),
 		theme.fg("success", `+${stats.added}`),
 		theme.fg("error", `-${stats.removed}`),
-	];
+	].join(" ");
 }
 
 export function renderHeaderRows(
@@ -74,30 +80,32 @@ export function renderHeaderRows(
 	width: number,
 	theme: DiffTheme,
 ): RenderedRow[] {
-	if (mode === "compact") {
-		const summary = buildDiffSummaryBasePieces(stats, theme).join(" ");
+	const summary = buildDiffSummaryLine(stats, theme);
+	// compact 正文本来就只有一行；再塞 meter 会把代码挤没。
+	if (mode === "compact" || stats.added + stats.removed < METER_MIN_CHANGES) {
 		return [{ text: stabilizeBackgroundResets(truncateToWidth(summary, width)), hunkIndex: null }];
 	}
 
-	const summaryPieces = [...buildDiffSummaryBasePieces(stats, theme), theme.fg("muted", mode)];
-
-	const summary = summaryPieces.join(mode === "split" ? " " : theme.fg("muted", " · "));
 	const meter = renderDiffStatBar(stats, width, theme);
 	if (!meter) {
 		return [{ text: stabilizeBackgroundResets(truncateToWidth(summary, width)), hunkIndex: null }];
 	}
 
-	const meterSeparator = " ";
-	const meterWidth = visibleWidth(meterSeparator) + visibleWidth(meter);
-	if (meterWidth >= width) {
-		return [{ text: stabilizeBackgroundResets(truncateToWidth(summary, width)), hunkIndex: null }];
+	// 右侧 `unified [━━━━━━━━]`：模式与比例只在大 diff 时出现，靠右放，扫读时不会打断 `+A -D`。
+	const right = `${theme.fg("muted", mode)} ${meter}`;
+	const gap = width - visibleWidth(summary) - visibleWidth(right);
+	if (gap < 1) {
+		return [
+			{
+				text: stabilizeBackgroundResets(truncateToWidth(`${summary} ${right}`, width)),
+				hunkIndex: null,
+			},
+		];
 	}
 
-	const summaryWidth = Math.max(0, width - meterWidth);
-	const fittedSummary = truncateToWidth(summary, summaryWidth);
 	return [
 		{
-			text: stabilizeBackgroundResets(`${fittedSummary}${meterSeparator}${meter}`),
+			text: stabilizeBackgroundResets(`${summary}${" ".repeat(gap)}${right}`),
 			hunkIndex: null,
 		},
 	];

@@ -127,6 +127,26 @@ export function keepBackgroundAcrossResets(text: string, rowBg: string): string 
 	});
 }
 
+/**
+ * 上下文行整体压暗一档：保留语法色，只叠 faint（SGR 2）。
+ * 语法高亮内部会不断 `\x1b[0m`，这里在每个 reset 后补回 faint，避免只有第一个 token 变暗。
+ */
+export function keepFaintAcrossResets(text: string): string {
+	if (!text) return text;
+	const faint = "\x1b[2m";
+	const resetFaint = "\x1b[22m";
+	if (!text.includes("\x1b[")) {
+		return `${faint}${text}${resetFaint}`;
+	}
+	const stable = text.replace(ANSI_SGR_PATTERN, (sequence, rawParams: string) => {
+		const params = toSgrParams(rawParams);
+		return params.length === 0 || params.some((param) => param === 0 || param === 22)
+			? `${sequence}${faint}`
+			: sequence;
+	});
+	return `${faint}${stable}${resetFaint}`;
+}
+
 export function colorizeSegment(
 	theme: DiffTheme,
 	color: "dim" | "success" | "error",

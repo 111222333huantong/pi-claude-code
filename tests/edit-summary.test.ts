@@ -51,6 +51,8 @@ const diff = "-1|OLD_CONTENT\n+1|NEW_CONTENT\n 2|unchanged";
 const summaryConfig: ToolDisplayConfig = {
 	...DEFAULT_TOOL_DISPLAY_CONFIG,
 	editDiffCollapsedLines: 0,
+	// 这些用例只验证“摘要行”本身；预览行由单独用例覆盖。
+	diffCollapsedPreviewLines: 0,
 };
 type HintComponent = Component & { isCollapsedHintLine(line: string): boolean };
 
@@ -79,7 +81,11 @@ test("edit collapsed lines accepts auto/zero without changing the write setting"
 });
 
 test("auto edit preview expands small diffs and summarizes large ones", () => {
-	const auto = { ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: "auto" as const };
+	const auto = {
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		editDiffCollapsedLines: "auto" as const,
+		diffCollapsedPreviewLines: 0,
+	};
 	const render = (diffText: string, expanded = false) =>
 		plainLines(
 			renderEditDiffResult({ diff: diffText }, { expanded }, auto, theme, "") as Component,
@@ -104,13 +110,54 @@ test("auto edit preview expands small diffs and summarizes large ones", () => {
 
 	// 17 行起收成一行摘要，正文不渲染。
 	const large = render(makeDiff(9, 8));
-	assert.match(large, /diff \+9 -8 · .*to show more/);
+	assert.match(large, /↳ \+9 -8 · .*to show more/);
 	assert.doesNotMatch(large, /old 0|new 0/);
 
 	// 展开后仍然全量，不因为 auto 被卡住。
 	const expanded = render(makeDiff(9, 8), true);
 	assert.match(expanded, /old 0/);
 	assert.match(expanded, /new 0/);
+});
+
+test("折叠大 diff 先露 3 行改动，展开入口仍是摘要行", () => {
+	const rows = ["@@ -1,20 +1,20 @@", " 1|same"];
+	for (let index = 0; index < 9; index++) rows.push(`-${index + 2}|old ${index}`);
+	for (let index = 0; index < 9; index++) rows.push(`+${index + 2}|new ${index}`);
+	const component = renderEditDiffResult(
+		{ diff: rows.join("\n") },
+		{ expanded: false },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: "auto" },
+		theme,
+		"",
+	) as HintComponent;
+	const plain = plainLines(component);
+	assert.equal(plain.length, 4, "摘要 + 3 行预览");
+	assert.match(plain[0]!, /↳ \+9 -9 · .*to show more/);
+	assert.match(plain.slice(1).join("\n"), /old 0/);
+	assert.match(plain.slice(1).join("\n"), /new 0/);
+	assert.doesNotMatch(plain.join("\n"), /old 8/);
+	assert.equal(component.isCollapsedHintLine(plain[0]!), true);
+	assert.equal(component.isCollapsedHintLine(plain[1]!), false, "预览正文不抢摘要行的展开入口");
+	assert.equal(component.isCollapsedHintLine("不存在的行"), false);
+});
+
+test("折叠预览固定行数：超长代码行不靠换行撑高卡片", () => {
+	const long = `const value = "${"x".repeat(300)}";`;
+	const rows = ["@@ -1,20 +1,20 @@", " 1|same", `-2|${long}`, `+2|${long}y`];
+	for (let index = 0; index < 9; index++) rows.push(`-${index + 3}|old ${index}`);
+	for (let index = 0; index < 9; index++) rows.push(`+${index + 3}|new ${index}`);
+	for (const width of [40, 80]) {
+		const component = renderEditDiffResult(
+			{ diff: rows.join("\n") },
+			{ expanded: false },
+			{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: "auto", diffWordWrap: true },
+			theme,
+			"",
+		) as HintComponent;
+		const rendered = component.render(width);
+		assert.equal(rendered.length, 4, `width ${width}: 摘要 + 3 行预览，不随换行膨胀`);
+		assert.ok(rendered.every((line) => visibleWidth(line) <= width));
+	}
 });
 
 test("zero edit preview is one width-safe summary row in every diff layout", () => {
@@ -131,7 +178,7 @@ test("zero edit preview is one width-safe summary row in every diff layout", () 
 				const text = rows.map(stripVTControlCharacters).join("\n");
 				assert.doesNotMatch(text, /OLD_CONTENT|NEW_CONTENT|unchanged|[─│▌]/);
 				if (width >= 80) {
-					assert.match(text, /diff \+1 -1 · .*to show more/);
+					assert.match(text, /↳ \+1 -1 · .*to show more/);
 					assert.equal(component.isCollapsedHintLine(text), true);
 					assert.equal(component.isCollapsedHintLine("OLD_CONTENT"), false);
 				}
@@ -250,7 +297,12 @@ for (const mode of ["on", "compact"] as const) {
 	test(`${mode} edit summary keeps the file row and supports config changes and expansion`, () => {
 		const previousConfig = { ...config };
 		const previousTheme = getMessageDisplayTheme();
-		Object.assign(config, { mode, editDiffCollapsedLines: 0, diffViewMode: "unified" });
+		Object.assign(config, {
+			mode,
+			editDiffCollapsedLines: 0,
+			diffCollapsedPreviewLines: 0,
+			diffViewMode: "unified",
+		});
 		setMessageDisplayTheme(theme);
 		const store = new WriteExecutionMetadataStore();
 		const defaultHooks = installDefaultMode(store);
@@ -271,7 +323,7 @@ for (const mode of ["on", "compact"] as const) {
 			const summary = plainLines(tool).filter(Boolean);
 			assert.equal(summary.length, 2, "one title plus one result summary");
 			assert.match(summary[0]!, /[Ee]dit sample\.txt/);
-			assert.match(summary[1]!, /diff \+1 -1 · .*to show more/);
+			assert.match(summary[1]!, /↳ \+1 -1 · .*to show more/);
 			assert.doesNotMatch(summary.join("\n"), /OLD_CONTENT|NEW_CONTENT|Input|Output/);
 
 			config.editDiffCollapsedLines = 24;

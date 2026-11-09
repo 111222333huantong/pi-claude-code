@@ -1,3 +1,6 @@
 
  ✓ Edit src/large.ts
-   ↳ diff +20 -20 · click to show more
+   ↳ +20 -20 · click to show more
+ ▌  1 │ old 0
+ ▌  2 │ old 1
+ ▌  1 │ new 0

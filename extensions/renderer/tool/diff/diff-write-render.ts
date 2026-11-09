@@ -3,6 +3,7 @@ import { structuredPatch } from "diff";
 import type { ToolDisplayConfig } from "../../../config/config.ts";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
 import { showMoreHintText } from "../names.ts";
+import { renderCollapsedPreview, selectCollapsedPreviewEntries } from "./diff-collapsed-preview.ts";
 import {
 	createDiffRenderCache,
 	type DiffRenderOptions,
@@ -346,7 +347,7 @@ function renderWriteOverwriteGuardRows(
 	return renderSingleDiffRow(buildWriteOverwriteGuardText(guard, width), "warning", width, theme);
 }
 
-/** Folded write with `writeDiffCollapsedLines: 0`: `↳ diff +A -D · created · click to show more`. */
+/** Folded write with `writeDiffCollapsedLines: 0`: `↳ +A -D · created · click to show more`. */
 function renderWriteCollapsedHintLine(
 	wasOverwrite: boolean,
 	width: number,
@@ -364,11 +365,10 @@ function renderWriteCollapsedHintLine(
 	const counts = stats ? `+${stats.added} -${stats.removed}` : "";
 	const candidates = stats
 		? [
-				`↳ diff ${counts} · ${actionLabel} · ${clickLabel}`,
-				`↳ diff ${counts} · ${clickLabel}`,
-				`↳ diff ${counts} · ${actionLabel}`,
-				`↳ diff ${counts}`,
+				`↳ ${counts} · ${actionLabel} · ${clickLabel}`,
 				`↳ ${counts} · ${clickLabel}`,
+				`↳ ${counts} · ${actionLabel}`,
+				`↳ ${counts}`,
 				`↳ ${actionLabel} · ${clickLabel}`,
 				`↳ ${actionLabel}`,
 				actionLabel,
@@ -390,7 +390,7 @@ function renderWriteCollapsedHintLine(
 }
 
 /**
- * 折叠 0 行预览时计数由正文那行显示（`↳ diff +A -D · created · click to show more`），
+ * 折叠 0 行预览时计数由正文那行显示（`↳ +A -D · created · click to show more`），
  * 标题不再重复。compact 与 default 两个模式的写标题共用这条口径。
  */
 export function writeStatsInCollapsedBody(
@@ -611,13 +611,37 @@ export function renderWriteDiffResult(
 					options.headerLabel,
 					countWriteDiffStats(content, options.previousContent, options.fileExistedBeforeWrite),
 				);
+				const previewRows: string[] = [];
+				if (live.diffCollapsedPreviewLines > 0 && mode !== "summary") {
+					let previewEntries: ParsedDiffEntry[] | undefined;
+					if (options.fileExistedBeforeWrite !== true) {
+						previewEntries = buildWriteEntries(lines);
+					} else if (
+						hasComparablePrevious &&
+						previousLines.length + lines.length <= MAX_WRITE_OVERWRITE_DIFF_LINES
+					) {
+						previewEntries = buildWriteOverwriteEntries(previousLines, lines);
+					}
+					if (previewEntries) {
+						const preview = renderCollapsedPreview(
+							selectCollapsedPreviewEntries(previewEntries, live.diffCollapsedPreviewLines),
+							{
+								width: safeWidth,
+								theme,
+								indicatorMode,
+								lineNumberWidth: getLineNumberWidth(previewEntries, false),
+							},
+						);
+						previewRows.push(...preview.map((row) => row.text));
+					}
+				}
 				return cache.set(
 					safeWidth,
 					options.expanded,
 					mode,
 					configKey,
 					hovered,
-					clampDiffLinesToWidth(hintLines, safeWidth),
+					clampDiffLinesToWidth([...hintLines, ...previewRows], safeWidth),
 					normalizeCollapsedHintLine(hintLines[0]),
 				);
 			}

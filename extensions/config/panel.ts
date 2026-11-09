@@ -557,7 +557,7 @@ export async function showCcstylePanel(
 		const diffCollapsedSetting = {
 			id: "editDiffCollapsedLines",
 			label: "Edit collapsed lines",
-			description: `Auto shows small diffs in full and collapses large ones to a summary. A number caps the body at that many lines (${expandShortcutText()} / click to expand). 0 shows only change counts. Write uses its own setting below.`,
+			description: `Auto shows small diffs in full and collapses large ones to a summary. A number caps the body at that many lines (${expandShortcutText()} / click to expand). 0 hides the body; Collapsed preview still shows a few lines. Write uses its own setting below.`,
 			currentValue: String(config.editDiffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -567,11 +567,21 @@ export async function showCcstylePanel(
 			id: "writeDiffCollapsedLines",
 			label: "Write collapsed lines",
 			description:
-				"Write-only collapsed body lines. 0 shows ↳ created + expand hint (stats stay on the title). Enter to type a custom value.",
+				"Write-only collapsed body lines. 0 shows the change summary + Collapsed preview. Enter to type a custom value.",
 			currentValue: String(config.writeDiffCollapsedLines),
 			values: [...WRITE_DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, writeDiffCollapsedSetting, closeSubmenu),
+		};
+		const diffCollapsedPreviewSetting = {
+			id: "diffCollapsedPreviewLines",
+			label: "Collapsed preview",
+			description:
+				"Lines shown under a collapsed diff so you can judge the change without expanding. 0 = summary only.",
+			currentValue: String(config.diffCollapsedPreviewLines),
+			values: ["0", "1", "2", "3", "5"],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, diffCollapsedPreviewSetting, closeSubmenu),
 		};
 		const diffWordWrapSetting = {
 			id: "diffWordWrap",
@@ -1254,6 +1264,17 @@ export async function showCcstylePanel(
 					});
 					writeDiffCollapsedSetting.currentValue = String(config.writeDiffCollapsedLines);
 					break;
+				case "diffCollapsedPreviewLines":
+					updateConfig({
+						diffCollapsedPreviewLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.diffCollapsedPreviewLines,
+							0,
+							20,
+						),
+					});
+					diffCollapsedPreviewSetting.currentValue = String(config.diffCollapsedPreviewLines);
+					break;
 				case "diffWordWrap":
 					updateConfig({ diffWordWrap: value === "on" });
 					diffWordWrapSetting.description = config.diffWordWrap
@@ -1516,6 +1537,7 @@ export async function showCcstylePanel(
 					diffSplitSetting,
 					diffCollapsedSetting,
 					writeDiffCollapsedSetting,
+					diffCollapsedPreviewSetting,
 					diffWordWrapSetting,
 				],
 			},

@@ -121,7 +121,8 @@ npm install --omit=optional pi-claude-code
   "diffPalette": "theme",                 // 配色：theme 跟随主题；claude 固定 CC 红绿 + 删行不高亮
   "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
   "editDiffCollapsedLines": "auto",        // edit 折叠：auto = 小 diff 全显、大 diff 只留摘要；数字 = 固定行数；0 = 仅摘要
-  "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
+  "writeDiffCollapsedLines": 0,            // write 折叠行数，0 只留创建摘要
+  "diffCollapsedPreviewLines": 3,          // 折叠时先露几行改动；0 = 只显示摘要
   "diffWordWrap": true,                    // 长 diff 行换行
 
   // thinking

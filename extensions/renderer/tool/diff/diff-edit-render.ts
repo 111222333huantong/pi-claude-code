@@ -2,6 +2,7 @@ import type { EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
 import { showMoreHintText } from "../names.ts";
+import { renderCollapsedPreview, selectCollapsedPreviewEntries } from "./diff-collapsed-preview.ts";
 import {
 	createDiffRenderCache,
 	type DiffRenderOptions,
@@ -95,10 +96,9 @@ function renderEditCollapsedSummaryLine(
 	const counts = `+${stats.added} -${stats.removed}`;
 	const hint = showMoreHintText();
 	const candidates = [
-		`↳ diff ${counts} · ${hint}`,
 		`↳ ${counts} · ${hint}`,
 		`${counts} · ${hint}`,
-		`↳ diff ${counts}`,
+		`↳ ${counts}`,
 		counts,
 		"diff",
 		"…",
@@ -160,6 +160,7 @@ export function renderEditDiffResult(
 	}
 	let detailedData: ReturnType<typeof buildDetailedData> | undefined;
 	let renderAll = options.renderAll === true;
+	let collapsedLineNumberWidth: number | undefined;
 
 	return {
 		[RICH_DIFF_COMPONENT]: true,
@@ -207,13 +208,27 @@ export function renderEditDiffResult(
 				shouldAutoCollapseEdit(parsed.stats);
 			if (!options.expanded && (live.editDiffCollapsedLines === 0 || autoCollapsed)) {
 				const summary = renderEditCollapsedSummaryLine(parsed.stats, safeWidth, theme, hovered);
+				const previewRows: string[] = [];
+				if (live.diffCollapsedPreviewLines > 0 && mode !== "summary") {
+					collapsedLineNumberWidth ??= getLineNumberWidth(renderEntries, false);
+					const preview = renderCollapsedPreview(
+						selectCollapsedPreviewEntries(renderEntries, live.diffCollapsedPreviewLines),
+						{
+							width: safeWidth,
+							theme,
+							indicatorMode,
+							lineNumberWidth: collapsedLineNumberWidth,
+						},
+					);
+					previewRows.push(...preview.map((row) => row.text));
+				}
 				return cache.set(
 					safeWidth,
 					options.expanded,
 					mode,
 					configKey,
 					hovered,
-					[summary],
+					clampDiffLinesToWidth([summary, ...previewRows], safeWidth),
 					normalizeCollapsedHintLine(summary),
 				);
 			}

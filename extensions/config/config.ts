@@ -16,6 +16,11 @@ export type DiffPaletteMode = "theme" | "claude";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 /** edit 折叠行数：固定行数，或按本次 diff 大小自动决定全显/摘要。 */
 export type EditDiffCollapsedLines = number | "auto";
+/** 折叠预览行数：固定行数，或 auto（纯增/删最多 3 行，删加混合最多 5 行）。 */
+export type DiffCollapsedPreviewLines = number | "auto";
+
+export const COLLAPSED_PREVIEW_PURE_LINES = 3;
+export const COLLAPSED_PREVIEW_MIXED_LINES = 5;
 export type FooterGitStatsMode = "working" | "branch";
 export type FooterTokenRateMode = "average" | "live";
 export type ScrollButtonMode = "dock" | "native";
@@ -29,8 +34,8 @@ export interface ToolDisplayConfig {
 	editDiffCollapsedLines: EditDiffCollapsedLines;
 	/** Write-only collapsed body lines. 0 = summary line plus `diffCollapsedPreviewLines`. */
 	writeDiffCollapsedLines: number;
-	/** 折叠时先露几行改动，给“这改得对不对”一个即时判断；0 = 只留摘要。 */
-	diffCollapsedPreviewLines: number;
+	/** 折叠时先露几行改动；auto = 纯增/删最多 3 行、删加混合最多 5 行，0 = 只留摘要。 */
+	diffCollapsedPreviewLines: DiffCollapsedPreviewLines;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 }
@@ -50,7 +55,11 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	 * 0 = change summary + expand hint, followed by the shared collapsed preview.
 	 */
 	writeDiffCollapsedLines: 0,
-	diffCollapsedPreviewLines: 3,
+	/**
+	 * Auto: up to 3 preview lines for a pure add/remove block, up to 5 when
+	 * the block has both removals and additions. 0 = summary only.
+	 */
+	diffCollapsedPreviewLines: "auto",
 	diffWordWrap: true,
 	/**
 	 * Expanded TaskList body cap. Tool Input/Output and diffs use their own settings;
@@ -68,7 +77,7 @@ export type Config = {
 	diffSplitMinWidth: number;
 	editDiffCollapsedLines: EditDiffCollapsedLines;
 	writeDiffCollapsedLines: number;
-	diffCollapsedPreviewLines: number;
+	diffCollapsedPreviewLines: DiffCollapsedPreviewLines;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 	expandedInputMaxLines: number;
@@ -299,6 +308,17 @@ export function pickEditDiffCollapsedLines(
 	return Math.min(500, Math.max(0, Math.floor(n)));
 }
 
+/** 折叠预览行数：`auto` 透传，其余按 0..20 的整数归一化。 */
+export function pickDiffCollapsedPreviewLines(
+	value: unknown,
+	fallback: DiffCollapsedPreviewLines = DEFAULT_CONFIG.diffCollapsedPreviewLines,
+): DiffCollapsedPreviewLines {
+	if (value === "auto") return "auto";
+	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(20, Math.max(0, Math.floor(n)));
+}
+
 /** toolLabelClip：0 表示按宽度自适应，其余夹到 8..500。 */
 export function pickToolLabelClip(value: unknown): number {
 	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -368,11 +388,9 @@ export function normalizeConfig(input: unknown): Config {
 			0,
 			500,
 		),
-		diffCollapsedPreviewLines: pickPositiveInt(
+		diffCollapsedPreviewLines: pickDiffCollapsedPreviewLines(
 			source.diffCollapsedPreviewLines,
 			DEFAULT_CONFIG.diffCollapsedPreviewLines,
-			0,
-			20,
 		),
 		diffWordWrap: source.diffWordWrap !== false,
 		expandedPreviewMaxLines: pickPositiveInt(

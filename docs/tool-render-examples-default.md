@@ -89,7 +89,7 @@ Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片�
  ─────────────────────────────────────────────
 ```
 
-`editDiffCollapsedLines: 0` shows a one-line change-count summary, an expand hint, and up to 3 preview lines (`diffCollapsedPreviewLines`); expanding still shows the full diff:
+`editDiffCollapsedLines: 0` shows a one-line change-count summary, an expand hint, and preview lines (`diffCollapsedPreviewLines`): auto = up to 3 lines for pure additions/removals, up to 5 when a block has both. Expanding still shows the full diff:
 
 ```text
  ✓ Edit sample.ts

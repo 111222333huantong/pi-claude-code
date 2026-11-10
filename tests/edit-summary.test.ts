@@ -80,6 +80,22 @@ test("edit collapsed lines accepts auto/zero without changing the write setting"
 	assert.ok(DIFF_COLLAPSED_LINES_VALUES.includes("0"), "the settings panel offers summary-only");
 });
 
+test("collapsed preview 行数接受 auto，固定值夹到 0..20", () => {
+	assert.equal(normalizeConfig({}).diffCollapsedPreviewLines, "auto");
+	assert.equal(
+		normalizeConfig({ diffCollapsedPreviewLines: "auto" }).diffCollapsedPreviewLines,
+		"auto",
+	);
+	assert.equal(normalizeConfig({ diffCollapsedPreviewLines: 0 }).diffCollapsedPreviewLines, 0);
+	assert.equal(normalizeConfig({ diffCollapsedPreviewLines: "5" }).diffCollapsedPreviewLines, 5);
+	assert.equal(normalizeConfig({ diffCollapsedPreviewLines: -2 }).diffCollapsedPreviewLines, 0);
+	assert.equal(normalizeConfig({ diffCollapsedPreviewLines: 99 }).diffCollapsedPreviewLines, 20);
+	assert.equal(
+		normalizeConfig({ diffCollapsedPreviewLines: "invalid" }).diffCollapsedPreviewLines,
+		"auto",
+	);
+});
+
 test("auto edit preview expands small diffs and summarizes large ones", () => {
 	const auto = {
 		...DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -119,7 +135,7 @@ test("auto edit preview expands small diffs and summarizes large ones", () => {
 	assert.match(expanded, /new 0/);
 });
 
-test("折叠大 diff 先露 3 行改动，展开入口仍是摘要行", () => {
+test("删加混合的折叠预览 auto 给 5 行，展开入口仍是摘要行", () => {
 	const rows = ["@@ -1,20 +1,20 @@", " 1|same"];
 	for (let index = 0; index < 9; index++) rows.push(`-${index + 2}|old ${index}`);
 	for (let index = 0; index < 9; index++) rows.push(`+${index + 2}|new ${index}`);
@@ -131,7 +147,7 @@ test("折叠大 diff 先露 3 行改动，展开入口仍是摘要行", () => {
 		"",
 	) as HintComponent;
 	const plain = plainLines(component);
-	assert.equal(plain.length, 4, "摘要 + 3 行预览");
+	assert.equal(plain.length, 6, "摘要 + 5 行预览");
 	assert.match(plain[0]!, /↳ \+9 -9 · .*to show more/);
 	assert.match(plain.slice(1).join("\n"), /old 0/);
 	assert.match(plain.slice(1).join("\n"), /new 0/);
@@ -141,7 +157,7 @@ test("折叠大 diff 先露 3 行改动，展开入口仍是摘要行", () => {
 	assert.equal(component.isCollapsedHintLine("不存在的行"), false);
 });
 
-test("折叠预览跳过与删除行重复的括号和空白，直接露新增内容", () => {
+test("纯追加的折叠预览 auto 只给 3 行，并跳过重复括号和空白", () => {
 	const rows = [
 		"@@ -1,3 +1,16 @@",
 		" 1|export function greet(name: string) {",
@@ -204,11 +220,12 @@ test("折叠预览在多个改动块中选最大块，而不是第一块小改�
 		"",
 	) as HintComponent;
 	const plain = plainLines(component);
-	assert.equal(plain.length, 4, "摘要 + 3 行预览");
+	assert.equal(plain.length, 6, "摘要 + 5 行预览（删加混合）");
 	assert.doesNotMatch(plain.join("\n"), /export const a = 1;/);
 	assert.match(plain.join("\n"), /old 1/);
 	assert.match(plain.join("\n"), /new 1/);
 	assert.match(plain.join("\n"), /new 2/);
+	assert.match(plain.join("\n"), /new 3/);
 });
 
 test("折叠预览固定行数：超长代码行不靠换行撑高卡片", () => {
@@ -225,7 +242,7 @@ test("折叠预览固定行数：超长代码行不靠换行撑高卡片", () =>
 			"",
 		) as HintComponent;
 		const rendered = component.render(width);
-		assert.equal(rendered.length, 4, `width ${width}: 摘要 + 3 行预览，不随换行膨胀`);
+		assert.equal(rendered.length, 6, `width ${width}: 摘要 + 5 行预览，不随换行膨胀`);
 		assert.ok(rendered.every((line) => visibleWidth(line) <= width));
 	}
 });

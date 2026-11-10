@@ -126,7 +126,7 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "diffSplitMinWidth": 120,                // min terminal width for side-by-side columns
   "editDiffCollapsedLines": "auto",        // edit collapse: auto = small diffs in full, large diffs summary-only; number = fixed lines; 0 = summary only
   "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = summary line only
-  "diffCollapsedPreviewLines": 3,          // preview lines under a collapsed diff; 0 = summary only
+  "diffCollapsedPreviewLines": "auto",     // collapsed preview: auto = up to 3 lines for pure adds/removes, up to 5 for mixed; 0 = summary only
   "diffWordWrap": true,                    // wrap long diff lines
 
   // thinking

@@ -336,7 +336,7 @@ async function generateDefault() {
 				"4. edit/write rich diff",
 				[
 					fence(renderLines(editCall, 46)),
-					"`editDiffCollapsedLines: 0` shows a one-line change-count summary, an expand hint, and up to 3 preview lines (`diffCollapsedPreviewLines`); expanding still shows the full diff:",
+					"`editDiffCollapsedLines: 0` shows a one-line change-count summary, an expand hint, and preview lines (`diffCollapsedPreviewLines`): auto = up to 3 lines for pure additions/removals, up to 5 when a block has both. Expanding still shows the full diff:",
 					fence(renderEditSummary("ed-summary", editDiff)),
 					"长 diff 提示：",
 					fence([longHint]),
@@ -1048,7 +1048,7 @@ async function generateCompact() {
 						),
 						...renderLines(write),
 					]),
-					"`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header, and `diffCollapsedPreviewLines` still previews the change:",
+					'`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round\'s tool counts. The zero-line summary row carries the counts, colored the same as the diff header, and `diffCollapsedPreviewLines: "auto"` still previews the change (up to 3 lines, or up to 5 for a mixed block):',
 					fence(renderEditSummary("ce-summary", editDiff)),
 					"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
 					fence(tailLayout),

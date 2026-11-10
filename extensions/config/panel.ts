@@ -63,6 +63,7 @@ import {
 	MAX_STARTUP_SLOGAN_LENGTH,
 	mergeExcludeRendererCandidates,
 	pickCompletedPreviewLines,
+	pickDiffCollapsedPreviewLines,
 	pickEditDiffCollapsedLines,
 	pickPositiveInt,
 	pickPositiveNumber,
@@ -577,11 +578,11 @@ export async function showCcstylePanel(
 			id: "diffCollapsedPreviewLines",
 			label: "Collapsed preview",
 			description:
-				"Lines shown under a collapsed diff so you can judge the change without expanding. 0 = summary only.",
+				"Lines shown under a collapsed diff. Auto = up to 3 for pure additions/removals, up to 5 when the block has both sides. 0 = summary only.",
 			currentValue: String(config.diffCollapsedPreviewLines),
-			values: ["0", "1", "2", "3", "5"],
+			values: ["auto", "0", "1", "2", "3", "5"],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
-				buildNumberInputSubmenu(theme, diffCollapsedPreviewSetting, closeSubmenu),
+				buildNumberInputSubmenu(theme, diffCollapsedPreviewSetting, closeSubmenu, true),
 		};
 		const diffWordWrapSetting = {
 			id: "diffWordWrap",
@@ -1266,11 +1267,9 @@ export async function showCcstylePanel(
 					break;
 				case "diffCollapsedPreviewLines":
 					updateConfig({
-						diffCollapsedPreviewLines: pickPositiveInt(
+						diffCollapsedPreviewLines: pickDiffCollapsedPreviewLines(
 							value,
 							DEFAULT_CONFIG.diffCollapsedPreviewLines,
-							0,
-							20,
 						),
 					});
 					diffCollapsedPreviewSetting.currentValue = String(config.diffCollapsedPreviewLines);

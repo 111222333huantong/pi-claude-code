@@ -122,7 +122,7 @@ npm install --omit=optional pi-claude-code
   "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
   "editDiffCollapsedLines": "auto",        // edit 折叠：auto = 小 diff 全显、大 diff 只留摘要；数字 = 固定行数；0 = 仅摘要
   "writeDiffCollapsedLines": 0,            // write 折叠行数，0 只留创建摘要
-  "diffCollapsedPreviewLines": 3,          // 折叠时先露几行改动；0 = 只显示摘要
+  "diffCollapsedPreviewLines": "auto",     // 折叠预览：auto = 纯增/删最多 3 行、删加混合最多 5 行；0 = 只显示摘要
   "diffWordWrap": true,                    // 长 diff 行换行
 
   // thinking

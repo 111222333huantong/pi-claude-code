@@ -68,7 +68,7 @@ edit/write 折叠预览与展开正文复用 mode=on 的 Diff 配置。计数只
  ▌  1 │ hi
 ```
 
-`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header, and `diffCollapsedPreviewLines` still previews the change:
+`editDiffCollapsedLines: 0` also applies in compact mode; edit calls stay individually visible and do not join the round's tool counts. The zero-line summary row carries the counts, colored the same as the diff header, and `diffCollapsedPreviewLines: "auto"` still previews the change (up to 3 lines, or up to 5 for a mixed block):
 
 ```text
  ✓ edit sample.ts

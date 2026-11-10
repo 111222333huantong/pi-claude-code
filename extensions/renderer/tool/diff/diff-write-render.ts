@@ -612,7 +612,7 @@ export function renderWriteDiffResult(
 					countWriteDiffStats(content, options.previousContent, options.fileExistedBeforeWrite),
 				);
 				const previewRows: string[] = [];
-				if (live.diffCollapsedPreviewLines > 0 && mode !== "summary") {
+				if (live.diffCollapsedPreviewLines !== 0 && mode !== "summary") {
 					let previewEntries: ParsedDiffEntry[] | undefined;
 					if (options.fileExistedBeforeWrite !== true) {
 						previewEntries = buildWriteEntries(lines);

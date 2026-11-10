@@ -5,7 +5,12 @@
  * 这里从第一处改动往前带一行 context，取 N 行，用和展开态同一套行号/背景/指示条
  * 渲染，但跳过 Shiki：折叠态本来就是为了省掉全量高亮，预览也不该把它重新拉起来。
  */
-import type { DiffIndicatorMode } from "../../../config/config.ts";
+import {
+	COLLAPSED_PREVIEW_MIXED_LINES,
+	COLLAPSED_PREVIEW_PURE_LINES,
+	type DiffCollapsedPreviewLines,
+	type DiffIndicatorMode,
+} from "../../../config/config.ts";
 import { buildInlineHighlightMap, buildSplitRows } from "./diff-inline.ts";
 import type { RenderedRow } from "./diff-layout.ts";
 import { renderUnified } from "./diff-layout.ts";
@@ -18,44 +23,28 @@ import { normalizeDiffRenderWidth } from "./diff-presentation.ts";
  *
  * 追加到文件末尾时，diff 常把最后的 `}` 记成 `-}` / `+}`，第一段只有一对括号，
  * 真正新增的内容在后面；覆盖写也可能先来一行 `const x` → `export const x` 的小改名。
- * 只按顺序取第一段，3 行预算全被这种噪声吃掉，所以这里先挑最大的改动块。
+ * 只按顺序取第一段，预算全被这种噪声吃掉，所以这里先挑最大的改动块。
  *
- * 块内再按删/加行数比例分配预算：追加块是 1 删 + 27 加时，3 行全给新增，
- * 不会浪费在唯一那行删除上。块本身放得下时才带一行非空 context 做定位。
+ * 行数：`auto` 时纯增/删最多 3 行，删加混合最多 5 行。块内按删/加行数比例分配，
+ * 追加块是 1 删 + 27 加时，预算全给新增，不会浪费在唯一那行删除上。
+ * 内容放得下时才带一行非空 context 做定位。
  */
 export function selectCollapsedPreviewEntries(
 	entries: ParsedDiffEntry[],
-	maxLines: number,
+	maxLines: DiffCollapsedPreviewLines,
 ): DiffLineEntry[] {
-	if (maxLines <= 0) return [];
+	if (maxLines === 0) return [];
 	const blocks = collectChangeBlocks(entries);
 	if (blocks.length === 0) {
+		const fallback = maxLines === "auto" ? COLLAPSED_PREVIEW_PURE_LINES : maxLines;
 		return entries
 			.filter((entry): entry is DiffLineEntry => entry.kind === "line")
-			.slice(0, maxLines);
+			.slice(0, fallback);
 	}
 
 	let block = blocks[0]!;
 	for (const candidate of blocks) {
 		if (candidate.length > block.length) block = candidate;
-	}
-
-	const blockStart = entries.indexOf(block[0]!);
-	let contextBefore: DiffLineEntry | undefined;
-	for (let index = blockStart - 1; index >= 0; index--) {
-		const entry = entries[index]!;
-		if (entry.kind !== "line") break;
-		if (entry.lineKind === "context" && entry.content.trim() !== "") {
-			contextBefore = entry;
-			break;
-		}
-	}
-
-	// 块本身占满预算时不再带 context；否则留一行给改动前的定位行。
-	const withContext = contextBefore !== undefined && block.length < maxLines;
-	const budget = Math.max(0, maxLines - (withContext ? 1 : 0));
-	if (block.length <= budget) {
-		return withContext && contextBefore ? [contextBefore, ...block] : block;
 	}
 
 	const removals = block.filter((entry) => entry.lineKind === "remove");
@@ -72,9 +61,39 @@ export function selectCollapsedPreviewEntries(
 	const hasMeaningful = meaningfulRemovals.length + meaningfulAdds.length > 0;
 	const previewRemovals = hasMeaningful ? meaningfulRemovals : removals;
 	const previewAdds = hasMeaningful ? meaningfulAdds : adds;
+	const contentCount = previewRemovals.length + previewAdds.length;
+	const limit =
+		maxLines === "auto"
+			? meaningfulRemovals.length > 0 && meaningfulAdds.length > 0
+				? COLLAPSED_PREVIEW_MIXED_LINES
+				: COLLAPSED_PREVIEW_PURE_LINES
+			: maxLines;
+	if (limit <= 0) return [];
+
+	const blockStart = entries.indexOf(block[0]!);
+	let contextBefore: DiffLineEntry | undefined;
+	for (let index = blockStart - 1; index >= 0; index--) {
+		const entry = entries[index]!;
+		if (entry.kind !== "line") break;
+		if (entry.lineKind === "context" && entry.content.trim() !== "") {
+			contextBefore = entry;
+			break;
+		}
+	}
+
+	// 内容本身占满预算时不再带 context；否则留一行给改动前的定位行。
+	const withContext = contextBefore !== undefined && contentCount < limit;
+	const budget = Math.max(0, limit - (withContext ? 1 : 0));
+	if (contentCount <= budget) {
+		const preview = block.filter(
+			(entry) => previewRemovals.includes(entry) || previewAdds.includes(entry),
+		);
+		return withContext && contextBefore ? [contextBefore, ...preview] : preview;
+	}
+
 	let removalQuota = Math.min(
 		previewRemovals.length,
-		Math.floor((budget * previewRemovals.length) / block.length),
+		Math.floor((budget * previewRemovals.length) / contentCount),
 	);
 	let addQuota = Math.min(previewAdds.length, budget - removalQuota);
 	// 一侧太短填不满预算时，把剩余名额补给另一侧。

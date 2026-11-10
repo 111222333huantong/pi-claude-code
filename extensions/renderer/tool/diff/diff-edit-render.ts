@@ -209,7 +209,7 @@ export function renderEditDiffResult(
 			if (!options.expanded && (live.editDiffCollapsedLines === 0 || autoCollapsed)) {
 				const summary = renderEditCollapsedSummaryLine(parsed.stats, safeWidth, theme, hovered);
 				const previewRows: string[] = [];
-				if (live.diffCollapsedPreviewLines > 0 && mode !== "summary") {
+				if (live.diffCollapsedPreviewLines !== 0 && mode !== "summary") {
 					collapsedLineNumberWidth ??= getLineNumberWidth(renderEntries, false);
 					const preview = renderCollapsedPreview(
 						selectCollapsedPreviewEntries(renderEntries, live.diffCollapsedPreviewLines),

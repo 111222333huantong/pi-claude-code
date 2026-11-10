@@ -141,6 +141,76 @@ test("折叠大 diff 先露 3 行改动，展开入口仍是摘要行", () => {
 	assert.equal(component.isCollapsedHintLine("不存在的行"), false);
 });
 
+test("折叠预览跳过与删除行重复的括号和空白，直接露新增内容", () => {
+	const rows = [
+		"@@ -1,3 +1,16 @@",
+		" 1|export function greet(name: string) {",
+		" 2|  return `Hi, ${name}!`;",
+		"-3|}",
+		"+3|}",
+		"+4|",
+		"+5|export const demoRows = [",
+		'+6|  { id: 1, name: "alpha", score: 10 },',
+		'+7|  { id: 2, name: "bravo", score: 20 },',
+		'+8|  { id: 3, name: "charlie", score: 30 },',
+		'+9|  { id: 4, name: "delta", score: 40 },',
+		'+10|  { id: 5, name: "echo", score: 50 },',
+		'+11|  { id: 6, name: "foxtrot", score: 60 },',
+		'+12|  { id: 7, name: "golf", score: 70 },',
+		'+13|  { id: 8, name: "hotel", score: 80 },',
+		'+14|  { id: 9, name: "india", score: 90 },',
+		'+15|  { id: 10, name: "juliet", score: 100 },',
+		"+16|];",
+	];
+	const component = renderEditDiffResult(
+		{ diff: rows.join("\n") },
+		{ expanded: false },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 0 },
+		theme,
+		"",
+	) as HintComponent;
+	const plain = plainLines(component);
+	assert.equal(plain.length, 4, "摘要 + 3 行预览");
+	assert.match(plain[1]!, /export const demoRows = \[/);
+	assert.match(plain[2]!, /id: 1/);
+	assert.match(plain[3]!, /id: 2/);
+	assert.doesNotMatch(plain.slice(1).join("\n"), /^\s*\d+ │ \}$/m, "不露单独的括号");
+});
+
+test("折叠预览在多个改动块中选最大块，而不是第一块小改名", () => {
+	const rows = [
+		"@@ -1,10 +1,10 @@",
+		" 1|line1",
+		" 2|line2",
+		"-3|const a = 1;",
+		"+3|export const a = 1;",
+		" 4|line4",
+		" 5|line5",
+		"-6|old 1",
+		"-7|old 2",
+		"-8|old 3",
+		"-9|old 4",
+		"+6|new 1",
+		"+7|new 2",
+		"+8|new 3",
+		"+9|new 4",
+		" 10|line10",
+	];
+	const component = renderEditDiffResult(
+		{ diff: rows.join("\n") },
+		{ expanded: false },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 0 },
+		theme,
+		"",
+	) as HintComponent;
+	const plain = plainLines(component);
+	assert.equal(plain.length, 4, "摘要 + 3 行预览");
+	assert.doesNotMatch(plain.join("\n"), /export const a = 1;/);
+	assert.match(plain.join("\n"), /old 1/);
+	assert.match(plain.join("\n"), /new 1/);
+	assert.match(plain.join("\n"), /new 2/);
+});
+
 test("折叠预览固定行数：超长代码行不靠换行撑高卡片", () => {
 	const long = `const value = "${"x".repeat(300)}";`;
 	const rows = ["@@ -1,20 +1,20 @@", " 1|same", `-2|${long}`, `+2|${long}y`];

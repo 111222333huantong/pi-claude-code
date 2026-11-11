@@ -3,6 +3,7 @@ import { Loader, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { formatDuration, formatTokens } from "../../utils/format.ts";
 import { interruptShortcutText } from "../../utils/key-hints.ts";
+import { createTokenSmoother } from "../../utils/token-smoothing.ts";
 import { hexToFgAnsi, RESET } from "./spinner-color.ts";
 import {
 	loaderDebugStats,
@@ -315,6 +316,9 @@ export default function (pi: ExtensionAPI): void {
 	let responseLength = 0;
 	let responseTextBlockLengths: number[] = [];
 	let providerOutputTokens = 0;
+	// 供 working 行 token 芯片平滑计数：provider 一次给 40–110 字符（≈10–30
+	// tokens），直接显示会整段跳。这里缓存一个显示值，每帧向真实值缓动。
+	const tokenSmoother = createTokenSmoother();
 	let thinkingStatus: "thinking" | number /* duration ms */ | null = null;
 	let thinkingStartTime = 0;
 	let thoughtForSetAt = 0;
@@ -501,7 +505,16 @@ export default function (pi: ExtensionAPI): void {
 	// ------------------------------------------------------------------------
 
 	function tokenCount(): number {
+		// 真实目标值（无副作用）：事件处理里用它判断是否从 0 起步。
 		return providerOutputTokens || Math.max(0, Math.round(responseLength / 4));
+	}
+
+	/**
+	 * working 行显示用的平滑值。只在这里推进动画时钟，避免事件处理里
+	 * 读取显示值时把缓动时间戳打乱。
+	 */
+	function displayTokenCount(now = Date.now()): number {
+		return tokenSmoother.next(tokenCount(), now);
 	}
 
 	function toolLabel(toolName: unknown): string {
@@ -521,7 +534,7 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	function buildWorkingMessage(): string {
-		const tokens = tokenCount();
+		const tokens = displayTokenCount();
 		// Claude Code shape: `Crafting… (Reading 2 files · esc to interrupt · ↓ 1.4k tokens)`
 		// 耗时与 tok/s 收口到回合统计行（agent-summary），working 行保持安静。
 		const statusParts: string[] = [`${interruptShortcutText()} to interrupt`];

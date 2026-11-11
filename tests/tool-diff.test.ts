@@ -945,6 +945,49 @@ test("external write owner disables rich diff instead of degrading every card", 
 	);
 });
 
+test("theme palette normalizes diff backgrounds for dark and light terminals", () => {
+	const previous = config.diffPalette;
+	const makeTheme = (fg: Record<string, string>, bg: Record<string, string>) =>
+		({
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => text,
+			getFgAnsi: (slot: string) => fg[slot],
+			getBgAnsi: (slot: string) => bg[slot],
+		}) as any;
+	try {
+		config.diffPalette = "theme";
+		const dark = resolveDiffPalette(
+			makeTheme(
+				{
+					toolDiffAdded: "\x1b[38;2;55;179;74m",
+					toolDiffRemoved: "\x1b[38;2;255;110;98m",
+				},
+				{ toolPendingBg: "\x1b[48;2;28;32;51m" },
+			),
+		);
+		assert.equal(dark.addRowBgAnsi, "\x1b[48;2;31;61;36m");
+		assert.equal(dark.removeRowBgAnsi, "\x1b[48;2;61;33;31m");
+		assert.equal(dark.addEmphasisBgAnsi, "\x1b[48;2;33;94;43m");
+		assert.equal(dark.removeEmphasisBgAnsi, "\x1b[48;2;94;38;33m");
+
+		const light = resolveDiffPalette(
+			makeTheme(
+				{
+					toolDiffAdded: "\x1b[38;2;0;90;22m",
+					toolDiffRemoved: "\x1b[38;2;168;20;23m",
+				},
+				{ toolPendingBg: "\x1b[48;2;214;225;241m" },
+			),
+		);
+		assert.equal(light.addRowBgAnsi, "\x1b[48;2;228;246;233m");
+		assert.equal(light.removeRowBgAnsi, "\x1b[48;2;246;228;229m");
+		assert.equal(light.addEmphasisBgAnsi, "\x1b[48;2;206;241;214m");
+		assert.equal(light.removeEmphasisBgAnsi, "\x1b[48;2;241;206;206m");
+	} finally {
+		config.diffPalette = previous;
+	}
+});
+
 test("claude palette returns exact CC backgrounds and skips removed-line highlight", () => {
 	const previous = config.diffPalette;
 	const theme: any = { fg: (_c: string, t: string) => t };

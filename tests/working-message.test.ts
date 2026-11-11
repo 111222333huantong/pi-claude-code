@@ -35,6 +35,24 @@ function visible(message: string | undefined): string {
 	return (message ?? "").replace(/\u001B\[[0-9;]*m/g, "");
 }
 
+/**
+ * The working-row chip eases toward the real count instead of jumping a whole
+ * provider chunk at once, so wait for the animation to reach the target.
+ */
+async function waitForTokens(
+	messages: (string | undefined)[],
+	pattern: RegExp,
+	timeoutMs = 4_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const last = messages.at(-1);
+		if (last && pattern.test(visible(last))) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	assert.fail(`working row never matched ${pattern}: ${visible(messages.at(-1))}`);
+}
+
 test("working message survives agent_end until the run settles", async () => {
 	const { events, messages, ctx } = install();
 
@@ -137,7 +155,7 @@ test("token count accumulates across deltas and resets on the next turn", async 
 		},
 		ctx,
 	);
-	assert.match(visible(messages.at(-1) ?? ""), /↓ 4 tokens/);
+	await waitForTokens(messages, /↓ 4 tokens/);
 
 	// Provider usage replaces the live estimate when available.
 	await events.get("message_update")?.(
@@ -155,7 +173,7 @@ test("token count accumulates across deltas and resets on the next turn", async 
 		},
 		ctx,
 	);
-	assert.match(visible(messages.at(-1) ?? ""), /↓ 37 tokens/);
+	await waitForTokens(messages, /↓ 37 tokens/);
 
 	// 同一条用户指令的下一段 turn 不清 token：工具后继续累计。
 	await events.get("turn_end")?.({}, ctx);
@@ -182,7 +200,7 @@ test("tool call argument deltas count toward the token total", async () => {
 		},
 		ctx,
 	);
-	assert.match(messages.at(-1) ?? "", /↓ 4 tokens/);
+	await waitForTokens(messages, /↓ 4 tokens/);
 	await events.get("turn_end")?.({}, ctx);
 });
 

@@ -32,18 +32,35 @@ export interface DiffPalette {
 	removeEmphasisBgAnsi: string;
 }
 
-const ADD_ROW_BACKGROUND_MIX_RATIO = 0.04;
-const REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.12;
-const ADD_INLINE_EMPHASIS_MIX_RATIO = 0.26;
-const REMOVE_INLINE_EMPHASIS_MIX_RATIO = 0.5;
-const ADDITION_TINT_TARGET: RgbColor = { r: 84, g: 190, b: 118 };
-const DELETION_TINT_TARGET: RgbColor = { r: 232, g: 95, b: 122 };
-// GitHub dark 删除行底 ~#67060c：混向深酒红目标，压掉主题基底的粉/灰感。
-const DELETION_ROW_TARGET: RgbColor = { r: 103, g: 6, b: 12 };
-const DELETION_EMPHASIS_TARGET: RgbColor = { r: 160, g: 17, b: 23 };
-// 行底/强调底混完再向自身亮度去饱和，留灰感，避免纯色底过艳。
-const ROW_DESATURATE_RATIO = 0.3;
-const EMPHASIS_DESATURATE_RATIO = 0.2;
+/**
+ * 行底不再直接拿主题 toolSuccessBg/toolErrorBg 去混，而是取 diff 前景色的
+ * 色相，把亮度/饱和度归一到成熟 CLI 的暗色 tint 区间。主题自带的背景色
+ * 深浅差异很大（cc-dark 的行底只有 ~13% 亮度，Codex/Crush 在 ~18–22%），
+ * 直接混会把行底压得发闷，浅色主题又会过艳。
+ */
+interface DiffTintTarget {
+	lightness: number;
+	minSaturation: number;
+	maxSaturation: number;
+}
+
+const DARK_ROW_TINT: DiffTintTarget = { lightness: 0.18, minSaturation: 0.24, maxSaturation: 0.32 };
+const DARK_EMPHASIS_TINT: DiffTintTarget = {
+	lightness: 0.25,
+	minSaturation: 0.36,
+	maxSaturation: 0.48,
+};
+const LIGHT_ROW_TINT: DiffTintTarget = {
+	lightness: 0.93,
+	minSaturation: 0.36,
+	maxSaturation: 0.5,
+};
+const LIGHT_EMPHASIS_TINT: DiffTintTarget = {
+	lightness: 0.875,
+	minSaturation: 0.4,
+	maxSaturation: 0.55,
+};
+
 export const ANSI_BG_RESET = "\x1b[49m";
 
 /**
@@ -242,18 +259,68 @@ function rgbToBgAnsi(color: RgbColor): string {
 	return `\x1b[48;2;${r};${g};${b}m`;
 }
 
-function desaturateRgb(color: RgbColor, ratio: number): RgbColor {
-	const luma = (color.r * 299 + color.g * 587 + color.b * 114) / 1000;
-	return mixRgb(color, { r: luma, g: luma, b: luma }, ratio);
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, value));
 }
 
-function mixRgb(base: RgbColor, tint: RgbColor, ratio: number): RgbColor {
-	const clamped = Math.max(0, Math.min(1, ratio));
-	return {
-		r: base.r * (1 - clamped) + tint.r * clamped,
-		g: base.g * (1 - clamped) + tint.g * clamped,
-		b: base.b * (1 - clamped) + tint.b * clamped,
+function rgbToHsl(color: RgbColor): { h: number; s: number; l: number } {
+	const r = clamp01(color.r / 255);
+	const g = clamp01(color.g / 255);
+	const b = clamp01(color.b / 255);
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const lightness = (max + min) / 2;
+	if (max === min) {
+		return { h: 0, s: 0, l: lightness };
+	}
+
+	const delta = max - min;
+	const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+	let hue: number;
+	if (max === r) {
+		hue = (g - b) / delta + (g < b ? 6 : 0);
+	} else if (max === g) {
+		hue = (b - r) / delta + 2;
+	} else {
+		hue = (r - g) / delta + 4;
+	}
+	return { h: hue / 6, s: saturation, l: lightness };
+}
+
+function hslToRgb(color: { h: number; s: number; l: number }): RgbColor {
+	const { h, s, l } = color;
+	if (s <= 0) {
+		const value = Math.round(l * 255);
+		return { r: value, g: value, b: value };
+	}
+
+	const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+	const p = 2 * l - q;
+	const hueToChannel = (rawT: number): number => {
+		let t = rawT;
+		if (t < 0) t += 1;
+		if (t > 1) t -= 1;
+		if (t < 1 / 6) return p + (q - p) * 6 * t;
+		if (t < 1 / 2) return q;
+		if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+		return p;
 	};
+
+	return {
+		r: Math.round(hueToChannel(h + 1 / 3) * 255),
+		g: Math.round(hueToChannel(h) * 255),
+		b: Math.round(hueToChannel(h - 1 / 3) * 255),
+	};
+}
+
+/** 取前景色色相，把亮度和饱和度夹到目标区间，得到柔和的 diff 行底。 */
+function tintedBackground(fg: RgbColor, target: DiffTintTarget): RgbColor {
+	const hsl = rgbToHsl(fg);
+	return hslToRgb({
+		h: hsl.h,
+		s: Math.max(target.minSaturation, Math.min(target.maxSaturation, hsl.s)),
+		l: target.lightness,
+	});
 }
 
 function extractThemeBackgroundAnsi(text: string): string | undefined {
@@ -311,52 +378,25 @@ export function readThemeAnsi(
 export function resolveDiffPalette(theme: DiffTheme): DiffPalette {
 	// claude 固定板：与主题无关的 CC 精确红绿（实测值，见 pi-claudify 语法文档）。
 	if (config.diffPalette === "claude") return CLAUDE_DIFF_PALETTE;
-	const fallbackBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolPendingBg")) ??
+	const baseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolPendingBg")) ??
 		parseAnsiColorCode(readThemeAnsi(theme, "bg", "userMessageBg")) ?? { r: 32, g: 35, b: 42 };
-	// 新增行/删除行的文字和底色统一取 success、error，与工具标题、footer 计数同源。
-	const addBaseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolSuccessBg")) ?? fallbackBg;
-	const removeBaseBg = parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolErrorBg")) ?? addBaseBg;
-	const addFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "success")) ?? {
-		r: 88,
-		g: 173,
-		b: 88,
-	};
-	const removeFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "error")) ?? {
-		r: 196,
-		g: 98,
-		b: 98,
-	};
-	const addTint = mixRgb(addFg, ADDITION_TINT_TARGET, 0.35);
-	const removeTint = mixRgb(removeFg, DELETION_TINT_TARGET, 0.65);
-
-	const addRowBg = desaturateRgb(
-		mixRgb(addBaseBg, addTint, ADD_ROW_BACKGROUND_MIX_RATIO),
-		ROW_DESATURATE_RATIO,
-	);
-	const addEmphasisBg = desaturateRgb(
-		mixRgb(addBaseBg, addTint, ADD_INLINE_EMPHASIS_MIX_RATIO),
-		EMPHASIS_DESATURATE_RATIO,
-	);
-	// 暗色基底下向 GitHub 深酒红（~#67060c）加权，压掉主题基底的粉/灰感；
-	// 浅色基底保持原 tint 口径，免得行底深得盖过文字。
-	const removeBaseLuminance =
-		(removeBaseBg.r * 299 + removeBaseBg.g * 587 + removeBaseBg.b * 114) / 1000;
-	const removeRowTarget = removeBaseLuminance < 128 ? DELETION_ROW_TARGET : removeTint;
-	const removeEmphasisTarget = removeBaseLuminance < 128 ? DELETION_EMPHASIS_TARGET : removeTint;
-	const removeRowBg = desaturateRgb(
-		mixRgb(removeBaseBg, removeRowTarget, REMOVE_ROW_BACKGROUND_MIX_RATIO),
-		ROW_DESATURATE_RATIO,
-	);
-	const removeEmphasisBg = desaturateRgb(
-		mixRgb(removeBaseBg, removeEmphasisTarget, REMOVE_INLINE_EMPHASIS_MIX_RATIO),
-		EMPHASIS_DESATURATE_RATIO,
-	);
+	const baseLuminance = (baseBg.r * 299 + baseBg.g * 587 + baseBg.b * 114) / 1000;
+	const dark = baseLuminance < 128;
+	// 色相取主题里真正用于 diff 的前景 slot；老主题没有时退回 success/error。
+	const addFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "toolDiffAdded")) ??
+		parseAnsiColorCode(readThemeAnsi(theme, "fg", "success")) ?? { r: 88, g: 173, b: 88 };
+	const removeFg = parseAnsiColorCode(readThemeAnsi(theme, "fg", "toolDiffRemoved")) ??
+		parseAnsiColorCode(readThemeAnsi(theme, "fg", "error")) ?? { r: 196, g: 98, b: 98 };
 
 	return {
-		addRowBgAnsi: rgbToBgAnsi(addRowBg),
-		removeRowBgAnsi: rgbToBgAnsi(removeRowBg),
-		addEmphasisBgAnsi: rgbToBgAnsi(addEmphasisBg),
-		removeEmphasisBgAnsi: rgbToBgAnsi(removeEmphasisBg),
+		addRowBgAnsi: rgbToBgAnsi(tintedBackground(addFg, dark ? DARK_ROW_TINT : LIGHT_ROW_TINT)),
+		removeRowBgAnsi: rgbToBgAnsi(tintedBackground(removeFg, dark ? DARK_ROW_TINT : LIGHT_ROW_TINT)),
+		addEmphasisBgAnsi: rgbToBgAnsi(
+			tintedBackground(addFg, dark ? DARK_EMPHASIS_TINT : LIGHT_EMPHASIS_TINT),
+		),
+		removeEmphasisBgAnsi: rgbToBgAnsi(
+			tintedBackground(removeFg, dark ? DARK_EMPHASIS_TINT : LIGHT_EMPHASIS_TINT),
+		),
 	};
 }
 

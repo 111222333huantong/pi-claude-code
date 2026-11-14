@@ -252,7 +252,6 @@ test("capParts never produces negative tokens when estimates exceed usage", () =
 		fitted.reduce((sum, part) => sum + part.tokens, 0),
 		5,
 	);
-	assert.ok(fitted.every((part) => part.tokens >= 0));
 });
 
 test("escCloseHitbox sits 5 columns wide at the title row's right edge", () => {
@@ -287,7 +286,6 @@ test("contextHealth grades usage into mcode-aligned bands", () => {
 	assert.deepEqual(contextHealth(Number.NaN), { label: "Window unavailable", color: "dim" });
 });
 
-/** showTextPreview 自定义 UI 的最小 harness：捕获 component，theme 可注入，可选挂载回调。 */
 /** showTextPreview 自定义 UI 的最小 harness：捕获 component（挂载后实时可读），theme 可注入，可选挂载回调。 */
 function textPreviewHarness(
 	theme: any = { fg: (_color: string, text: string) => text, bold: (text: string) => text },

@@ -595,13 +595,31 @@ export default function (pi: ExtensionAPI): void {
 		providerOutputTokens = message ? outputUsage(message) : 0;
 	}
 
+	/** ctx 失效后 hasUI/ui getter 会抛错；探测时吞掉并视同无 UI。 */
+	function ctxHasUI(): boolean {
+		try {
+			return activeCtx?.hasUI === true;
+		} catch {
+			return false;
+		}
+	}
+
+	/** ctx 失效后 ui getter 抛错时返回 undefined。 */
+	function ctxUI(): (WorkingUi & { theme?: unknown }) | undefined {
+		try {
+			return activeCtx?.ui;
+		} catch {
+			return undefined;
+		}
+	}
+
 	function syncWorkingMessage(force = false): void {
 		syncAttempts++;
-		if (!activeCtx?.hasUI) {
+		if (!ctxHasUI()) {
 			syncNoUi++;
 			return;
 		}
-		applyThemeColors((activeCtx.ui as { theme?: unknown })?.theme);
+		applyThemeColors(ctxUI()?.theme);
 		const rawMessage = buildWorkingMessage();
 		// Width-safe: truncate if wider than terminal.
 		const cols =
@@ -617,7 +635,7 @@ export default function (pi: ExtensionAPI): void {
 		lastWorkingMessage = nextMessage;
 		lastVisibleMessage = tail(nextMessage);
 		try {
-			activeCtx.ui.setWorkingMessage(nextMessage);
+			ctxUI()?.setWorkingMessage(nextMessage);
 			syncChanged++;
 			lastChangeAt = Date.now();
 			errorBurstLogged = false;
@@ -634,12 +652,12 @@ export default function (pi: ExtensionAPI): void {
 		lastWorkingMessage = null;
 		lastVisibleMessage = "";
 		lastChangeAt = Date.now();
-		if (!activeCtx?.hasUI) {
+		if (!ctxHasUI()) {
 			syncNoUi++;
 			return;
 		}
 		try {
-			activeCtx.ui.setWorkingMessage();
+			ctxUI()?.setWorkingMessage();
 		} catch (error) {
 			syncSetErrors++;
 			if (!errorBurstLogged) {
@@ -853,7 +871,11 @@ export default function (pi: ExtensionAPI): void {
 		turnStartedAt = Date.now();
 		lastTickAt = turnStartedAt;
 		stallLogged = false;
-		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
+		try {
+			applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
+		} catch {
+			/* stale ctx：跳过主题探测 */
+		}
 		turnStartTime = (_event as any)?.timestamp || Date.now();
 		if (!agentStartTime) agentStartTime = turnStartTime;
 		// 上游 token-rate 桥：同一条用户指令内复用速率起点，供 footer 速率芯片读取。
@@ -894,7 +916,12 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("message_update", async (event, ctx) => {
 		activeCtx = ctx as typeof activeCtx;
 		ensureRefreshLoop();
-		applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
+		// ctx 失效后 ui getter 会抛错：失效窗口内的事件不能逃逸异常。
+		try {
+			applyThemeColors((ctx as { ui?: { theme?: unknown } }).ui?.theme);
+		} catch {
+			/* stale ctx：跳过主题探测 */
+		}
 		const evt = (event as any)?.assistantMessageEvent;
 		if (!evt) return;
 		lastEvent = `message_update:${String(evt.type ?? "?")}`;

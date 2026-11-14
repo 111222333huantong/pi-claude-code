@@ -152,9 +152,9 @@ test("其他工具的 Input 折行与改动前逐行一致（新排版只给 cod
 		const rendered = view
 			.render(width)
 			.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
-		// 第 0 行是 " ├ Input"，Input 正文到空 rail 行为止
+		// 第 0 行是 " ├ Input"，Input 正文到 " └ Output" 为止
 		const inputRows = rendered
-			.slice(1, rendered.indexOf(" │", 1))
+			.slice(1, rendered.indexOf(" └ Output", 1))
 			.map((line) => line.slice(rail.length));
 		assert.deepEqual(inputRows, legacyRows(body), `${label} 的 Input 折行应与改动前一致`);
 	}
@@ -186,8 +186,8 @@ test("ExpandedToolIoView labels Input and Output sections", () => {
 			.every((line) => !line.includes("│")),
 		"output body stops the inner tree rail",
 	);
-	// Tree rail between sections.
-	assert.ok(lines.some((line) => line.trim() === "│"));
+	// Input 与 Output 之间不再有空白 rail 行（上游 f907375）：两段内容贴在一起。
+	assert.ok(!lines.some((line) => line.trim() === "│"));
 	// Short bodies stay fully visible — no show-more affordance.
 	assert.ok(!lines.some((line) => line.includes(SHOW_MORE_LABEL)));
 

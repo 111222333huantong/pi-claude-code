@@ -204,28 +204,39 @@ test("tool call argument deltas count toward the token total", async () => {
 	await events.get("turn_end")?.({}, ctx);
 });
 
-test("elapsed never appears in the working status（计时已迁到统计行）", async () => {
-	const { events, messages, ctx } = install();
+// Pi 的 ctx 失效后 getter 会抛错；定时器里逃逸的异常会直接终止 Pi 进程 (#41)。
+test("refresh timer stops quietly once the captured ctx goes stale", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const { events, messages } = install();
+	let stale = false;
+	let probes = 0;
+	const ctx = {
+		get hasUI() {
+			probes++;
+			if (stale)
+				throw new Error("This extension ctx is stale after session replacement or reload.");
+			return true;
+		},
+		get ui() {
+			if (stale) throw new Error("stale");
+			return { setWorkingMessage: (message?: string) => messages.push(message) };
+		},
+	};
+
 	await events.get("turn_start")?.({}, ctx);
+	stale = true;
+	assert.doesNotThrow(() => t.mock.timers.tick(1_000));
+	const probesAfterStale = probes;
+	t.mock.timers.tick(5_000);
+	assert.equal(probes, probesAfterStale, "loop must stop after the stale probe");
+
+	// 失效窗口内到达的事件也不应抛错或重新拉起循环。
 	await events.get("message_update")?.(
-		{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" } },
+		{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "abcd" } },
 		ctx,
 	);
-	assert.match(visible(messages.at(-1) ?? ""), /↓ \d+ tokens\)$/, "token 计数立即出现");
-
-	const realNow = Date.now;
-	Date.now = () => realNow() + 5000;
-	try {
-		await events.get("message_update")?.(
-			{ assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "!" } },
-			ctx,
-		);
-		const later = visible(messages.at(-1) ?? "");
-		assert.doesNotMatch(later, /· \d+s\)$/, "再久也不显示耗时");
-		assert.doesNotMatch(later, /tok\/s/, "working 行不显示速率");
-	} finally {
-		Date.now = realNow;
-	}
+	await events.get("turn_start")?.({}, ctx);
+	await events.get("session_shutdown")?.({}, ctx);
 });
 
 test("tool activity is named in the status line", async () => {

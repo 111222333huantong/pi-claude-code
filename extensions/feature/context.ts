@@ -18,6 +18,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { formatTokens, padLine } from "../utils/format.ts";
 import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
+import { setInjectedKeybindings } from "../utils/keybindings.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
 import { summarizeUsage, type UsageTotals } from "./statusline/usage.ts";
 
@@ -166,20 +167,6 @@ export function setPreviewCopyImpl(impl: ((text: string) => Promise<void>) | nul
 	copyTextImpl = impl ?? ((text) => copyToClipboard(text));
 }
 
-/** 1-based terminal hitbox of the [copy] button, one space left of [esc] on the same title row. */
-export function copyButtonHitbox(bounds: DialogBounds): {
-	row: number;
-	startCol: number;
-	endCol: number;
-} {
-	const esc = escCloseHitbox(bounds);
-	return {
-		row: esc.row,
-		startCol: esc.startCol - visibleWidth(COPY_LABEL) - 1,
-		endCol: esc.startCol - 2,
-	};
-}
-
 let activeContextOverlays = 0;
 
 /** fullscreen 输入包装用于把鼠标事件继续传给当前 context 主弹框或文本预览 overlay。 */
@@ -201,7 +188,8 @@ export async function showTextPreview(
 	activeContextOverlays++;
 	try {
 		await ctx.ui.custom(
-			(tui, theme, _keybindings, done) => {
+			(tui, theme, injectedKeybindings, done) => {
+				setInjectedKeybindings(injectedKeybindings);
 				ensureFullscreenMouseMotion(tui);
 				let scrollOffset = 0;
 				let pageSize = 1;
@@ -491,6 +479,7 @@ export async function showTextPreview(
 					maxHeight: "80%",
 					margin: 2,
 				},
+				blocked: { kind: "question", message: "Reviewing context" },
 			},
 		);
 	} finally {
@@ -808,7 +797,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 				let action: unknown;
 				try {
 					action = await ctx.ui.custom(
-						(tui, theme, _keybindings, done) => {
+						(tui, theme, injectedKeybindings, done) => {
+							setInjectedKeybindings(injectedKeybindings);
 							ensureFullscreenMouseMotion(tui);
 							let previewHitboxes: Array<{
 								key: PreviewKey;
@@ -1041,6 +1031,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								maxHeight: "90%",
 								margin: 1,
 							},
+							blocked: { kind: "question", message: "Reviewing context" },
 						},
 					);
 				} finally {

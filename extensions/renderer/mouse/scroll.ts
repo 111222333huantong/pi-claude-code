@@ -1,12 +1,7 @@
-import {
-	getKeybindings,
-	type Keybinding,
-	matchesKey,
-	truncateToWidth,
-	visibleWidth,
-} from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
+import { keybindings } from "../../utils/keybindings.ts";
 import {
 	OFFICIAL_SCROLL_TO_END_KEY,
 	patchRegistry,
@@ -217,7 +212,7 @@ function isScrollNavigationInput(data: string): boolean {
 			"tui.altScreen.nextPrompt",
 			"tui.altScreen.top",
 			"tui.altScreen.bottom",
-		].some((key) => getKeybindings().matches(data, key as Keybinding))
+		].some((key) => keybindings().matches(data, key))
 	) {
 		return true;
 	}

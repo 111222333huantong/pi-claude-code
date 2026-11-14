@@ -268,7 +268,7 @@ test("展开态：Output 未截断时，耗时单独成行", () => {
 	}
 });
 
-test("展开态：非 shell 不加尾部行", () => {
+test("展开态：非 shell 满 1s 也报耗时（fork 口径：read/grep/find/ls 与 shell 同规则）", () => {
 	const previousMode = config.mode;
 	config.mode = "on";
 	const hooks = installDefaultMode(new WriteExecutionMetadataStore());
@@ -284,9 +284,9 @@ test("展开态：非 shell 不加尾部行", () => {
 		});
 		const lines = render(tool).map((l) => l.replace(/\s+$/g, ""));
 		assert.equal(
-			lines.some((l: string) => /Took/.test(l)),
-			false,
-			`不该有耗时行: ${JSON.stringify(lines)}`,
+			lines.some((l: string) => /1\.2s/.test(l)),
+			true,
+			`慢 read 应有耗时行: ${JSON.stringify(lines)}`,
 		);
 	} finally {
 		hooks.shutdown();

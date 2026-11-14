@@ -1,9 +1,9 @@
 /**
  * Agent 回合摘要：统计一次 agent 运行的工具使用并格式化成摘要文本。
  *
- * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
- * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
- * 失败单独累计；另记回合耗时与输出 tokens（tok/s = output ÷ 回合耗时）。
+ * 分类：bash / read / edit / other（精确工具名；MCP 风格名归 other）。write 并入 edit。
+ * 计数：bash/powershell 按调用次数；read/edit（含 write）按非空 path/file_path 去重；other 按调用次数。
+ * 失败单独累计；另记回合耗时、输出 tokens（tok/s = output ÷ 回合耗时）与结束时刻。
  *
  * 呈现：`summarySegments` 分段（文字 + 语义色），渲染层自己拼行并上色；
  * `summaryMarkdown` 保留给旧调用与测试。尾段 `· 52.5s · 30.4 tok/s`。
@@ -11,21 +11,22 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { formatDuration } from "../../utils/format.ts";
+import { formatClockTime, formatDuration } from "../../utils/format.ts";
 import { currentTtftMs, formatTtft } from "../shell/token-rate.ts";
 
 /** 工具分类。 */
-export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
+export type AgentToolCategory = "bash" | "read" | "edit" | "other";
 
 /** 一次 agent 回合的统计快照。 */
 export type AgentSummaryData = {
 	commands: number;
 	reads: number;
 	edits: number;
-	writes: number;
 	others: number;
 	failed: number;
 	durationMs: number;
+	/** 回合结束时刻（epoch ms）。存进 entry，会话恢复时才能显示原来的时刻而不是“现在几点”。 */
+	endedAt: number;
 	/** 本回合 assistant 输出 tokens 总和；旧持久化 entry 无此字段（省略 tok/s 段）。 */
 	outputTokens?: number;
 	/** 首 token 延迟毫秒（读 token-rate 单例）；无首 token 时省略 TTFT 段。 */
@@ -36,8 +37,7 @@ export function classifyTool(toolName: string): AgentToolCategory {
 	const base = toolName.split(".").pop() ?? toolName;
 	if (base === "bash" || base === "powershell") return "bash";
 	if (base === "read") return "read";
-	if (base === "edit") return "edit";
-	if (base === "write") return "write";
+	if (base === "edit" || base === "write") return "edit";
 	return "other";
 }
 
@@ -56,7 +56,6 @@ export class AgentRunSummary {
 	commandCount = 0;
 	readFiles = new Set<string>();
 	editFiles = new Set<string>();
-	writeFiles = new Set<string>();
 	otherCount = 0;
 	failedCount = 0;
 	outputTokens = 0;
@@ -81,9 +80,6 @@ export class AgentRunSummary {
 			case "edit":
 				if (path) this.editFiles.add(path);
 				break;
-			case "write":
-				if (path) this.writeFiles.add(path);
-				break;
 			default:
 				this.otherCount++;
 		}
@@ -104,10 +100,10 @@ export class AgentRunSummary {
 			commands: this.commandCount,
 			reads: this.readFiles.size,
 			edits: this.editFiles.size,
-			writes: this.writeFiles.size,
 			others: this.otherCount,
 			failed: this.failedCount,
 			durationMs: now - this.startedAt,
+			endedAt: now,
 			outputTokens: this.outputTokens,
 		};
 	}
@@ -115,13 +111,12 @@ export class AgentRunSummary {
 
 const plural = (count: number) => (count === 1 ? "" : "s");
 
-/** 输出顺序：bash → read → edit → write → other → failed。 */
+/** 输出顺序：bash → read → edit → other → failed。 */
 function summaryParts(data: AgentSummaryData): string[] {
 	const parts: string[] = [];
 	if (data.commands) parts.push(`ran ${data.commands} command${plural(data.commands)}`);
 	if (data.reads) parts.push(`read ${data.reads} file${plural(data.reads)}`);
 	if (data.edits) parts.push(`edited ${data.edits} file${plural(data.edits)}`);
-	if (data.writes) parts.push(`wrote ${data.writes} file${plural(data.writes)}`);
 	if (data.others) parts.push(`${data.others} other tool${plural(data.others)}`);
 	if (data.failed) parts.push(`${data.failed} failed`);
 	return parts;
@@ -181,14 +176,20 @@ export function summarySegments(data: AgentSummaryData): SummarySegment[] {
 	}));
 }
 
-/** 统计尾段：有速率 → `52.5s · 30.4 tok/s · TTFT 812ms`；无速率 → 旧格式 `49s`（旧 entry 兼容）。 */
+/** 统计尾段：有速率 → `52.5s · 30.4 tok/s · TTFT 812ms · done 6:51 PM`；无速率 → `49s · done 6:51 PM`（旧 entry 兼容：缺 endedAt/ttft 自动省略对应段）。 */
 export function summaryTail(data: AgentSummaryData): string {
 	const rate = tokenRate(data);
 	const ttft =
-		typeof data.ttftMs === "number" && data.ttftMs > 0 ? ` · TTFT ${formatTtft(data.ttftMs)}` : "";
-	return rate !== null
-		? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s${ttft}`
-		: `${formatDuration(data.durationMs)}${ttft}`;
+		typeof data.ttftMs === "number" && data.ttftMs > 0 ? `TTFT ${formatTtft(data.ttftMs)}` : "";
+	const done =
+		typeof data.endedAt === "number" && data.endedAt > 0
+			? `done ${formatClockTime(data.endedAt)}`
+			: "";
+	const head =
+		rate !== null
+			? `${formatDurationPrecise(data.durationMs)} · ${rate.toFixed(1)} tok/s`
+			: formatDuration(data.durationMs);
+	return [head, ttft, done].filter(Boolean).join(" · ");
 }
 
 export function summaryMarkdown(

@@ -12,23 +12,24 @@ import {
 import agentSummaryFeature, {
 	AGENT_SUMMARY_ENTRY_TYPE,
 } from "../extensions/feature/agent-summary/index.ts";
+import { formatClockTime } from "../extensions/utils/format.ts";
 
 function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
-test("classifyTool：bash/read/edit/write/other", () => {
+test("classifyTool：bash/read/edit/other；write 并入 edit", () => {
 	assert.equal(classifyTool("bash"), "bash");
 	assert.equal(classifyTool("powershell"), "bash");
 	assert.equal(classifyTool("read"), "read");
 	assert.equal(classifyTool("edit"), "edit");
-	assert.equal(classifyTool("write"), "write");
+	assert.equal(classifyTool("write"), "edit");
 	assert.equal(classifyTool("grep"), "other");
 	// MCP 风格名不是精确工具名：归 other
 	assert.equal(classifyTool("mcp__server__read"), "other");
 });
 
-test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重；other 计数", () => {
+test("AgentRunSummary：bash/powershell 计数；read/edit（含 write）按路径去重；other 计数", () => {
 	const summary = new AgentRunSummary(1_000);
 	summary.recordToolStart("bash", { command: "npm test" });
 	summary.recordToolStart("powershell", { command: "Get-ChildItem" });
@@ -37,79 +38,87 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 	summary.recordToolStart("read", { path: "a.ts" }); // 去重
 	summary.recordToolStart("read", { path: "b.ts" });
 	summary.recordToolStart("edit", { file_path: "c.ts" }); // file_path 别名
+	summary.recordToolStart("write", { path: "c.ts" }); // 与 edit 合并去重
 	summary.recordToolStart("write", { path: "d.ts" });
 	summary.recordToolStart("write", { path: "d.ts" }); // 去重
 	summary.recordToolStart("grep", { pattern: "x" });
 	summary.recordToolResult(true);
 	summary.recordToolResult(false);
 
-	assert.equal(summary.toolCount, 10);
+	assert.equal(summary.toolCount, 11);
 	const data = summary.snapshot(61_000);
 	assert.deepEqual(data, {
 		commands: 3,
 		reads: 2,
-		edits: 1,
-		writes: 1,
+		edits: 2,
 		others: 1,
 		failed: 1,
 		durationMs: 60_000,
+		endedAt: 61_000,
 		outputTokens: 0,
 	} satisfies AgentSummaryData);
 });
 
-test("summarySegments：bash→read→edit→write→other→failed，首段大写", () => {
+test("formatClockTime：h:mm AM/PM，非法值返回空串", () => {
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 18, 51).getTime()), "6:51 PM");
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 0, 5).getTime()), "12:05 AM");
+	assert.equal(formatClockTime(new Date(2025, 0, 2, 12, 0).getTime()), "12:00 PM");
+	assert.equal(formatClockTime(Number.NaN), "");
+	assert.equal(formatClockTime(0), "");
+});
+
+test("summarySegments：bash→read→edit→other→failed，首段大写", () => {
 	const data: AgentSummaryData = {
 		commands: 3,
 		reads: 2,
-		edits: 1,
-		writes: 1,
+		edits: 2,
 		others: 1,
 		failed: 1,
 		durationMs: 42_000,
+		endedAt: 43_000,
 	};
 	assert.deepEqual(summarySegments(data), [
 		{ text: "Ran 3 commands", tone: "success" },
 		{ text: "read 2 files", tone: "success" },
-		{ text: "edited 1 file", tone: "success" },
-		{ text: "wrote 1 file", tone: "success" },
+		{ text: "edited 2 files", tone: "success" },
 		{ text: "1 other tool", tone: "success" },
 		{ text: "1 failed", tone: "failed" },
 	]);
 	assert.deepEqual(
-		summarySegments({ ...data, commands: 0, reads: 0, edits: 0, writes: 0, others: 0, failed: 0 }),
+		summarySegments({ ...data, commands: 0, reads: 0, edits: 0, others: 0, failed: 0 }),
 		[],
 	);
 	// 无 outputTokens（旧 entry / usage 缺失）→ 整数秒旧格式。
 	assert.equal(
 		summaryMarkdown(data),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · 42s · done ${formatClockTime(43_000)}*`,
 	);
 	// 有 outputTokens → 精确时长 + tok/s（整回合平均口径）。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 52.5s · 30.4 tok/s*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · 52.5s · 30.4 tok/s · done ${formatClockTime(43_000)}*`,
 	);
 	// tokens=0 → 省略速率段，退回整数秒。
 	assert.equal(
 		summaryMarkdown({ ...data, outputTokens: 0 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · 42s · done ${formatClockTime(43_000)}*`,
 	);
 	// 时长 <1s → 省略速率段。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 400, outputTokens: 1_596 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · done ${formatClockTime(43_000)}*`,
 	);
 	// 有 ttftMs → 追加 TTFT 段；无/零 → 省略。
 	assert.equal(
 		summaryMarkdown({ ...data, durationMs: 52_500, outputTokens: 1_596, ttftMs: 812 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 52.5s · 30.4 tok/s · TTFT 812ms*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · 52.5s · 30.4 tok/s · TTFT 812ms · done ${formatClockTime(43_000)}*`,
 	);
 	assert.equal(
 		summaryMarkdown({ ...data, ttftMs: 0 }),
-		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file, 1 other tool, 1 failed · 42s*",
+		`> *Ran 3 commands, read 2 files, edited 2 files, 1 other tool, 1 failed · 42s · done ${formatClockTime(43_000)}*`,
 	);
 	assert.equal(
-		summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0, others: 0, failed: 0 }),
+		summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, others: 0, failed: 0 }),
 		"",
 	);
 });
@@ -160,12 +169,13 @@ test("bindAgentSummary 事件绑定：before_agent_start 重置、agent_end 记 
 		commands: 1,
 		reads: 0,
 		edits: 0,
-		writes: 0,
 		others: 1,
 		failed: 0,
 		durationMs: calls[1].durationMs,
+		endedAt: calls[1].endedAt,
 		outputTokens: 1_596,
 	});
+	assert.ok(Number.isFinite(calls[1].endedAt));
 });
 
 test("bindAgentSummary：自动重试的多个 agent_end 累加，settled 只回调一次", async () => {
@@ -236,9 +246,51 @@ test("agent-summary 注册 renderer，agent_settled 输出引用块", async () =
 	assert.match(raw, /\x1b\[32m1\x1b\[0m command/);
 	assert.match(raw, /│/);
 	const plain = stripAnsi(raw);
-	assert.doesNotMatch(plain, /[┌├└]/);
-	assert.doesNotMatch(plain, /TIP/);
 	assert.match(plain, /Ran 1 command, read 1 file/);
+	// 末尾追加完成时刻：耗时 + done h:mm AM/PM
+	assert.match(plain, /· done (?:1[0-2]|[1-9]):[0-5]\d (?:AM|PM)/);
+
+	// 固定时刻下整行形状；不足 1 秒不报耗时，只留完成时刻，不出双分隔。
+	const fixed = renderer(
+		{
+			data: {
+				commands: 1,
+				reads: 0,
+				edits: 0,
+				others: 0,
+				failed: 0,
+				durationMs: 500,
+				endedAt: new Date(2025, 0, 2, 18, 51).getTime(),
+			},
+		},
+		{ expanded: false },
+		theme,
+	);
+	assert.equal(
+		stripAnsi((fixed as any).render(120).map(String).join("\n")).trim(),
+		"│ Ran 1 command · done 6:51 PM",
+	);
+
+	// 旧版本写的 entry 没有 endedAt：只显示耗时，不显示完成时刻。
+	const legacy = renderer(
+		{
+			data: {
+				commands: 1,
+				reads: 0,
+				edits: 0,
+				others: 0,
+				failed: 0,
+				durationMs: 15_000,
+			},
+		},
+		{ expanded: false },
+		theme,
+	);
+	assert.equal(
+		stripAnsi((legacy as any).render(120).map(String).join("\n")).trim(),
+		"│ Ran 1 command · 15s",
+	);
+
 	assert.equal(
 		renderer(
 			{
@@ -246,7 +298,6 @@ test("agent-summary 注册 renderer，agent_settled 输出引用块", async () =
 					commands: 0,
 					reads: 0,
 					edits: 0,
-					writes: 0,
 					others: 0,
 					failed: 0,
 					durationMs: 0,

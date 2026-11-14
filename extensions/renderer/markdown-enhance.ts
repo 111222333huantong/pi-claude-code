@@ -1,14 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { render as renderMermaid, sourceBox } from "grok-mermaid";
+import { diagramKind, render as renderMermaid, sourceBox } from "grok-mermaid";
 import { installCodeBlockBox } from "./tool/code-block.ts";
 
 // ============================================================================
 // Mermaid 方言渲染
 // ============================================================================
 
-// 内置 mermaid transformer 只认 ```mermaid，这里补上 grok-mermaid 支持的其他方言
+// 标准 ```mermaid 交给 Pi 内置渲染器（1.5.1 起支持饼图、自定义样式、可点击标签，
+// 也会画在展开的 summary 里）；这里只补 grok-mermaid 才认的方言 fence。
 const DIAGRAM_FENCE =
-	/^(`{3,})\s*(mermaid|statediagram|statediagram-v2|classdiagram|classdiagram-v2|erdiagram|sequencediagram)\s*$/i;
+	/^(`{3,})\s*(statediagram|statediagram-v2|classdiagram|classdiagram-v2|erdiagram|sequencediagram)\s*$/i;
 const FENCE_OPEN = /^(`{3,})/;
 const FENCE_CLOSE = /^`{3,}\s*$/;
 
@@ -474,24 +475,31 @@ export default function (pi: ExtensionAPI): void {
 	// 所以剩下的转换合并为一次注册，内部按序链式执行。
 	// 提示框和裸 URL 不接管：pi 的 marked 已自带裸 URL 链接化（带尾标点回退，
 	// 且在链接文本内不再嵌套），提示框交给默认引用块风格。
-	pi.registerMarkdownTransformer((markdown, context) => {
-		const { messageType, isStreaming = false } = context ?? {};
-		// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
-		if (messageType === "assistant-thinking") return markdown;
-		markdown = normalizeMultilineLinks(markdown);
-		if (isStreaming) return markdown;
-		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
-		markdown = deCircled(markdown);
-		// 0.1 键帽/dingbat 数字转半角括号（缺 emoji 字体时方框规避）
-		markdown = deKeycap(markdown);
-		// 0.5 数学环境补齐：\begin{equation|align|aligned} → $$ 块，user 与
-		// assistant 通用（原生 block tokenizer 的唯一缺口）；定界符形式其余
-		// 全部透传原生。仅 user 消息再走紧凑单段兜底（c7074c5 回归保护）。
-		markdown = rewriteDisplayEnvironments(markdown);
-		if (messageType === "user") markdown = renderUserMath(markdown);
-		// 1. Mermaid 方言渲染
-		return renderDiagrams(markdown, context);
-	});
+	// messageTypes：除默认的 user/assistant/thinking，再跟上自定义消息与展开的 summary，
+	// 免得圈数字、方言图在那两处变回原样（pi ≥1.5.x 支持 options 参数；旧版忽略第二参）。
+	pi.registerMarkdownTransformer(
+		(markdown, context) => {
+			const { messageType, isStreaming = false } = context ?? {};
+			// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
+			if (messageType === "assistant-thinking") return markdown;
+			markdown = normalizeMultilineLinks(markdown);
+			if (isStreaming) return markdown;
+			// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
+			markdown = deCircled(markdown);
+			// 0.1 键帽/dingbat 数字转半角括号（缺 emoji 字体时方框规避）
+			markdown = deKeycap(markdown);
+			// 0.5 数学环境补齐：\begin{equation|align|aligned} → $$ 块，user 与
+			// assistant 通用（原生 block tokenizer 的唯一缺口）；定界符形式其余
+			// 全部透传原生。仅 user 消息再走紧凑单段兜底（c7074c5 回归保护）。
+			markdown = rewriteDisplayEnvironments(markdown);
+			if (messageType === "user") markdown = renderUserMath(markdown);
+			// 1. Mermaid 方言渲染
+			return renderDiagrams(markdown, context);
+		},
+		// @ts-expect-error pi ≥1.5.x 支持第二参 options（messageTypes）；类型声明未跟进，
+		// 旧版实现只取第一参，多余的 options 被忽略，行为不变。
+		{ messageTypes: ["user", "assistant", "assistant-thinking", "custom", "summary"] },
+	);
 }
 
 // grok-mermaid 渲染结果缓存：resize/restored 重绘会重复转换，按源码缓存 art。
@@ -540,9 +548,9 @@ function renderDiagrams(
 			const collected = collectFence(lines, i);
 			if (collected) {
 				const { diagram, next } = collected;
-				// grok-mermaid 需要源码自带类型头，方言头在 fence 标签里时补回去
-				const label = fence[2];
-				const src = label.toLowerCase() === "mermaid" ? diagram : `${label}\n${diagram}`;
+				// grok-mermaid 需要源码自带类型头：fence 名当类型头补上；正文已带头就别再补，
+				// 重复头会解析失败退成源码框，或者把类型头画成一个节点
+				const src = diagramKind(diagram) ? diagram : `${fence[2]}\n${diagram}`;
 				const art = getArt(src);
 				const width = availableWidth ?? 80;
 				if (art && art.width <= width) {

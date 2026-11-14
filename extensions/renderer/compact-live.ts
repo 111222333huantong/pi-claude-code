@@ -5,6 +5,7 @@
  * hover 状态由调用方传入，模块本身不持有回合状态。
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { imageBlockRows } from "../utils/ansi-text.ts";
 import { themeOf } from "./compact-card.ts";
 import {
 	animateCompactThinkingText,
@@ -133,7 +134,12 @@ export function compactLiveSlot(card: any, pad = 0): any {
 	return {
 		render(width: number): string[] {
 			const indent = " ".repeat(Math.max(0, pad));
-			return card.render(innerOf(width)).map((line: string) => `${indent}${line}`);
+			const lines = card.render(innerOf(width));
+			const images = imageBlockRows(lines);
+			// 图片占位行必须零宽：补上缩进空格，pi-tui 就认不出整块图片了。
+			return lines.map((line: string, index: number) =>
+				images.get(index) === "filler" ? "" : `${indent}${line}`,
+			);
 		},
 		childAtRow(localRow: number, width: number) {
 			return card.childAtRow?.(localRow, innerOf(width)) ?? null;

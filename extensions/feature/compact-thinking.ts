@@ -14,7 +14,6 @@ import type {
 import {
 	Box,
 	type Component,
-	getKeybindings,
 	Markdown,
 	Spacer,
 	Text,
@@ -32,6 +31,7 @@ import { isToolTuiFullscreen } from "../renderer/tool/names.ts";
 import { TOOL_CARD_BG_SLOT } from "../renderer/tool/tool-state.ts";
 import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 import { isTranscriptComponent } from "../renderer/transcript-scope.ts";
+import { keyText } from "../utils/keybindings.ts";
 import {
 	COMPACT_THINKING_OWNER,
 	COMPACT_THINKING_PATCH_KEY,
@@ -215,8 +215,8 @@ function restoreDurationEntries(
 }
 
 function getThinkingToggleHint() {
-	const keys = getKeybindings().getKeys("app.thinking.toggle");
-	return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
+	const keys = keyText("app.thinking.toggle");
+	return keys.length > 0 ? `${keys} to expand` : undefined;
 }
 
 function thinkingExpandAction(): string | undefined {

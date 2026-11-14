@@ -42,9 +42,11 @@
  │ L37
  │ L38
  │ L39
+ │
  ├ ✓ bash
  │   command: npm test
  │ pass 832
+ │
  └ ✗ ffgrep
      path: extensions/
      pattern: renderCall

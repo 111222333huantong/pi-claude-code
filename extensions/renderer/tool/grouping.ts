@@ -11,6 +11,8 @@ import { config } from "../../config/config.ts";
 import {
 	contentRowRange,
 	hasVisibleText,
+	type ImageRowKind,
+	imageBlockRows,
 	imagePlacement,
 	stripAnsi,
 	stripBackgroundAnsi,
@@ -215,7 +217,8 @@ function visibleLines(lines: string[]): string[] {
 	for (let index = 0; index < lines.length; index++) {
 		const placement = imagePlacement(lines[index]);
 		if (!placement) {
-			if (stripAnsi(lines[index]).trim()) keep.add(index);
+			// 鼠标命中的零宽 APC 标记也算空：只剥 CSI 会把图片前的空行留下来。
+			if (hasVisibleText(lines[index])) keep.add(index);
 			continue;
 		}
 		const start = placement.grows === "up" ? index - placement.rows + 1 : index;
@@ -259,14 +262,41 @@ export function paddedBackgroundRow(
 	const innerWidth = Math.max(0, width - 2);
 	const clipped = truncateToWidth(stripBackgroundAnsi(content), innerWidth, "");
 	const row = ` ${clipped}${" ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)))} `;
-	const bgAnsi =
-		bgAnsiOverride ||
-		(typeof theme?.bg === "function"
-			? theme.getBgAnsi?.(slot) || theme.bg(slot, "").match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0] || ""
-			: "");
+	const bgAnsi = bgAnsiOverride || backgroundAnsi(theme, slot);
 	const stable = bgAnsi ? row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi) : row;
 	if (!bgAnsi) return typeof theme?.bg === "function" ? theme.bg(slot, stable) : row;
 	return `${bgAnsi}${stable}\x1b[49m`;
+}
+
+function backgroundAnsi(theme: any, slot: string): string {
+	if (typeof theme?.bg !== "function") return "";
+	return theme.getBgAnsi?.(slot) || theme.bg(slot, "").match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0] || "";
+}
+
+/**
+ * 展开卡里内联图片块的一行。
+ *
+ * 全屏（alt-screen）渲染器先画文字、最后画图片，占位行可以带树线和底色：
+ * 占位行按普通行铺满底色；锚点行先用 ECH 按底色擦满整行（不移动光标、不写字符），
+ * 再写前缀和图片序列，图片首行右侧也有底色。
+ * 主屏渲染器靠「锚点行 + 其后连续零宽行」给图片预留行，占位行只能零宽，锚点行不补底色。
+ */
+export function imageBackgroundRow(
+	theme: any,
+	slot: string,
+	content: string,
+	kind: ImageRowKind,
+	width: number,
+): string {
+	if (kind === "filler") {
+		return isToolTuiFullscreen() ? paddedBackgroundRow(theme, slot, content, width) : "";
+	}
+	// 与普通底色行同口径：左边留 1 格边距，图片才与上方正文对齐。
+	const row = ` ${content}`;
+	const bgAnsi = isToolTuiFullscreen() ? backgroundAnsi(theme, slot) : "";
+	if (!bgAnsi) return row;
+	const stable = row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi);
+	return `${bgAnsi}\x1b[${Math.max(1, width)}X${stable}\x1b[49m`;
 }
 
 function toolSummary(tool: any): ToolCallSummary {
@@ -460,10 +490,22 @@ function expandedToolRows(tool: any, width: number): string[] {
 	}
 	const rows = rendered.length
 		? // 续行只剥外层 Box 的 1 格 left pad，保留 Input/Output 相对缩进
-			rendered.map((line, index) => (index === 0 ? line : stripLeadingSpaces(line, 1)))
+			alignImageAnchors(
+				rendered.map((line, index) => (index === 0 ? line : stripLeadingSpaces(line, 1))),
+			)
 		: [toolSummary(tool).main];
 	expandedToolRowsCache.set(paint, rows);
 	return rows;
+}
+
+/** 图片锚点行缩进到上一行正文的位置：图片与 Output 正文左对齐，不贴着树线。 */
+function alignImageAnchors(rows: string[]): string[] {
+	let indent = "";
+	return rows.map((line) => {
+		if (imagePlacement(line)) return indent + line;
+		if (hasVisibleText(line)) indent = /^ */.exec(stripAnsi(line))?.[0] ?? "";
+		return line;
+	});
 }
 
 function toolItem(tool: any): GroupDisplayItem {
@@ -497,9 +539,20 @@ function collapsedGroupLine(
 	return truncateToWidth(`${prefix}${item.summary(room, theme)}`, rowWidth, "");
 }
 
-/** 末项结尾的尾随空行不计入卡高（内联图片的占位行除外，见 contentRowRange）。 */
+/** 行内只有树线和空白：渲染出来的空 rail 行，本身就是一个间隔行。 */
+function isBlankRail(line: string): boolean {
+	return /^[\s│]*$/.test(stripAnsi(line));
+}
+
+/**
+ * 项与项之间留一行空行，把上一项的 Output 和下一项的工具行隔开；末项不加。
+ * 项自己已经用空 rail 行收尾的（子代理通知卡），不再叠第二行。
+ * 末项结尾的尾随空行不计入卡高（内联图片的占位行除外，见 contentRowRange）。
+ */
 function panelRows(rows: string[], last: boolean): string[] {
-	if (!last) return rows;
+	if (!last) {
+		return rows.length && isBlankRail(rows[rows.length - 1]) ? rows : [...rows, ""];
+	}
 	const end = Math.max(1, contentRowRange(rows).last + 1);
 	return end >= rows.length ? rows : rows.slice(0, end);
 }
@@ -790,11 +843,25 @@ export class ToolGroupComponent extends Container {
 			const branch = last ? "└" : "├";
 			const continuation = last ? "  " : "│ ";
 			const rows = panelRows(itemPaints[index], last);
+			const imageRows = imageBlockRows(rows);
 			for (let lineIndex = 0; lineIndex < rows.length; lineIndex++) {
 				const prefix =
 					lineIndex === 0
 						? `${fg("dim", branch)} ${fg(color, statusIcon(item.status))} `
 						: fg("dim", continuation);
+				const imageKind = imageRows.get(lineIndex);
+				if (imageKind) {
+					lines.push(
+						imageBackgroundRow(
+							theme,
+							backgroundSlot,
+							prefix + (imageKind === "anchor" ? rows[lineIndex] : ""),
+							imageKind,
+							width,
+						),
+					);
+					continue;
+				}
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, prefix + rows[lineIndex], width));
 			}
 		}

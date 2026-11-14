@@ -67,11 +67,11 @@ npm install --omit=optional pi-claude-code
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | 诊断                  | 版本、补丁链顺序、compat 漂移、footer 归属与配置路径                             | `/ccstyle diag`                                 |
-| Markdown 增强         | Mermaid 方言渲染、圈数字转半角括号                                                         | 自动生效；`enableMarkdownEnhance: false` 关闭   |
-| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
+| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
-| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开                                             | `Ctrl+O`                                        |
+| 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开；对话区有可展开的 `!` 输出时把键让给 pi | `Ctrl+O`                                        |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 资源盘点                  | 动画 mascot 启动头 + Loaded 资源面板，常驻查看命令                                    | `/loaded`                                       |
 | 图片粘贴              | 剪贴板/拖拽图片路径变为第一等附件，历史折叠预览                                      | 自动生效                                        |
@@ -163,6 +163,8 @@ npm install --omit=optional pi-claude-code
   "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
   "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
   "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
+  "footerContextLimit": "window",          // 上下文芯片分母：window（默认）：完整上下文窗口；compaction：自动压缩触发点（窗口 − compaction.reserveTokens）；both：压缩点并在括号中显示完整窗口
+                                           // Pi 越过压缩点后才压缩，所以文字可能短暂超过 100%（如 104%/184k）；条形图封顶 100%
   "footerHiddenKeys": [],                  // 隐藏的芯片 key
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
   "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
@@ -199,7 +201,7 @@ npm install --omit=optional pi-claude-code
 > 拖选复制默认走 clean copy：工具树线（`├ └ │ ↳`）、代码框和展开提示不进剪贴板；`/ccstyle` → UI 页的 `Clean copy` 可关。
 
 > [!NOTE]
-> **Mermaid 渲染**：`markdown.mermaid` 建议设为 `final`（`~/.pi/agent/settings.json` 或 `/settings`）。默认 `streaming` 逐帧重绘，`final` 只渲染最终版。
+> **Mermaid 渲染**：`markdown.mermaid` 建议设 `final`（`/settings`），避免流式逐帧重绘。
 
 ## 本地开发
 
@@ -211,7 +213,7 @@ pi -e .              # 只跑一次，不改 settings.json
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `>=1.2.0`（1.4.x / 1.5.x 已验证）
+- Node.js `>=22.19.0`，Pi `^1.5.1`（用到了 1.5.x 的注入式按键提示、`messageTypes` 与 `ctx.ui.custom({ blocked })`）
 
 ## 常见问题
 
@@ -223,7 +225,7 @@ pi -e .              # 只跑一次，不改 settings.json
 `expandedInputMaxLines` / `expandedOutputMaxLines`。
 
 **fullscreen 怎么开？**
-`TUIMODE=fullscreen` 环境变量或 `pi --tui-mode fullscreen`；去掉参数即回普通模式。
+`pi --tui-mode fullscreen`（pi 1.5 起默认）；去掉参数即回普通模式。
 
 **状态栏没出现？**
 先 `/statusline on` 再 `/reload`。若同时启用了上游 footer，需要在 `/ccstyle`

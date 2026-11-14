@@ -16,6 +16,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { shortenCwd } from "../../utils/format.ts";
+import { setInjectedKeybindings } from "../../utils/keybindings.ts";
 import {
 	EARLY_STARTUP_HEADER_PATCH,
 	EARLY_STARTUP_HEADER_SWAP_KEY,
@@ -517,6 +518,8 @@ export function installEarlyStartupHeader(): void {
 		active: true,
 		original,
 		installed: async function (this: any, ...args: any[]) {
+			// 从这里拿到 pi 注入的按键管理器，启动头与工具卡的按键提示都按它显示。
+			setInjectedKeybindings(this?.keybindings);
 			installHeaderContainerSwap(this, patch);
 			return original.apply(this, args);
 		},

@@ -9,6 +9,8 @@
 const CSI_SEQUENCE_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 /** OSC 序列（如 \x1b]8;;url\x07 或 ST 结尾；内容不允许内嵌 ESC，见下）。 */
 const OSC_SEQUENCE_STRICT_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+/** APC 序列：鼠标命中用的零宽行标记（\x1b_cc:…\x07）、kitty 图片（\x1b_G…\x1b\\）。 */
+const APC_SEQUENCE_RE = /\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 /** 剥离一行内所有 CSI 序列。 */
 export function stripAnsi(line: string): string {
@@ -19,7 +21,10 @@ export function stripAnsi(line: string): string {
 export function stripTerminalSequencesPreservingLayout(value: string): string {
 	// OSC 用严格变体：OSC8 超链接（`\x1b]8;;URI ST text \x1b]8;;ST`）包裹的可见文本
 	// 必须保留，只剥离序列本身；宽松版会贪婪吞掉链接文本导致命中列错位。
-	return value.replace(OSC_SEQUENCE_STRICT_RE, "").replace(CSI_SEQUENCE_RE, "");
+	return value
+		.replace(OSC_SEQUENCE_STRICT_RE, "")
+		.replace(APC_SEQUENCE_RE, "")
+		.replace(CSI_SEQUENCE_RE, "");
 }
 
 /** 剥离终端序列并折叠空白（用于纯文本比较）。 */
@@ -27,10 +32,16 @@ export function stripTerminalSequences(value: string): string {
 	return stripTerminalSequencesPreservingLayout(value).replace(/\s+/g, " ").trim();
 }
 
-/** 去掉行内所有 CSI/OSC 序列后是否仍有可见文本（判断工具卡首尾内容行）。 */
+/** 去掉行内所有 CSI/OSC/APC 序列后是否仍有可见文本（判断工具卡首尾内容行）。 */
 export function hasVisibleText(line: string): boolean {
 	// OSC 用更严格的变体：内容内嵌 ESC 时不吞并后续文本，保持 compact-mode 原有语义。
-	return line.replace(CSI_SEQUENCE_RE, "").replace(OSC_SEQUENCE_STRICT_RE, "").trim().length > 0;
+	return (
+		line
+			.replace(CSI_SEQUENCE_RE, "")
+			.replace(OSC_SEQUENCE_STRICT_RE, "")
+			.replace(APC_SEQUENCE_RE, "")
+			.trim().length > 0
+	);
 }
 
 const KITTY_IMAGE_PREFIX = "\x1b_G";
@@ -56,6 +67,31 @@ export function imagePlacement(line: string): { rows: number; grows: "down" | "u
 		return { rows: up >= 1 ? up + 1 : 1, grows: "up" };
 	}
 	return undefined;
+}
+
+/** 行区里内联图片的两种行：锚点行带图片序列，占位行是它自己铺开的空白。 */
+export type ImageRowKind = "anchor" | "filler";
+
+/**
+ * 行区里属于内联图片块的行及其种类。
+ *
+ * 最终输出里这两类行都必须是零宽或只带锚点前的少量前缀：pi-tui 靠「锚点行含图片序列、
+ * 其后连续零宽行」认出整块图片。锚点行补底色/空格会画在图片首行上，占位行只要有宽度，
+ * 图片块就认不出来，占位行会被当成普通行铺上底色，图片位置只剩一大片空白。
+ */
+export function imageBlockRows(rows: string[]): Map<number, ImageRowKind> {
+	const kinds = new Map<number, ImageRowKind>();
+	for (let index = 0; index < rows.length; index++) {
+		const placement = imagePlacement(rows[index]);
+		if (!placement) continue;
+		kinds.set(index, "anchor");
+		const start = placement.grows === "up" ? index - placement.rows + 1 : index + 1;
+		const end = placement.grows === "down" ? index + placement.rows - 1 : index - 1;
+		for (let row = Math.max(0, start); row <= Math.min(rows.length - 1, end); row++) {
+			if (!kinds.has(row)) kinds.set(row, "filler");
+		}
+	}
+	return kinds;
 }
 
 /**
@@ -99,7 +135,7 @@ export function stripLeadingStatusIcon(line: string): string {
 
 /** 终端序列零宽（不计入 plain 下标），与 stripAnsi/stripTerminalSequencesPreservingLayout 一致。 */
 const ANY_SEQUENCE_RE = new RegExp(
-	`${CSI_SEQUENCE_RE.source}|${OSC_SEQUENCE_STRICT_RE.source}`,
+	`${CSI_SEQUENCE_RE.source}|${OSC_SEQUENCE_STRICT_RE.source}|${APC_SEQUENCE_RE.source}`,
 	"g",
 );
 

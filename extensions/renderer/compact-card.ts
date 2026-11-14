@@ -8,12 +8,15 @@ import { Box, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	contentRowRange,
 	hasVisibleText,
+	type ImageRowKind,
+	imageBlockRows,
 	removeStyledRange,
 	stripBackgroundAnsi,
 	stripTerminalSequencesPreservingLayout,
 } from "../utils/ansi-text.ts";
-import { paddedBackgroundRow } from "./tool/grouping.ts";
+import { imageBackgroundRow, paddedBackgroundRow } from "./tool/grouping.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
+import { isToolTuiFullscreen } from "./tool/names.ts";
 import { aggregateToolCardBgSlot, toolCardBgSlot } from "./tool/tool-state.ts";
 
 export function fallbackTheme(): any {
@@ -152,7 +155,18 @@ export function layoutExpandedToolCard(
 	let lastBlank = false;
 	/** live 首行被吃掉的前导缩进：续行同步左移同样格数，保持块内相对对齐。 */
 	let liveLead = 0;
-	const pushRow = (raw: string) => {
+	const pushRow = (raw: string, imageKind?: ImageRowKind) => {
+		// 内联图片：live 槽位不铺底色，锚点行只补 `↳`、占位行保持零宽；
+		// 面板里按全屏/主屏渲染器决定能否给图片行铺底色（见 imageBackgroundRow）。
+		if (imageKind) {
+			if (live) lines.push(imageKind === "filler" ? "" : `${theme.fg("muted", "↳")} ${raw}`);
+			else {
+				// 与普通行同口径：剥掉 1 格 lead，由底色行补回的 1 格左边距代替。
+				const line = raw.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*) /, "$1");
+				lines.push(imageBackgroundRow(theme, outerSlot, line, imageKind, width));
+			}
+			return;
+		}
 		if (!live) {
 			// 面板 pad 1 是唯一左边距：剥掉子行 collapsed 态自带的 1 格 lead，
 			// 否则标题行偏到 2、↳ 行偏到 4，左右不再对称。
@@ -199,12 +213,14 @@ export function layoutExpandedToolCard(
 		if (!innerCard) pushBlank();
 		const rangeStart = lines.length;
 		// 展开的 thinking 走深色内卡（上下各 1 行 padding），工具卡直接铺在外卡上。
-		const paintRow = innerCard
-			? (line: string) => lines.push(toolCardBgRow(theme, slot, toolBgAnsi, line, width))
-			: pushRow;
-		if (innerCard) paintRow("");
-		for (let i = first; i <= last; i++) paintRow(childLines[i]);
-		if (innerCard) paintRow("");
+		const imageKinds = innerCard ? undefined : imageBlockRows(childLines);
+		const paintChild = (line: string, index?: number) =>
+			innerCard
+				? lines.push(toolCardBgRow(theme, slot, toolBgAnsi, line, width))
+				: pushRow(line, index === undefined ? undefined : imageKinds?.get(index));
+		if (innerCard) paintChild("");
+		for (let i = first; i <= last; i++) paintChild(childLines[i], i);
+		if (innerCard) paintChild("");
 		// 内卡的下 padding 不能当分隔：后面的子卡要再留 1 行外卡空行。
 		lastBlank = false;
 		// thinking 命中自身；工具在展开卡内需要能二次展开时才映射回 tool 组件。
@@ -246,6 +262,8 @@ export function compactRoundCard(
 				theme: unknown;
 				/** 背景槽位也是面板行的输入：改配置后不能复用旧底色的整卡。 */
 				bgSlot: string;
+				/** 全屏与主屏的图片行输出不同（见 imageBackgroundRow）。 */
+				fullscreen: boolean;
 				paints: unknown[];
 				lines: string[];
 				hits: Array<{ child: any; start: number; end: number }>;
@@ -268,6 +286,7 @@ export function compactRoundCard(
 			paint.width === width &&
 			paint.theme === theme &&
 			paint.bgSlot === bgSlot &&
+			paint.fullscreen === isToolTuiFullscreen() &&
 			paint.paints.length === paints.length &&
 			paint.paints.every((item, index) => item === paints[index])
 		) {
@@ -278,6 +297,7 @@ export function compactRoundCard(
 			width,
 			theme,
 			bgSlot,
+			fullscreen: isToolTuiFullscreen(),
 			paints,
 			lines: laid.lines,
 			hits: laid.hits,

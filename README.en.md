@@ -72,8 +72,8 @@ header reports the group's **total time**, each row its output volume (`12 lines
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes | `/ccstyle`                                      |
 | Diagnostics                 | Versions, patch-chain order, compat drift, footer owner and config paths                  | `/ccstyle diag`                                 |
-| Markdown enhancements       | Mermaid dialects and circled-number conversion                                            | Automatic; turn off with `enableMarkdownEnhance: false` |
-| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Markdown enhancements       | Mermaid dialects in non-standard fences (`statediagram`, `classdiagram`…) and circled-number conversion; plain mermaid goes to pi | Automatic; turn off with `enableMarkdownEnhance: false` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `--tui-mode fullscreen` (default since pi 1.5) |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                   | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
@@ -169,6 +169,8 @@ Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-exam
   "footerCurrencyRate": null,              // display units per 1 cost unit; null changes the symbol only
   "footerNerdIcons": true,                 // Nerd Font glyphs for git/cache/tokens; false = plain text
   "footerGitStatsMode": "working",         // working (default): uncommitted; branch: cumulative net changes
+  "footerContextLimit": "window",          // context chip limit: window (default); compaction: auto-compaction point (window − compaction.reserveTokens); both: compaction point, window in brackets
+                                           // Pi compacts only after crossing that point, so the text can briefly exceed 100% (e.g. 104%/184k); the bar clamps at 100%
   "footerHiddenKeys": [],                  // hidden chip keys
   "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // chip order per line; builtins and plugins share one layout
   "footerLine2Keys": ["cwd", "git"],       // cwd: directory and session; git: branch and changes. Either can move to any line
@@ -208,7 +210,7 @@ This fork's statusline uses its own file, `~/.pi/agent/statusline.json` (toggle 
 > **Fullscreen**: expanded diffs always show every line. When expanded Input/Output exceeds the line cap, the footer shows `… +N more lines`; click for the full preview, click again to collapse.
 
 > [!NOTE]
-> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or `/settings`. Default `streaming` redraws every frame; `final` renders once.
+> **Mermaid rendering**: set `markdown.mermaid` to `final` (`/settings`) so it renders once instead of every frame.
 
 ## Local development
 
@@ -220,7 +222,6 @@ pi -e .              # one run, does not edit settings.json
 
 ## Compatibility
 
-- Node.js `>=22.19.0`, Pi `>=1.2.0` (1.4.x / 1.5.x tested)
 
 ## FAQ
 
@@ -233,7 +234,7 @@ Click a card to expand it; to widen the limit permanently, raise
 `expandedInputMaxLines` / `expandedOutputMaxLines` on the UI tab of `/ccstyle`.
 
 **How do I enable fullscreen?**
-Set `TUIMODE=fullscreen` or pass `pi --tui-mode fullscreen`. Drop it to go back.
+Pass `pi --tui-mode fullscreen` (default since pi 1.5). Drop it to go back.
 
 **The statusline does not show up.**
 Run `/statusline on`, then `/reload`. If the upstream footer is enabled too, turn
@@ -253,6 +254,9 @@ C: drive. Ctrl+V clipboard paste is Windows-only and needs `enableClipboardPaste
 **How do I go back to native rendering?**
 `/ccstyle off` restores it immediately; config lives in
 `~/.pi/agent/pi-cc-extensions.json` — delete it to reset.
+=======
+- Node.js `>=22.19.0`, Pi `^1.5.1` (uses the injected keybinding hints, `messageTypes` and `ctx.ui.custom({ blocked })` from pi 1.5.x)
+>>>>>>> upstream/main
 
 ## Recommended companions
 

@@ -260,6 +260,29 @@
 - **结果**：`npm run lint`（0 error）、`npm run typecheck`、`npm test` 全绿
   （928 例：927 过 / 1 跳过）。
 
+## 13. 1.7.0 合并记录（2026-11-16，`upstream/main 1c3a426` v1.0.17–v1.0.20）
+
+- **基线**：`90957cd`（v1.0.12）→ `1c3a426`（v1.0.20），跨 1.0.13–1.0.20
+  四个上游版本一次追上。中间 1.0.17–1.0.19 已随 `7b084ad` 合入；本次补
+  1.0.20 六个提交（compact 外层工具封口、agent-summary 完成时刻带日期、
+  展开面板行内容判缓存、README/CHANGELOG/版本号）。
+- **以上游为准**：`formatClockTime` → `formatTimestamp`（带 M/D 日期），
+  fork 的 `summaryTail` 跟随改名；compact 摘要段 `outerSealed` 状态机、
+  `outerFirst` 摘要行前移、`samePaintedLines` 逐行判等原样收下。
+- **本地保留**：compact 抽离文件结构不动——上游塞回 `compact-mode.ts` 的
+  `styleCompactThinkingText` / `animateCompactThinkingText` /
+  `formatThoughtDuration` / `messageStopStatus` / `buildMessagesSummary` 等
+  函数块冲突时取 HEAD（函数仍在 `compact-summary.ts`），仅把
+  `samePaintedLines` 同款修复补进 `compact-card.ts`；agent-summary
+  `index.ts` 取 HEAD（fork 的 tok/s + TTFT 已由 `summaryTail` 收口）。
+- **冲突取舍**：`CHANGELOG.md` / `package.json` / `package-lock.json`
+  取 ours（fork 包名版本、fork 变更记录），上游对应内容已折进本条目。
+- **本地新特性（随版发布，非上游）**：`compaction-progress.ts`（压缩状态行
+  进度条 + 压缩卡 `X → Y · −Z%` 回填）、statusline ctx 用量事件驱动缓存 +
+  provider usage 漏报修正，`enableCompactionProgress` 默认开。
+- **版本**：`pi-claude-code` 1.6.1 → 1.7.0。
+- **结果**：`npm run typecheck`、`npm test` 全绿（962 例：961 过 / 1 跳过）。
+
 ## 待办
 
 - [x] §2 pin 一个 cc-my-pi 版本（2026-10-29 pin `98ad3fc` v1.4.3）

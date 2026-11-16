@@ -3,6 +3,42 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## 1.7.0 — 2026-11-16
+
+### 新功能
+
+- compact 压缩状态行升级：原生 `Compacting context...` 改为时间渐近进度条
+  （14 格，上限 95% 不定格）+ 已用时长；预期耗时取上一次实际压缩耗时
+  （缺省 30s，钳 5–120s），压缩由 `session_compact` 收口。新增
+  `enableCompactionProgress` 开关（默认开），`/ccstyle` → Features 可关。
+- 压缩卡标题升级：`Compacted from X tokens` → `Compacted from X → Y · −Z%`，
+  `after` 取 LLM usage 实测 + 本地估算；`tokensBefore` 偏小（provider usage
+  漏报）时用 `messagesToSummarize` 的本地累加值让「X → Y」自洽。
+
+### 修复
+
+- swe-2 等 provider 的 `usage` 只报增量不报累计导致 ctx 用量芯片读数偏小：
+  自报值低于 `buildSessionProjection` + `estimateTokens` 本地累加的 50% 时
+  改信估算值。ctx 用量缓存改为事件驱动失效（`message_end` /
+  `tool_execution_end` / `session_compact` / `agent_end` / `turn_end`），
+  5s TTL 仅兜 resume 等边角场景，空闲期不再每帧重扫会话。
+
+### 上游合并（v1.0.17 → v1.0.20）
+
+- footer 上下文芯片可选 compaction-point 上限（`footerContextLimit`，
+  缓存 + reserve 值校验）。
+- Ctrl+O 让位给可展开的 `!` 输出；标准 mermaid 交还 pi 内置渲染器。
+- 对话框报告等待输入；面板内切换输入框前缀立即生效；按键提示改用 pi
+  注入的按键管理器。
+- Agent 回合摘要：完成时刻带日期（`done 11/15 6:51 PM`），write 并入
+  edit 计数；本 fork 的 tok/s + TTFT 尾段格式同步迁移到 `formatTimestamp`。
+- compact：外层工具（edit/write/ask）出现即给摘要段封口，摘要不再跨 ask
+  累加；展开面板按行内容判缓存，滚动不再逐帧重排（本 fork 的
+  `compact-card.ts` 同步此修复）。
+- 展开工具卡：内联图片补齐底色/树线/对齐、去掉 Input/Output 之间多余
+  空行、工具之间留一行空行、图片占位行不再铺底色。
+- 测试：清掉恒真与不可达用例，修正断言错位。
+
 ## 1.6.1 — 2026-11-11
 
 ### 显示

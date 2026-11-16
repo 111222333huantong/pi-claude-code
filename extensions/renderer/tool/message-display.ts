@@ -6,7 +6,9 @@ import {
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { getMethodPrototype } from "../../compat/pi-internals.ts";
 import { config } from "../../config/config.ts";
+import { lookupTokensAfter } from "../../feature/compaction-progress.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
+import { formatTokenCount } from "../../utils/format.ts";
 import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
 import { showMoreHintText } from "./names.ts";
 import { TOOL_CARD_BG_SLOT } from "./tool-state.ts";
@@ -43,8 +45,19 @@ const SKILL_KIND: DisplayKind = {
 };
 
 const COMPACTION_KIND: DisplayKind = {
-	title: (component) =>
-		`Compacted from ${Number(component.message?.tokensBefore ?? 0).toLocaleString()} tokens`,
+	title: (component) => {
+		const before = Number(component.message?.tokensBefore ?? 0);
+		const base = `Compacted from ${before.toLocaleString()} tokens`;
+		const resolved = lookupTokensAfter(before);
+		if (!resolved || before <= 0) return base;
+		// correctedBefore：provider usage 漏报时（swe-2 等）tokensBefore 偏小，
+		// 用本地累加值让 "X → Y" 自洽；否则保留文件原值。
+		const displayBefore = resolved.correctedBefore;
+		const displayBase =
+			displayBefore !== before ? `Compacted from ${displayBefore.toLocaleString()} tokens` : base;
+		const saved = Math.max(0, Math.round((1 - resolved.after / displayBefore) * 100));
+		return `${displayBase} → ${formatTokenCount(resolved.after)} · −${saved}%`;
+	},
 	body: (component) => String(component.message?.summary ?? ""),
 };
 

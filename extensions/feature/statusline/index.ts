@@ -11,7 +11,12 @@
 import { watch } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname } from "node:path";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionContext,
+	estimateTokens,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { shortenCwd } from "../../utils/format.ts";
@@ -219,6 +224,23 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		}
 	});
 
+	// ctx 用量事件驱动失效：新消息进 ctx/工具结果落地/压缩重置/turn 收尾时
+	// 下一帧重算；5s TTL 仅兜 resume/边角场景，避免空闲期空扫。
+	const invalidateContextUsage = () => {
+		contextUsageCache = null;
+	};
+	pi.on("message_end", async (event: any) => {
+		// user/assistant/toolResult 都进 ctx；system/custom 不影响估算，跳过。
+		const role = event?.message?.role;
+		if (role === "user" || role === "assistant" || role === "toolResult") {
+			invalidateContextUsage();
+		}
+	});
+	pi.on("tool_execution_end", invalidateContextUsage);
+	pi.on("session_compact", invalidateContextUsage);
+	pi.on("agent_end", invalidateContextUsage);
+	pi.on("turn_end", invalidateContextUsage);
+
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 		// 配置在这里读一次；之后只由命令写入或文件监听更新，渲染路径不碰文件。
@@ -336,6 +358,29 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 							ctxUsage = contextUsageCache.value;
 						} else {
 							ctxUsage = ctx.getContextUsage();
+							// swe-2 等 provider 的 usage 只报增量不报累计：
+							// 若锚点值远小于本地估算，说明漏报，改信累加值。
+							if (ctxUsage && typeof ctxUsage.tokens === "number" && ctxUsage.contextWindow > 0) {
+								let localTokens = 0;
+								try {
+									const projection = ctx.sessionManager.buildSessionProjection();
+									for (const entry of projection.entries) {
+										for (const msg of entry.messages) {
+											localTokens += estimateTokens(msg);
+										}
+									}
+								} catch {
+									localTokens = 0;
+								}
+								// usage 值不到本地累加的 50% → 判定漏报，用累加值
+								if (localTokens > 0 && ctxUsage.tokens < localTokens * 0.5) {
+									ctxUsage = {
+										tokens: localTokens,
+										contextWindow: ctxUsage.contextWindow,
+										percent: (localTokens / ctxUsage.contextWindow) * 100,
+									};
+								}
+							}
 							contextUsageCache = { key, at: now, value: ctxUsage };
 						}
 					} catch {

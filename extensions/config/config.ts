@@ -135,6 +135,8 @@ export type Config = {
 	enableClipboardPaste: boolean;
 	enableEscSteer: boolean;
 	enableDoubleEscClear: boolean;
+	/** compaction 状态行进度条 + 压缩卡标题显示压缩后规模。 */
+	enableCompactionProgress: boolean;
 	/** markdown 转换：Mermaid 方言渲染、圈数字转半角括号。关掉让位给其他扩展。 */
 	enableMarkdownEnhance: boolean;
 	/** 输入框 `❯ ` 前缀（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
@@ -276,6 +278,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableClipboardPaste: true,
 	enableEscSteer: true,
 	enableDoubleEscClear: true,
+	enableCompactionProgress: true,
 	enableMarkdownEnhance: true,
 	enableEditorPrefix: true,
 	enableCustomFooter: true,
@@ -502,6 +505,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableClipboardPaste: source.enableClipboardPaste !== false,
 		enableEscSteer: source.enableEscSteer !== false,
 		enableDoubleEscClear: source.enableDoubleEscClear !== false,
+		enableCompactionProgress: source.enableCompactionProgress !== false,
 		enableMarkdownEnhance: source.enableMarkdownEnhance !== false,
 		enableEditorPrefix: (source.enableEditorPrefix ?? source.enableInputPrompt) !== false, // 兼容旧配置键
 		enableCustomFooter: source.enableCustomFooter !== false,

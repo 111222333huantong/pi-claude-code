@@ -931,6 +931,13 @@ export async function showCcstylePanel(
 			"Live bash preview disabled, Pending-only.",
 			config.liveToolPreview,
 		);
+		const compactionProgressToggle = featureToggleSetting(
+			"enableCompactionProgress",
+			"Compaction progress",
+			"Progress bar, elapsed time and output tokens on the compacting status line. Next restart applies.",
+			"Native compacting status line only.",
+			config.enableCompactionProgress,
+		);
 		const statuslineToggle = featureToggleSetting(
 			"enableStatusline",
 			"Statusline",
@@ -1107,6 +1114,7 @@ export async function showCcstylePanel(
 			enableEscSteer: escSteerToggle,
 			enableDoubleEscClear: doubleEscClearToggle,
 			liveToolPreview: livePreviewToggle,
+			enableCompactionProgress: compactionProgressToggle,
 			enableMarkdownEnhance: markdownEnhanceToggle,
 		};
 
@@ -1526,6 +1534,7 @@ export async function showCcstylePanel(
 					escSteerToggle.setting,
 					doubleEscClearToggle.setting,
 					livePreviewToggle.setting,
+					compactionProgressToggle.setting,
 					statuslineToggle.setting,
 					markdownEnhanceToggle.setting,
 				],

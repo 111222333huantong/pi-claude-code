@@ -3,6 +3,7 @@ import { config } from "./config/config.ts";
 import agentSummary from "./feature/agent-summary/index.ts";
 import clipboardPaste from "./feature/clipboard-paste.ts";
 import { installCompactThinking } from "./feature/compact-thinking.ts";
+import compactionProgress from "./feature/compaction-progress.ts";
 import context from "./feature/context.ts";
 import registerDoubleEscClear from "./feature/double-esc-clear.ts";
 import registerEscSteer from "./feature/esc-steer.ts";
@@ -50,6 +51,8 @@ export default function (pi: ExtensionAPI): void {
 	// 两者按草稿空/非空互斥，顺序无关。
 	if (config.enableEscSteer) registerEscSteer(pi);
 	if (config.enableDoubleEscClear) registerDoubleEscClear(pi);
+	// compaction 进度条 + 结果规模回填（working-row 之后，Loader patch 链外层）。
+	if (config.enableCompactionProgress) compactionProgress(pi);
 	// 上游 footer 与本 fork 状态栏互斥：状态栏开则用状态栏（默认），
 	// 关了才回退到上游 footer（再关则 Pi 原生 footer）。
 	if (!readStatuslineConfig().enabled && config.enableCustomFooter) customFooter(pi);

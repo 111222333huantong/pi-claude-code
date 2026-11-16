@@ -73,6 +73,28 @@ type CompactionRecord = {
 };
 const compactionAfterByTokens = new Map<number, CompactionRecord>();
 
+/** 一次压缩的完整历史记录（/context 与卡片标题共用）。 */
+export type CompactionHistoryEntry = {
+	at: number;
+	reason: CompactionReason;
+	reportedBefore: number;
+	correctedBefore: number | undefined;
+	after: number;
+	durationMs: number;
+};
+/** 最近若干次压缩（按时间顺序，最旧在前）。上限 64 防长会话无限胀。 */
+const compactionHistory: CompactionHistoryEntry[] = [];
+const HISTORY_LIMIT = 64;
+/** 给 /context 等外部读取：返回副本避免外部改数组。 */
+export function getCompactionHistory(): readonly CompactionHistoryEntry[] {
+	return compactionHistory.slice();
+}
+
+function pushHistory(entry: CompactionHistoryEntry): void {
+	compactionHistory.push(entry);
+	if (compactionHistory.length > HISTORY_LIMIT) compactionHistory.shift();
+}
+
 /** session_before_compact 暂存的 preparation.messagesToSummarize，
  *  供 session_compact 时本地估算 before。 */
 let pendingSummarizeMessages: readonly unknown[] | null = null;
@@ -86,15 +108,26 @@ export function recordCompactionResult(
 	tokensBefore: number,
 	tokensAfter: number,
 	correctedBefore?: number,
+	durationMs?: number,
+	reason: CompactionReason = "manual",
 ): void {
 	if (!Number.isFinite(tokensBefore) || !Number.isFinite(tokensAfter)) return;
+	const roundedCorrected =
+		correctedBefore !== undefined && Number.isFinite(correctedBefore)
+			? Math.round(correctedBefore)
+			: undefined;
 	compactionAfterByTokens.set(Math.round(tokensBefore), {
 		reportedBefore: Math.round(tokensBefore),
-		correctedBefore:
-			correctedBefore !== undefined && Number.isFinite(correctedBefore)
-				? Math.round(correctedBefore)
-				: undefined,
+		correctedBefore: roundedCorrected,
 		after: Math.round(tokensAfter),
+	});
+	pushHistory({
+		at: Date.now(),
+		reason,
+		reportedBefore: Math.round(tokensBefore),
+		correctedBefore: roundedCorrected,
+		after: Math.round(tokensAfter),
+		durationMs: durationMs ?? 0,
 	});
 	if (compactionAfterByTokens.size > 64) {
 		const firstKey = compactionAfterByTokens.keys().next().value;
@@ -207,7 +240,9 @@ export default function compactionProgress(pi: ExtensionAPI): void {
 
 	pi.on("session_compact", async (event: any) => {
 		const now = Date.now();
-		if (state.startedAt > 0) lastDurationMs = now - state.startedAt;
+		const durationMs = state.startedAt > 0 ? now - state.startedAt : 0;
+		if (durationMs > 0) lastDurationMs = durationMs;
+		const reason = state.reason;
 		const entry = event?.compactionEntry;
 		const tokensBefore = Number(entry?.tokensBefore);
 		// 用 preparation.messagesToSummarize 本地累加修正 before：
@@ -227,12 +262,14 @@ export default function compactionProgress(pi: ExtensionAPI): void {
 		if (Number.isFinite(tokensBefore) && entry?.usage) {
 			const { output_tokens, cache_creation_input_tokens } = entry.usage;
 			const tokensAfter = output_tokens + (cache_creation_input_tokens ?? 0);
-			recordCompactionResult(tokensBefore, tokensAfter, correctedBefore);
+			recordCompactionResult(tokensBefore, tokensAfter, correctedBefore, durationMs, reason);
 		} else {
 			recordCompactionResult(
 				tokensBefore,
 				estimateSummaryTokens(String(entry?.summary ?? "")),
 				correctedBefore,
+				durationMs,
+				reason,
 			);
 		}
 		// Pi 的 compaction_end UI 事件同步 clearStatusIndicator → indicator.dispose()，

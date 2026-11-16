@@ -20,6 +20,7 @@ import {
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { shortenCwd } from "../../utils/format.ts";
+import { createCompactionLimitCache } from "../shell/footer.ts";
 import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
 import { defaultStatuslinePath, readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
 import {
@@ -133,6 +134,14 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	// ctx.getContextUsage() 会重建 session projection 并扫全消息；按叶子 + 模型缓存，
 	// 另加 5s TTL：工具集/系统提示变化不一定产生新 leaf，兜底刷新一次。
 	let contextUsageCache: { key: string; at: number; value: ContextUsage } | null = null;
+	// pi auto-compact 阈值：与 custom footer 共用同一份 settings 解析（30s 缓存）。
+	const compactLimitCache = createCompactionLimitCache(() => {
+		try {
+			return pi.getSettings?.() as any;
+		} catch {
+			return undefined;
+		}
+	});
 	// 状态栏配置只在启动/命令写入/文件变化时读，渲染路径不碰文件。
 	let renderConfig: ReturnType<typeof readStatuslineConfig> | null = null;
 	let stopConfigWatcher: (() => void) | null = null;
@@ -398,6 +407,20 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 					if (!renderConfig) renderConfig = readStatuslineConfig();
 					const statusConfig = renderConfig;
 
+					// compact 阈值 + 临近标记：tokens ≥ limit×90% 时 ctx 芯片亮 ⚡。
+					let ctxCompactAt: number | undefined;
+					let ctxCompactSoon = false;
+					if (ctxUsage && ctxUsage.contextWindow > 0 && typeof ctxUsage.tokens === "number") {
+						try {
+							ctxCompactAt = compactLimitCache(ctxUsage.contextWindow, ctx.model as any);
+							if (ctxCompactAt !== undefined && ctxCompactAt > 0) {
+								ctxCompactSoon = ctxUsage.tokens >= ctxCompactAt * 0.9;
+							}
+						} catch {
+							ctxCompactAt = undefined;
+						}
+					}
+
 					const snapshot: StatusSnapshot = {
 						model: modelLabel(ctx.model),
 						thinking,
@@ -405,6 +428,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 						ctxPct: ctxUsage?.percent ?? null,
 						ctxTokens: ctxUsage?.tokens ?? null,
 						ctxWindow: ctxUsage?.contextWindow ?? 0,
+						ctxCompactAt,
+						ctxCompactSoon,
 						cost: usage.cost,
 						turnElapsedMs: turnStartedAt === null ? null : Date.now() - turnStartedAt,
 						mcp: mcpText,

@@ -45,7 +45,8 @@
 			"./themes/catppuccin-latte.json"
 		],
 		"image": "https://raw.githubusercontent.com/111222333huantong/pi-claude-code/main/assets/readme/preview.webp",
-		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"
+		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498",
+		"changelogPath": "./CHANGELOG.md"
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",

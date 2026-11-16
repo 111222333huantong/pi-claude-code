@@ -10,7 +10,7 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { config, normalizeConfig } from "../extensions/config/config.ts";
+import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import { shouldRenderRichDiff } from "../extensions/renderer/index.ts";
 import { highlightDiffLine } from "../extensions/renderer/tool/diff/diff-highlight.ts";

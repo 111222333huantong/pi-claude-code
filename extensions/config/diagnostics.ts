@@ -139,5 +139,15 @@ export function formatDiagnostics(): string {
 	} else {
 		for (const issue of compat) lines.push(`- ${issue.feature}: missing ${issue.missing}`);
 	}
+	// 已知会与本扩展互踩补丁的 UI 扩展（来自 issue 与用户回报）。
+	// patchRegistry 的 Symbol.for 槽位会让后加载者顶掉先加载者，
+	// 表现为本扩展「装了但没生效」——提示用户优先排这个方向。
+	lines.push(
+		"- known conflicts: pi-open-tui / pi-ui-extension also patch assistant + tool render; " +
+			"last-loaded wins. If ccstyle looks inactive, /ccstyle off → /ccstyle on or uninstall the other UI.",
+	);
+	lines.push(
+		"- pi-paster optional dependency sharp can be skipped with --omit=optional (see README).",
+	);
 	return `${lines.join("\n")}\n`;
 }

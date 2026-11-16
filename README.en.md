@@ -2,7 +2,7 @@
   <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm downloads" src="https://img.shields.io/npm/dm/pi-claude-code?style=flat-square&color=58B7FF"></a>
-  <a href="#compatibility"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
+  <a href="#compatibility"><img alt="Node.js 22.19+ or 24" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19%20%C2%B7%2024-66E3C4?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -24,6 +24,9 @@
   way as the official tools.
 - **Two densities**: `on` for roomy cards, `compact` for dense turns, `off` to hand
   rendering back to Pi.
+- **Long sessions stay fast**: context usage, session tokens and git stats are all
+  event-driven caches, not per-frame session walks — Pi stays smooth after hours
+  (a same-gen footer got an issue for pinning CPU at 100% on long sessions).
 - **Small conveniences**: `/context` breakdown, `/loaded` resource inventory,
   `@` references to past sessions / subagents, clipboard image paste.
 
@@ -221,12 +224,31 @@ pi -e .              # one run, does not edit settings.json
 
 ## Compatibility
 
+- Node.js `>=22.19.0` (CI covers 22.19 + 24.x), Pi `^1.5.1` (uses the injected
+  keybinding hints, `messageTypes` and `ctx.ui.custom({ blocked })` from pi 1.5.x)
+
+### Coexisting with other UI extensions
+
+**Not recommended** to install alongside `pi-open-tui` / `pi-ui-extension` or any
+extension that patches the same assistant/tool components: the last-loaded patch
+wins via `Symbol.for` slots, so one side silently stops rendering. If ccstyle
+looks inactive, run `/ccstyle diag` to see who owns each patch, then
+`/ccstyle off` + `/ccstyle on` or uninstall the other UI. Same goes for upstream
+`pi-cc-extensions` / `pi-claude-code-tui` (see FAQ).
 
 ## FAQ
 
 **Can I install it alongside upstream `pi-cc-extensions` or `pi-claude-code-tui`?**
 No. They patch the same renderer components, so they will fight over the screen.
 This package already includes the upstream features — install only one.
+
+**Can I install it alongside `pi-open-tui` / `pi-ui-extension`?**
+Not recommended — same patching conflict (see *Coexisting with other UI
+extensions* above).
+
+**What does the ⚡ marker in the statusline mean?**
+Context usage is within 90% of the auto-compact threshold
+(`contextWindow − reserveTokens`) — the next compaction is about to trigger.
 
 **Tool output is collapsed by default. Can it stay expanded?**
 Click a card to expand it; to widen the limit permanently, raise
@@ -253,9 +275,6 @@ C: drive. Ctrl+V clipboard paste is Windows-only and needs `enableClipboardPaste
 **How do I go back to native rendering?**
 `/ccstyle off` restores it immediately; config lives in
 `~/.pi/agent/pi-cc-extensions.json` — delete it to reset.
-=======
-- Node.js `>=22.19.0`, Pi `^1.5.1` (uses the injected keybinding hints, `messageTypes` and `ctx.ui.custom({ blocked })` from pi 1.5.x)
->>>>>>> upstream/main
 
 ## Recommended companions
 

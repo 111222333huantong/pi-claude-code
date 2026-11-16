@@ -38,9 +38,9 @@ import {
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Box, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Spacer } from "@earendil-works/pi-tui";
 import { getAssistantMessagePrototype, getToolExecutionPrototype } from "../compat/pi-internals.ts";
-import { config, getToolDisplayConfig } from "../config/config.ts";
+import { config } from "../config/config.ts";
 import { subscribeTicker } from "../feature/shell/spinner-ticker.ts";
 import { isTranscriptComponent } from "./transcript-scope.ts";
 

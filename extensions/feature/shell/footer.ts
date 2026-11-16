@@ -341,6 +341,9 @@ function colorUsageChip(theme: any, text: string): string {
 
 let currentTui: any;
 let refreshCurrentGitStats: ((reset?: boolean) => void) | undefined;
+/** 当前 footer 实例的 session stats 失效函数，由下方 pi.on 事件统一触发。 */
+let statsInvalidator: (() => void) | undefined;
+const invalidateFooterStats = () => statsInvalidator?.();
 
 /** Apply a /ccstyle Git mode change immediately, without recreating the footer. */
 export function refreshFooterGitStats(): void {
@@ -502,7 +505,8 @@ const createCustomFooterFactory =
 		};
 
 		// 三个会话统计每帧重算会全量遍历 session，长会话把 pi 钉在 100% CPU（issue #80）。
-		// leaf/model/thinking 任一变化立即重算；不变时 1s TTL，流式期间每秒刷新一次。
+		// 事件驱动失效：新消息/工具结果/压缩/回合结束才重算；model/thinking/leaf
+		// 变化走 key 比对，1s TTL 只兜 resume 等边角，空闲期不再每秒空扫。
 		const SESSION_STATS_TTL_MS = 1_000;
 		let statsMemoKey = "";
 		let statsMemoAt = 0;
@@ -514,6 +518,12 @@ const createCustomFooterFactory =
 					cachePct: number;
 			  }
 			| undefined;
+		const invalidateStats = () => {
+			statsMemo = undefined;
+		};
+		// 事件注册在工厂外（footer.ts 模块作用域），这里只把失效函数挂到
+		// 模块级，事件到达时统一清。dispose 时一并摘除，避免串到下个 session。
+		statsInvalidator = invalidateStats;
 		const sessionStats = () => {
 			const model = ctx.model;
 			const key = `${ctx.sessionManager.getLeafId() ?? ""}|${model?.provider}/${model?.id}|${ctx.thinkingLevel ?? ""}`;
@@ -699,6 +709,7 @@ const createCustomFooterFactory =
 					refreshCurrentUsage = undefined;
 					refreshCurrentMcpChip = undefined;
 				}
+				if (statsInvalidator === invalidateStats) statsInvalidator = undefined;
 			},
 		};
 	};
@@ -732,7 +743,19 @@ export default function (pi: ExtensionAPI) {
 		refreshCurrentGitStats?.();
 		// 懒连接的 MCP 服务器可能刚被调用过
 		refreshCurrentMcpChip?.();
+		invalidateFooterStats();
 	});
+	// 会话统计失效（issue #80 防御）：新消息进 ctx / 压缩 / 回合收尾都会改变
+	// tokens/cost/cachePct，让下一帧重算而不是等 TTL。
+	pi.on("message_end", (event: any) => {
+		const role = event?.message?.role;
+		if (role === "user" || role === "assistant" || role === "toolResult") {
+			invalidateFooterStats();
+		}
+	});
+	pi.on("session_compact", invalidateFooterStats);
+	pi.on("agent_end", invalidateFooterStats);
+	pi.on("turn_end", invalidateFooterStats);
 
 	// 启动 / /reload / 新建会话 时按配置恢复
 	pi.on("session_start", (_event, ctx) => {

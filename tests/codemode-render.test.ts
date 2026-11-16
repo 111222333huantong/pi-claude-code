@@ -5,7 +5,6 @@ import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-age
 import { config } from "../extensions/config/config.ts";
 import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import {
-	codemodeCalls,
 	codemodeCollapsedLines,
 	codemodeExpandedBody,
 	codemodeOutputLineCount,

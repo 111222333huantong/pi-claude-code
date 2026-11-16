@@ -12,10 +12,6 @@ import claudeCodeStyleExtension, {
 } from "../extensions/renderer/index.ts";
 import { sharedToolHoverState } from "../extensions/renderer/mouse/hover.ts";
 import {
-	scheduleSessionRender,
-	TOOL_MOUSE_DISABLE,
-} from "../extensions/renderer/mouse/interaction.ts";
-import {
 	collapsedHintHitbox,
 	HINT_HITBOX_PAD_COLS,
 	isOsc8LinkColumn,

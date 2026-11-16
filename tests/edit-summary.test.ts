@@ -161,6 +161,7 @@ test("纯追加的折叠预览 auto 只给 3 行，并跳过重复括号和空�
 	const rows = [
 		"@@ -1,3 +1,16 @@",
 		" 1|export function greet(name: string) {",
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: fixture 里就是要含模板字面量文本
 		" 2|  return `Hi, ${name}!`;",
 		"-3|}",
 		"+3|}",

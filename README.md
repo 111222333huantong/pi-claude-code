@@ -2,7 +2,7 @@
   <a href="https://pi.dev/packages?name=pi-claude-code"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm version" src="https://img.shields.io/npm/v/pi-claude-code?style=flat-square&color=66E3C4"></a>
   <a href="https://www.npmjs.com/package/pi-claude-code"><img alt="npm downloads" src="https://img.shields.io/npm/dm/pi-claude-code?style=flat-square&color=58B7FF"></a>
-  <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
+  <a href="#兼容性"><img alt="Node.js 22.19+ or 24" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19%20%C2%B7%2024-66E3C4?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -21,6 +21,8 @@
 - **diff 看得清**：edit / write 行内高亮、左右分栏、自动换行、`⋮ N lines` 省略；
   WSL 与 Windows 路径都按官方语义解析。
 - **两种密度**：`on` 宽松卡片、`compact` 紧凑回合视图，`off` 一键还原原生渲染。
+- **长会话不卡**：ctx 用量、会话 token、git stats 全部事件驱动缓存，不逐帧扫全
+  会话——Pi 跑几个小时也稳定 60fps（上游同型 footer 曾因每帧重扫会话被报 100% CPU）。
 - **顺手的小工具**：`/context` 上下文分解、`/loaded` 资源盘点、`@` 引用历史
   session / subagent、剪贴板图片粘贴。
 
@@ -212,12 +214,28 @@ pi -e .              # 只跑一次，不改 settings.json
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `^1.5.1`（用到了 1.5.x 的注入式按键提示、`messageTypes` 与 `ctx.ui.custom({ blocked })`）
+- Node.js `>=22.19.0`（CI 覆盖 22.19 + 24.x），Pi `^1.5.1`（用到了 1.5.x 的
+  注入式按键提示、`messageTypes` 与 `ctx.ui.custom({ blocked })`）
+
+## 与其他 UI 扩展共存
+
+与 `pi-open-tui` / `pi-ui-extension` 等会 patch 同一批 assistant/tool 组件的扩展
+**不建议同装**：后加载者会顶掉先加载者的 patch（`Symbol.for` 全局槽位），表现
+为一方的渲染静默失效。装了多个 UI 包发现本扩展「不生效」时，先跑 `/ccstyle diag`
+看 patch 归属；要回 ccstyle 风格 `/ccstyle off` 再 `/ccstyle on`（或直接卸掉另一个 UI）。
+本包与上游 `pi-cc-extensions` / `pi-claude-code-tui` 也不能同装（见 FAQ）。
 
 ## 常见问题
 
 **能和上游 `pi-cc-extensions` 或 `pi-claude-code-tui` 同时装吗？**
 不能。它们 patch 同一批渲染组件，同屏会互相覆盖。本包已包含上游功能，只装这一个。
+
+**能和 `pi-open-tui` / `pi-ui-extension` 一起装吗？**
+不建议，理由同上（见「与其他 UI 扩展共存」）。
+
+**状态栏的 ⚡ 标记是什么意思？**
+上下文用量进入 auto-compact 阈值（`contextWindow − reserveTokens`）的 90% 以内，
+提示下一次压缩即将到来。
 
 **工具输出默认折叠，能一直展开吗？**
 单击卡片即可展开；想永久放宽可在 `/ccstyle` → UI 页调大

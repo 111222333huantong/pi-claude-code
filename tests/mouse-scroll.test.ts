@@ -7,7 +7,7 @@ import {
 	setKeybindings,
 	TUI_KEYBINDINGS,
 } from "@earendil-works/pi-tui";
-import { config, formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
+import { config } from "../extensions/config/config.ts";
 import {
 	disableOfficialScrollToEnd,
 	getScrollButtonNewCount,

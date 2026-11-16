@@ -1068,7 +1068,7 @@ test("多工具展开：子卡首行只剩图标时不额外占一行（issue: �
 test("paddedBackgroundRow keeps styled rows intact without running the truncate path", () => {
 	const theme = {
 		fg: (_color: string, text: string) => text,
-		bg: (slot: string, text: string) => `\x1b[48;5;22m${text}\x1b[49m`,
+		bg: (_slot: string, text: string) => `\x1b[48;5;22m${text}\x1b[49m`,
 		setSlot: undefined,
 	};
 	const styled = "\x1b[32m✓\x1b[0m Bash \x1b[2m$ npm test\x1b[0m";

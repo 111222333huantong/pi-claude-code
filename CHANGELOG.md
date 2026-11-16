@@ -3,6 +3,35 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## 1.7.1 — 2026-11-16
+
+### 修复
+
+- README.en.md 有一处 1.7.0 合并时留下的冲突标记（`>>>>>>> upstream/main`），
+  已清。
+- custom footer 的会话统计改事件驱动失效（`message_end` / `tool_execution_end` /
+  `session_compact` / `agent_end` / `turn_end`），长会话不再每秒空扫全部分支
+  （上游 issue #80 的防御性修复，statusline 在 1.7.0 已同款）。
+
+### 显示
+
+- statusline ctx 芯片在用量进入 auto-compact 阈值 90% 内时亮 `⚡` 标记，
+  阈值复用 `contextWindow − reserveTokens`（含 model override 解析）。
+- `/context` 新增一行压缩历史摘要：`
+  2 compactions · last 141k → 3k (−97%) · 26s · threshold`，非 TUI 模式进
+  notify，TUI 模式在 cache 行下多一行。
+- `/ccstyle diag` 的 Compatibility 段补「已知互斥扩展」提示（pi-open-tui /
+  pi-ui-extension 同 patch assistant+tool render，后加载者赢）。
+
+### 工程
+
+- `package.json` 加 `pi.changelogPath`（1.5 起的升级提示会读到本包的 CHANGELOG）。
+- README/README.en 加 Node 24 支持说明、「与其他 UI 扩展共存」一节、⚡ 标记 FAQ。
+- `docs/VENDOR.md`：`pi-compact-thinking` 正式宣告 FORKED（原仓已删除，
+  本地 delta 远超上游形态）；补记 Anthropic message threads 不影响本地
+  `buildSessionProjection` 口径。
+- 清掉全部 biome warning（unused imports / params / template-curly 抑制）。
+
 ## 1.7.0 — 2026-11-16
 
 ### 新功能

@@ -16,10 +16,11 @@ import {
 	rgbColor,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { formatTokens, padLine } from "../utils/format.ts";
+import { formatDuration, formatTokenCount, formatTokens, padLine } from "../utils/format.ts";
 import { frameBottom, frameDivider, frameHeader, frameRow } from "../utils/frame.ts";
 import { setInjectedKeybindings } from "../utils/keybindings.ts";
 import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
+import { type CompactionHistoryEntry, getCompactionHistory } from "./compaction-progress.ts";
 import { summarizeUsage, type UsageTotals } from "./statusline/usage.ts";
 
 export type ContextPart = {
@@ -158,6 +159,27 @@ export function cacheSummary(totals: UsageTotals): string {
 	if (read > 0) segments.push(`${formatTokens(read)} read`);
 	if (write > 0) segments.push(`${formatTokens(write)} write`);
 	return segments.join(" · ");
+}
+
+/**
+ * 压缩历史单行摘要：`2 compactions · last 141k → 3k (−97%) · 26s · threshold`。
+ * 无历史返回空串。与 cacheSummary 同位置展示，不进 dialog 点击区。
+ */
+export function compactionHistorySummary(history: readonly CompactionHistoryEntry[]): string {
+	if (history.length === 0) return "";
+	const last = history[history.length - 1];
+	const before = last.correctedBefore ?? last.reportedBefore;
+	const arrow =
+		before > 0
+			? `${formatTokenCount(before)} → ${formatTokenCount(last.after)} (−${Math.max(
+					0,
+					Math.round((1 - last.after / before) * 100),
+				)}%)`
+			: `${formatTokenCount(last.after)} after`;
+	const count = history.length === 1 ? "1 compaction" : `${history.length} compactions`;
+	const duration = last.durationMs > 0 ? ` · ${formatDuration(last.durationMs)}` : "";
+	const reason = last.reason ? ` · ${last.reason}` : "";
+	return `${count} · last ${arrow}${duration}${reason}`;
 }
 
 /** 测试可替换；生产使用 pi 的剪贴板实现。 */
@@ -735,10 +757,12 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			} catch {
 				// 会话不可读（嵌入式/恢复中）时不显示缓存行
 			}
+			const compactionLine = compactionHistorySummary(getCompactionHistory());
 
 			if (ctx.mode !== "tui") {
 				const lines = allParts.map((part) => `${part.label}: ${formatTokens(part.tokens)} tokens`);
 				if (cacheLine) lines.push(cacheLine);
+				if (compactionLine) lines.push(compactionLine);
 				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
@@ -978,6 +1002,9 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 											`${theme.fg("muted", subtitle)}${theme.fg(health.color, ` · ${health.label}`)}`,
 										),
 										...(cacheLine ? [frameRow(theme, width, theme.fg("dim", cacheLine))] : []),
+										...(compactionLine
+											? [frameRow(theme, width, theme.fg("dim", compactionLine))]
+											: []),
 										frameDivider(theme, width),
 										frameRow(theme, width, segments),
 										frameRow(theme, width, ""),
@@ -1000,7 +1027,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									// hitbox 用弹框局部坐标（0-based）：esc 在 title 行（第 1 行）
 									// 尾部 │ 前 5 列，preview 行对应 partRows（顶 border=0、title=1、
 									// ├=2、segments=3、空行=4，part 从 5 起；有缓存行时整体下移 1）。
-									const partStart = 5 + (cacheLine ? 1 : 0);
+									const partStart = 5 + (cacheLine ? 1 : 0) + (compactionLine ? 1 : 0);
 									escHitbox = { row: 1, startCol: width - 6, endCol: width - 2 };
 									previewHitboxes = visiblePreviews.flatMap((preview) => {
 										const partIndex = allParts.findIndex((part) => part.label === preview.label);

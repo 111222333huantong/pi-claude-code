@@ -20,6 +20,10 @@ export interface StatusSnapshot {
 	ctxPct: number | null;
 	ctxTokens: number | null;
 	ctxWindow: number;
+	/** pi auto-compact 触发点（contextWindow − reserveTokens）；undefined = 未知/未启用。 */
+	ctxCompactAt?: number;
+	/** 当前 tokens 已进入 compact 阈值 90% 以内：ctx 芯片亮 ⚡ 标记。 */
+	ctxCompactSoon?: boolean;
 	cost: number;
 	/** 正在跑的回合已用时间（ms）；空闲时为 null/undefined。 */
 	turnElapsedMs?: number | null;
@@ -185,6 +189,8 @@ function ctxSegment(snapshot: StatusSnapshot, paint: Paint): FitSegment {
 	const barFilled = "█".repeat(filled);
 	const barEmpty = "░".repeat(empty);
 	const danger = pct !== null && pct >= 90;
+	// compact 阈值临近标记：tokens ≥ limit×90% 时亮 ⚡（与 `!!` 并列，不互斥）。
+	const compactMark = snapshot.ctxCompactSoon === true;
 	const detailShort = pct === null ? "—" : `${Math.round(pct)}%`;
 	const detailFull =
 		pct === null
@@ -194,12 +200,18 @@ function ctxSegment(snapshot: StatusSnapshot, paint: Paint): FitSegment {
 		const innerPlain = `ctx ${barFilled}${barEmpty} ${detail}`;
 		const innerPainted =
 			paint(tone, `ctx ${barFilled}`) + paint("dim", barEmpty) + paint(tone, ` ${detail}`);
-		return danger
+		const withMark = compactMark
 			? {
-					plain: `!! ${innerPlain} !!`,
-					painted: paint("error", "!! ") + innerPainted + paint("error", " !!"),
+					plain: `${innerPlain} ⚡`,
+					painted: innerPainted + paint("warning", " ⚡"),
 				}
 			: { plain: innerPlain, painted: innerPainted };
+		return danger
+			? {
+					plain: `!! ${withMark.plain} !!`,
+					painted: paint("error", "!! ") + withMark.painted + paint("error", " !!"),
+				}
+			: withMark;
 	};
 	const full = wrap(detailFull);
 	const short = detailFull === detailShort ? undefined : wrap(detailShort);

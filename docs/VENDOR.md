@@ -82,7 +82,11 @@
   （见文件头 1–2 行）
 - **Pinned**：未 pin——2026-09-16 实测该 monorepo `master` 的 `packages/` 下
   **已无此包名**（现存 `pi-preferred-thinking` 等 13 个，无 `pi-compact-thinking`），
-  疑更名或删除。同步前必须先找到对应后继，否则视为 FORKED 不跟进。
+  疑更名或删除。
+- **状态（2026-11-16 定谳）**：**FORKED**。本地 delta 已远超上游形态
+  （文档模式/`thinking-document.ts`/增量构建器/`patchRegistry` 所有权/与
+  `compact-mode` 的 `CompactThinkingController` 查询面），上游包在原仓消失，
+  没有可跟随的基线，不再做同步尝试。如后继包出现且值得回归，另开条目记录。
 - **Local delta**（已大幅改写）：三级 LRU 缓存、`duration` 落盘持久化、
   `patchRegistry` 所有权管理、`CompactThinkingController` 只读查询面
   （供 `renderer/compact-mode` 复用，不建第二套计时器）。
@@ -282,11 +286,15 @@
   provider usage 漏报修正，`enableCompactionProgress` 默认开。
 - **版本**：`pi-claude-code` 1.6.1 → 1.7.0。
 - **结果**：`npm run typecheck`、`npm test` 全绿（962 例：961 过 / 1 跳过）。
+- **口径备查**：pi 1.5 起 Anthropic message threads / Codex WebSocket 只发增量
+  payload，但 `sessionManager.buildSessionProjection()` 仍是全量本地投影
+  （官方 API，见 `docs/extensions.md` ctx.getContextUsage），statusline ctx
+  估算与 `/context` 分解口径不受影响，不用跟。
 
 ## 待办
 
 - [x] §2 pin 一个 cc-my-pi 版本（2026-10-29 pin `98ad3fc` v1.4.3）
-- [ ] §4 找到 `pi-compact-thinking` 后继或宣告 FORKED
+- [x] §4 找到 `pi-compact-thinking` 后继或宣告 FORKED（2026-11-16 已宣告 FORKED）
 - [x] §6 上游 pending BOM/换行归一可选抄入（2026-09-16 P2.3 已做：BOM 去除 + CRLF 经
   `splitWriteContentLines` 归一 + `~` 展开 + `realpath` 工作区逃逸检查，见
   `extensions/renderer/tool/diff/pending-preview.ts`）

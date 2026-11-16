@@ -19,6 +19,20 @@ import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { isToolTuiFullscreen } from "./tool/names.ts";
 import { aggregateToolCardBgSlot, toolCardBgSlot } from "./tool/tool-state.ts";
 
+/**
+ * 面板子卡是否还是上一帧的那些行。引用相等是常态（子卡自己缓存行），
+ * 但 pi 的 Spacer.render 每次都新建数组，按引用判等会让整张面板每帧重排
+ *（逐行重铺底色，单行约 30us）。内容逐行相同时按命中算。
+ */
+function samePaintedLines(left: string[], right: string[]): boolean {
+	if (left === right) return true;
+	if (left.length !== right.length) return false;
+	for (let index = 0; index < left.length; index++) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
+}
+
 export function fallbackTheme(): any {
 	return {
 		fg: (_color: string, text: string) => text,
@@ -264,7 +278,7 @@ export function compactRoundCard(
 				bgSlot: string;
 				/** 全屏与主屏的图片行输出不同（见 imageBackgroundRow）。 */
 				fullscreen: boolean;
-				paints: unknown[];
+				paints: string[][];
 				lines: string[];
 				hits: Array<{ child: any; start: number; end: number }>;
 		  }
@@ -288,7 +302,7 @@ export function compactRoundCard(
 			paint.bgSlot === bgSlot &&
 			paint.fullscreen === isToolTuiFullscreen() &&
 			paint.paints.length === paints.length &&
-			paint.paints.every((item, index) => item === paints[index])
+			paint.paints.every((item, index) => samePaintedLines(item, paints[index]))
 		) {
 			return paint;
 		}

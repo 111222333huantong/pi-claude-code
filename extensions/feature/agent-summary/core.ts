@@ -11,7 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { formatClockTime, formatDuration } from "../../utils/format.ts";
+import { formatDuration, formatTimestamp } from "../../utils/format.ts";
 import { currentTtftMs, formatTtft } from "../shell/token-rate.ts";
 
 /** 工具分类。 */
@@ -183,7 +183,7 @@ export function summaryTail(data: AgentSummaryData): string {
 		typeof data.ttftMs === "number" && data.ttftMs > 0 ? `TTFT ${formatTtft(data.ttftMs)}` : "";
 	const done =
 		typeof data.endedAt === "number" && data.endedAt > 0
-			? `done ${formatClockTime(data.endedAt)}`
+			? `done ${formatTimestamp(data.endedAt)}`
 			: "";
 	const head =
 		rate !== null

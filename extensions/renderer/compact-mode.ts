@@ -103,6 +103,8 @@ function isSpacerComponent(value: any): boolean {
  * 立刻收拢会得到「先收再开」两次转场；静默期内被新回合接替则一并收拢。
  */
 const FOLD_SETTLE_MS = 250;
+/** agent_settled 收口后回合仍 Running 的兜底重试间隔（Codex settle watchdog 同款思路）。 */
+const SETTLE_WATCHDOG_MS = 2_000;
 
 function isAssistantComponent(value: any): boolean {
 	return value instanceof AssistantMessageComponent;
@@ -377,6 +379,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		/** 回合尾行（摘要 + live 槽位），挂在 transcript 容器的回合末尾。 */
 		tail?: MountedRoundTail;
 	};
+	/** agent_settled 后 settle watchdog 的代数：同回合多次 settle 只认最新一拍。 */
+	let settleGeneration = 0;
 	let activeRound: CompactRound | undefined;
 	let roundByComponent = new WeakMap<object, CompactRound>();
 	/** 本 pass 建起的回合（含被收编的）：清扫孤儿尾行的在册名单。 */
@@ -1765,6 +1769,19 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			// 走静默期：摘要行当场翻成 Ran for，槽位卡多留一拍再收拢。
 			endRound(round, true);
 			renderRound(round);
+			// Watchdog：agent_settled 是权威收口事件，但若 finalize 被挂起的 live
+			// work 拒掉（endRequest 滞留）、或中途丢帧，回合会一直显示 Running。
+			// 延迟重试一次 endRound（幂等，live work 仍在时 finalize 照样拒绝）。
+			// 对齐 Codex「权威终态 settle + watchdog 兜底」模式。
+			const generation = ++settleGeneration;
+			const stuck = round;
+			setTimeout(() => {
+				if (!patch.active || generation !== settleGeneration) return;
+				if (stuck.active === true || stuck.endRequest !== undefined) {
+					endRound(stuck, true);
+					renderRound(stuck);
+				}
+			}, SETTLE_WATCHDOG_MS).unref?.();
 		},
 		shutdown() {
 			patch.dispose();

@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { AssistantMessageComponent, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
-import { getCompatIssueHistory } from "../compat/pi-internals.ts";
+import { getCompatIssueHistory, PATCH_BETS } from "../compat/pi-internals.ts";
 import { defaultStatuslinePath, readStatuslineConfig } from "../feature/statusline/config.ts";
 import {
 	ASSISTANT_DOTTED_PATCH,
@@ -21,6 +21,7 @@ import {
 	GLOBAL_TOOL_RENDER_PATCH,
 	MAIN_SCREEN_DO_RENDER_PATCH,
 	MESSAGE_DISPLAY_PATCH,
+	OWN_PATCH_NAMES,
 	PATCH_NAME_KEY,
 	PROTOTYPE_ORIGINAL_KEY,
 	patchRegistry,
@@ -61,6 +62,25 @@ function assistantPatchChain(): string[] {
 	if (names.length === 0) return ["native"];
 	names.push("native");
 	return names;
+}
+
+/**
+ * 检测是否有「非本扩展」的包装器压在 assistant updateContent 链上：
+ * 顶层函数既不是我们自己的命名补丁，又不等于我们登记过的任何一层。
+ * 这类情况意味着另一个 UI 扩展（pi-open-tui / pi-ui-extension / pi-diff…）
+ * 后加载把渲染接管了，本扩展「装了但不生效」。
+ */
+export function foreignPatchOnAssistant(): boolean {
+	const current: any = (AssistantMessageComponent.prototype as any).updateContent;
+	if (typeof current !== "function") return false;
+	const name = current[PATCH_NAME_KEY];
+	if (typeof name === "string" && OWN_PATCH_NAMES.has(name)) return false;
+	// 无名字的函数：可能是原生（没有任何补丁），也可能是外部 wrapper。
+	// 原生 updateContent 不会携带我们的任一键；外部 wrapper 同样不带。
+	// 区分依据：本扩展装了补丁后最外层必然带 PATCH_NAME_KEY，
+	// 若顶层不带而 PATCH_SLOTS 里有已装槽位，说明被外部覆盖了。
+	if (name === undefined && patchRegistry.get(STREAM_THROTTLE_PATCH) !== undefined) return true;
+	return false;
 }
 
 const PATCH_SLOTS: ReadonlyArray<readonly [string, symbol]> = [
@@ -143,11 +163,22 @@ export function formatDiagnostics(): string {
 	// patchRegistry 的 Symbol.for 槽位会让后加载者顶掉先加载者，
 	// 表现为本扩展「装了但没生效」——提示用户优先排这个方向。
 	lines.push(
-		"- known conflicts: pi-open-tui / pi-ui-extension also patch assistant + tool render; " +
+		"- known conflicts: pi-open-tui / pi-ui-extension / pi-diff also patch assistant/tool render; " +
 			"last-loaded wins. If ccstyle looks inactive, /ccstyle off → /ccstyle on or uninstall the other UI.",
+	);
+	const foreign = foreignPatchOnAssistant();
+	lines.push(
+		foreign
+			? "- ⚠ foreign wrapper detected on assistant updateContent: another UI extension is last on the chain."
+			: "- assistant chain owner: ours",
 	);
 	lines.push(
 		"- pi-paster optional dependency sharp can be skipped with --omit=optional (see README).",
 	);
+	lines.push("");
+	lines.push("## Patch bets (upgrade checklist)");
+	for (const bet of PATCH_BETS) {
+		lines.push(`- ${bet.feature}: ${bet.source} (${bet.since}+)`);
+	}
 	return `${lines.join("\n")}\n`;
 }

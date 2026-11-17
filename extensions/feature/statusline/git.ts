@@ -115,6 +115,19 @@ async function runGit(cwd: string, args: string[]): Promise<string | null> {
 	}
 }
 
+/**
+ * 轻量采集：只读分支名（`git branch --show-current`），不跑 porcelain/diff。
+ * Windows 多 worktree 或 git 进程敏感场景的降级档
+ * （pi-powerline-footer `"polling": "branch"` 同口径，其 issue #57 来源）。
+ * 非仓库 / 游离 HEAD 返回空快照。
+ */
+export async function collectGitBranchOnly(cwd: string): Promise<GitSnapshot> {
+	const branch = await runGit(cwd, ["branch", "--show-current"]);
+	const name = branch?.trim();
+	if (!name) return { ...EMPTY_GIT_SNAPSHOT };
+	return { ...EMPTY_GIT_SNAPSHOT, branch: name };
+}
+
 /** 全量采集一次；任何失败返回空快照（非仓库），永不抛。 */
 export async function collectGitStatus(cwd: string): Promise<GitSnapshot> {
 	const [porcelain, shortstat, gitDir] = await Promise.all([
@@ -174,6 +187,8 @@ export function startGitPoller(
 	 * （cc-my-pi `ef749f0` #4 同口径）。
 	 */
 	isAlive?: () => boolean,
+	/** 轻量档：只读分支名；缺省走全量 porcelain+diff。 */
+	collect: (cwd: string) => Promise<GitSnapshot> = collectGitStatus,
 ): GitPoller {
 	let stopped = false;
 	let inFlight = false;
@@ -210,7 +225,7 @@ export function startGitPoller(
 		}
 		inFlight = true;
 		try {
-			const snapshot = await collectGitStatus(cwd);
+			const snapshot = await collect(cwd);
 			if (stopped) return;
 			if (!probeAlive()) {
 				stopped = true;

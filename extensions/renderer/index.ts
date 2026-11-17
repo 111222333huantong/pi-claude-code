@@ -10,7 +10,7 @@ import {
 	setConfig,
 	updateConfig,
 } from "../config/config.ts";
-import { formatDiagnostics } from "../config/diagnostics.ts";
+import { foreignPatchOnAssistant, formatDiagnostics } from "../config/diagnostics.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { showTextPreview } from "../feature/context.ts";
@@ -346,6 +346,21 @@ export default function (
 			const summary = compatIssues.map((issue) => `${issue.feature}: ${issue.missing}`).join(", ");
 			ctx.ui?.notify?.(`ccstyle: 与当前 Pi 版本不兼容，部分样式已回退（${summary}）`, "warning");
 		}
+		// 撞 patch 主动检测：装了补丁但 updateContent 链顶层不是我们命名的包装器，
+		// 说明另一个 UI 扩展后加载接管了渲染（典型：pi-open-tui / pi-ui-extension / pi-diff）。
+		// 延迟一拍等所有 session_start 跑完再判断（同 write 归属确认）。
+		scheduleDeferred(() => {
+			try {
+				if (foreignPatchOnAssistant()) {
+					ctx.ui?.notify?.(
+						"ccstyle: 检测到另一个 UI 扩展压在最外层，工具卡/diff 可能不生效。可 /ccstyle diag 查看补丁链，或卸载冲突扩展。",
+						"warning",
+					);
+				}
+			} catch {
+				/* 检测失败不打扰 */
+			}
+		});
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);

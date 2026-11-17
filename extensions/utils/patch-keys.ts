@@ -86,6 +86,27 @@ export const TRANSCRIPT_GUTTER_SLOTS = Symbol.for("pi.ccstyle.transcript-gutter-
 // ── rich diff 组件标记 ──
 export const RICH_DIFF_COMPONENT = Symbol.for("pi.ccstyle.rich-diff-component");
 
+// ── 补丁链所有权协调（跨扩展撞 patch 检测） ──
+/**
+ * 本扩展所有 updateContent 包装器都必须带 PATCH_NAME_KEY 名字；外部扩展
+ * （pi-open-tui / pi-ui-extension / pi-diff 等）若在同一原型上再打一层，
+ * 它没有我们的名字也没有 PROTOTYPE_ORIGINAL_KEY 链——用这两个键即可把
+ * 「我们的链」和「陌生包装器」分开，从而在 session_start 主动提示，
+ * 不必等用户发现渲染不对才跑 /ccstyle diag。
+ */
+export const OWN_PATCH_NAMES: ReadonlySet<string> = new Set([
+	"stream-throttle",
+	"dotted",
+	"compact",
+	"compact-thinking",
+]);
+
+/** 判定函数是否为本扩展装的 updateContent 包装器。 */
+export function isOwnPatch(fn: unknown): boolean {
+	const name = (fn as any)?.[PATCH_NAME_KEY];
+	return typeof name === "string" && OWN_PATCH_NAMES.has(name);
+}
+
 // ── PatchRegistry：所有权生命周期统一收口 ──
 
 /**

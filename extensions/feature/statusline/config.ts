@@ -13,11 +13,20 @@ export interface StatuslineConfig {
 	enabled: boolean;
 	/** L2 是否显示 `wt <name>` worktree 段。 */
 	showWorktree: boolean;
+	/**
+	 * git 轮询档位：
+	 * - `full`：完整快照（分支 + staged/unstaged/untracked + insertions/deletions + PR），默认。
+	 * - `branch`：只读分支名（轻量 `git branch --show-current`），适合 Windows 多 worktree
+	 *   或 git 进程敏感场景（pi-powerline-footer issue #57 同口径）。
+	 * - `off`：不做扩展轮询，git 段只保留启动快照（不再后台刷新）。
+	 */
+	gitPolling: "full" | "branch" | "off";
 }
 
 export const DEFAULT_STATUSLINE_CONFIG: StatuslineConfig = {
 	enabled: true,
 	showWorktree: true,
+	gitPolling: "full",
 };
 
 /** 与 config.ts / quiet-startup.ts 一致：honor PI_CODING_AGENT_DIR。 */
@@ -28,9 +37,11 @@ export function defaultStatuslinePath(): string {
 
 function normalize(input: unknown): StatuslineConfig {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+	const polling = source.gitPolling;
 	return {
 		enabled: source.enabled !== false,
 		showWorktree: source.showWorktree !== false,
+		gitPolling: polling === "branch" || polling === "off" ? polling : "full",
 	};
 }
 

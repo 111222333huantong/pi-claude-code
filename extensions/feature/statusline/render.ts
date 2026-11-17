@@ -192,10 +192,20 @@ function ctxSegment(snapshot: StatusSnapshot, paint: Paint): FitSegment {
 	// compact 阈值临近标记：tokens ≥ limit×90% 时亮 ⚡（与 `!!` 并列，不互斥）。
 	const compactMark = snapshot.ctxCompactSoon === true;
 	const detailShort = pct === null ? "—" : `${Math.round(pct)}%`;
+	// 距 auto-compact 剩余量：阈值已知且未触发时附 `~Nk left` 预估
+	//（opencode #32926 / OpenHands #16170 的 ambient-context-pressure 趋势）。
+	const tokensLeft =
+		snapshot.ctxCompactAt !== undefined &&
+		snapshot.ctxTokens !== null &&
+		snapshot.ctxCompactAt > snapshot.ctxTokens
+			? snapshot.ctxCompactAt - snapshot.ctxTokens
+			: null;
 	const detailFull =
 		pct === null
 			? "—"
-			: `${Math.round(pct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}`;
+			: `${Math.round(pct)}% · ${snapshot.ctxTokens === null ? "?" : formatTokens(snapshot.ctxTokens)}/${snapshot.ctxWindow > 0 ? formatTokens(snapshot.ctxWindow) : "?"}${
+					tokensLeft !== null ? ` · ~${formatTokens(tokensLeft)} left` : ""
+				}`;
 	const wrap = (detail: string): { plain: string; painted: string } => {
 		const innerPlain = `ctx ${barFilled}${barEmpty} ${detail}`;
 		const innerPainted =

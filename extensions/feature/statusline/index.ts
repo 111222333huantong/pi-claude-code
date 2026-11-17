@@ -24,6 +24,7 @@ import { createCompactionLimitCache } from "../shell/footer.ts";
 import { collectLoadedStats, resolveAgentDir } from "../shell/loaded-stats.ts";
 import { defaultStatuslinePath, readStatuslineConfig, writeStatuslineConfig } from "./config.ts";
 import {
+	collectGitBranchOnly,
 	collectGitStatus,
 	EMPTY_GIT_SNAPSHOT,
 	type GitPoller,
@@ -78,16 +79,19 @@ function hasMcpAdapter(pi: ExtensionAPI): boolean {
 
 export default function registerStatusline(pi: ExtensionAPI): void {
 	pi.registerCommand("statusline", {
-		description: "Toggle the custom statusline footer (on|off|worktree on|off|status)",
+		description:
+			"Toggle the custom statusline footer (on|off|worktree on|off|git full|branch|off|status)",
 		getArgumentCompletions: (prefix) =>
-			["on", "off", "worktree on", "worktree off", "status"]
+			["on", "off", "worktree on", "worktree off", "git full", "git branch", "git off", "status"]
 				.filter((v) => v.startsWith(prefix))
 				.map((value) => ({
 					value,
 					label: value,
 					description: value.startsWith("worktree")
 						? `Statusline ${value} (applies immediately)`
-						: `Statusline ${value}`,
+						: value.startsWith("git")
+							? `Statusline ${value} (applies next session)`
+							: `Statusline ${value}`,
 				})),
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
@@ -111,9 +115,23 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 				ctx.ui.notify?.(`Statusline worktree ${arg.endsWith(" on") ? "on" : "off"}`, "info");
 				return;
 			}
+			if (arg === "git full" || arg === "git branch" || arg === "git off") {
+				const mode = arg.slice(4) as "full" | "branch" | "off";
+				writeStatuslineConfig({ gitPolling: mode });
+				renderConfig = readStatuslineConfig();
+				ctx.ui.notify?.(
+					`Statusline git polling: ${mode}${
+						mode === "branch" ? " (branch name only, light)" : ""
+					} (takes effect next session, /reload)`,
+					"info",
+				);
+				return;
+			}
 			const current = readStatuslineConfig();
 			ctx.ui.notify?.(
-				`Statusline: ${current.enabled ? "on" : "off"} · worktree ${current.showWorktree ? "on" : "off"}`,
+				`Statusline: ${current.enabled ? "on" : "off"} · worktree ${
+					current.showWorktree ? "on" : "off"
+				} · git ${current.gitPolling}`,
 				"info",
 			);
 		},
@@ -146,6 +164,8 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 	let renderConfig: ReturnType<typeof readStatuslineConfig> | null = null;
 	let stopConfigWatcher: (() => void) | null = null;
 	let configWatcherTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 文件监听 debounce 的代数：竞态时只认最新一拍，防旧定时器覆盖新配置。 */
+	let watcherGeneration = 0;
 
 	const stopConfigWatch = (): void => {
 		if (configWatcherTimer) clearTimeout(configWatcherTimer);
@@ -164,8 +184,12 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 			const watcher = watch(directory, { persistent: false }, (_event, changed) => {
 				if (changed && changed.toString() !== fileName) return;
 				if (configWatcherTimer) clearTimeout(configWatcherTimer);
+				const generation = ++watcherGeneration;
 				configWatcherTimer = setTimeout(() => {
 					configWatcherTimer = null;
+					// generation guard：两个事件快速连续触发的 debounce 里，旧定时器
+					// 若侥幸没被 clearTimeout 掉（边界时序），不得覆盖新代写入的配置。
+					if (generation !== watcherGeneration) return;
 					renderConfig = readStatuslineConfig();
 					try {
 						rerenderCurrent?.();
@@ -277,27 +301,37 @@ export default function registerStatusline(pi: ExtensionAPI): void {
 		rerenderCurrent = rerender;
 		startConfigWatch();
 
-		// git 快照：立即采一次 + 后台轮询。
+		// git 快照：立即采一次 + 后台轮询。gitPolling 档位：
+		// - `full`（默认）：porcelain+diff 完整快照
+		// - `branch`：只读分支名，轻量进程（Windows 多 worktree 友好）
+		// - `off`：不装轮询，git 段定格在启动快照
+		const gitMode = renderConfig.gitPolling;
+		const collect = gitMode === "branch" ? collectGitBranchOnly : collectGitStatus;
 		try {
-			git = await collectGitStatus(ctx.cwd);
+			git = await collect(ctx.cwd);
 		} catch {
 			// keep empty snapshot
 		}
 		stopPoller?.();
-		stopPoller = startGitPoller(
-			ctx.cwd,
-			(snapshot) => {
-				git = snapshot;
-				rerender();
-			},
-			undefined,
-			// 嵌入式会话 dispose 不发 session_shutdown：读一次 ctx 探活，
-			// 失效即停表，避免拿旧 cwd 每 3s 起 git 进程（cc-my-pi #4）。
-			() => {
-				void ctx.mode;
-				return true;
-			},
-		);
+		if (gitMode !== "off") {
+			stopPoller = startGitPoller(
+				ctx.cwd,
+				(snapshot) => {
+					git = snapshot;
+					rerender();
+				},
+				undefined,
+				// 嵌入式会话 dispose 不发 session_shutdown：读一次 ctx 探活，
+				// 失效即停表，避免拿旧 cwd 每 3s 起 git 进程（cc-my-pi #4）。
+				() => {
+					void ctx.mode;
+					return true;
+				},
+				collect,
+			);
+		} else {
+			stopPoller = null;
+		}
 		activePoller = stopPoller;
 
 		// 扩展/mcp 计数：复用 loaded-stats 单例，无额外扫描。

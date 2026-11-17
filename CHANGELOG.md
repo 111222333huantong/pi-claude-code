@@ -3,6 +3,49 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## Unreleased — 生态调研对标优化
+
+本轮改动来自对 Codex / Grok Build / opencode / Claude Code 四家 TUI 源码
+（locode `tui-harness-study.md`，2026-07）与 pi 生态竞品的调研对标。
+
+### 新功能
+
+- **撞 patch 主动检测**：装了补丁但 `updateContent` 链顶层不是我们命名的
+  包装器时，session_start 主动 notify 提示「另一个 UI 扩展压在最外层」，
+  不必等用户发现渲染不对才跑 `/ccstyle diag`。
+- **statusline ctx 芯片附 compact 距离预估**：阈值已知且未触发时追加
+  `~Nk left`（距 auto-compact 剩余 token），对齐 opencode #32926 /
+  OpenHands #16170 的 ambient-context-pressure 趋势。
+- **statusline `gitPolling` 三档**（`full`/`branch`/`off`）：`branch` 只读
+  分支名（轻量 `git branch --show-current`），`off` 完全停轮询——Windows
+  多 worktree 或 git 进程敏感场景的降级档（pi-powerline-footer #57 同口径）。
+  `/statusline git full|branch|off` 切换，立即写配置、下一会话生效。
+
+### 修复
+
+- **compact 回合 settle watchdog**：`agent_settled` 后回合仍挂 Running
+  （live work 滞留 endRequest、丢帧等）时，2s 后幂等重试 `endRound`，
+  对齐 Codex「权威终态 settle + watchdog 兜底」模式。
+- **statusline 配置监听 generation guard**：debounce 竞态下旧定时器
+  不得覆盖新代写入的配置。
+
+### 工程
+
+- **补丁押注清单**（`compat/pi-internals.ts` `PATCH_BETS`）：每条补丁登记
+  依赖的上游文件/成员/首次验证版本，`/ccstyle diag` 输出；升级 pi 时按
+  source 字段 git diff 上游即可预判漂移，不用等运行时告警。
+  `tool-mouse` / `main-screen-do-render` 两条已补上游动向注解
+  （pi PR #11598 虚拟化、#11968 renderCache 跨帧）。
+- `/ccstyle diag` 增补：assistant 链归属判定（`foreign wrapper detected`）、
+  已知互斥清单补 pi-diff、`## Patch bets` 段。
+- 新增 `tests/patch-bets-and-foreign.test.ts`（5 项）：押注覆盖、
+  `isOwnPatch`、外部 wrapper 三态判定。
+- 新增 `docs/STREAMING-STABLE-TAIL.md`：流式 markdown stable/tail 二分
+  的调研结论、上游 API 缺口与可直接发的 issue 草案。
+- 新增 `docs/UPSTREAM-DRIFT-WATCH.md`：pi 虚拟化/O(viewport) 两个进行
+  中的 PR 对押注面的影响、Codex scroll-region 路线的 xterm.js 兼容性
+  教训、resize reflow 与 difftastic 的评估结论。
+
 ## 1.7.1 — 2026-11-16
 
 ### 修复

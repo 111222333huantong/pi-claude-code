@@ -9,6 +9,7 @@ import {
 	writeStatuslineConfig,
 } from "../extensions/feature/statusline/config.ts";
 import {
+	collectGitBranchOnly,
 	collectGitStatus,
 	type GitSnapshot,
 	parsePorcelainFiles,
@@ -92,10 +93,18 @@ test("parseWorktree: 仅 linked worktree 具名", () => {
 test("statusline config: 缺失回默认，坏文件回默认不抛", () => {
 	const dir = mkdtempSync(join(tmpdir(), "statusline-cfg-"));
 	const missing = join(dir, "nope", "statusline.json");
-	assert.deepEqual(readStatuslineConfig(missing), { enabled: true, showWorktree: true });
+	assert.deepEqual(readStatuslineConfig(missing), {
+		enabled: true,
+		showWorktree: true,
+		gitPolling: "full",
+	});
 	const bad = join(dir, "bad.json");
 	writeFileSync(bad, "{oops");
-	assert.deepEqual(readStatuslineConfig(bad), { enabled: true, showWorktree: true });
+	assert.deepEqual(readStatuslineConfig(bad), {
+		enabled: true,
+		showWorktree: true,
+		gitPolling: "full",
+	});
 });
 
 test("statusline config: 写合并保留其他键", () => {
@@ -103,7 +112,11 @@ test("statusline config: 写合并保留其他键", () => {
 	const file = join(dir, "statusline.json");
 	writeFileSync(file, JSON.stringify({ enabled: false, extra: 1 }));
 	writeStatuslineConfig({ showWorktree: false }, file);
-	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
+	assert.deepEqual(readStatuslineConfig(file), {
+		enabled: false,
+		showWorktree: false,
+		gitPolling: "full",
+	});
 });
 
 test("statusline config: 原子写不留下临时文件", () => {
@@ -111,7 +124,11 @@ test("statusline config: 原子写不留下临时文件", () => {
 	const file = join(dir, "statusline.json");
 	writeStatuslineConfig({ enabled: false }, file);
 	writeStatuslineConfig({ showWorktree: false }, file);
-	assert.deepEqual(readStatuslineConfig(file), { enabled: false, showWorktree: false });
+	assert.deepEqual(readStatuslineConfig(file), {
+		enabled: false,
+		showWorktree: false,
+		gitPolling: "full",
+	});
 	assert.deepEqual(readdirSync(dir), ["statusline.json"], "tmp 文件已 rename 或清理");
 });
 
@@ -278,4 +295,57 @@ test("getPrNumber: 缓存超过上限时淘汰最旧 key", async () => {
 	assert.equal(getPrNumber("/repo-0", true, counting, 1_000), null);
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(calls, 1);
+});
+
+test("statusline config: gitPolling 三档解析，未知值回 full", () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-gitmode-"));
+	const file = join(dir, "statusline.json");
+	writeFileSync(file, JSON.stringify({ gitPolling: "branch" }));
+	assert.equal(readStatuslineConfig(file).gitPolling, "branch");
+	writeFileSync(file, JSON.stringify({ gitPolling: "off" }));
+	assert.equal(readStatuslineConfig(file).gitPolling, "off");
+	writeFileSync(file, JSON.stringify({ gitPolling: "weird" }));
+	assert.equal(readStatuslineConfig(file).gitPolling, "full");
+	// 未写时默认 full。
+	writeFileSync(file, JSON.stringify({ enabled: true }));
+	assert.equal(readStatuslineConfig(file).gitPolling, "full");
+});
+
+test("collectGitBranchOnly: 只取分支名，其余字段为空快照", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-branchonly-"));
+	execFileSync("git", ["init", "-b", "main"], { cwd: dir });
+	execFileSync("git", ["config", "user.email", "test@test"], { cwd: dir });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: dir });
+	writeFileSync(join(dir, "a.txt"), "hi\n");
+	execFileSync("git", ["add", "."], { cwd: dir });
+	execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+	// 制造脏状态：branch-only 快照不报告 dirty。
+	writeFileSync(join(dir, "b.txt"), "dirty\n");
+	const snapshot = await collectGitBranchOnly(dir);
+	assert.equal(snapshot.branch, "main");
+	assert.equal(snapshot.changedFiles, 0);
+	assert.equal(snapshot.insertions, 0);
+	// 非仓库：空快照。
+	const outside = mkdtempSync(join(tmpdir(), "statusline-nogit-"));
+	assert.equal((await collectGitBranchOnly(outside)).branch, null);
+});
+
+test("git poller: 自定义 collect 函数生效（branch-only 档位）", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "statusline-poller-branch-"));
+	execFileSync("git", ["init", "-b", "main"], { cwd: dir });
+	execFileSync("git", ["config", "user.email", "test@test"], { cwd: dir });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: dir });
+	writeFileSync(join(dir, "a.txt"), "hi\n");
+	execFileSync("git", ["add", "."], { cwd: dir });
+	execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+	const seen: GitSnapshot[] = [];
+	const stop = startGitPoller(dir, (s) => seen.push(s), 50, undefined, collectGitBranchOnly);
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		assert.equal(seen[0]?.branch, "main");
+		// branch-only 快照不报告脏状态。
+		assert.equal(seen[0]?.changedFiles, 0);
+	} finally {
+		stop();
+	}
 });

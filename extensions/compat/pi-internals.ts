@@ -21,6 +21,107 @@ export type CompatIssue = {
 	missing: string;
 };
 
+/**
+ * 补丁押注清单：每条补丁依赖的「上游实现坐标」。
+ *
+ * 这些是运行时探测之外的事前声明——探测只能发现「方法没了」，清单回答
+ * 「升级 pi 时应该去 diff 哪个文件判断这条链会不会断」。升级 pi 后按
+ * source 字段逐一 git diff 上游仓库即可预判漂移，不用等用户报障。
+ *
+ * 登记约定：每处对原型/内部字段的 patch 都必须在这里有一行；漏登记
+ * 的 patch 点在 /ccstyle diag 的押注覆盖检查里会显示 uncovered。
+ */
+export type PatchBet = {
+	/** 补丁标识（与 PATCH_NAME_KEY / feature 名对齐）。 */
+	feature: string;
+	/** 依赖的上游文件（pi-mono 仓库相对路径）。 */
+	source: string;
+	/** 依赖的成员/行为。 */
+	depends: string;
+	/** 首次引入该补丁时验证通过的 pi-coding-agent 版本。 */
+	since: string;
+};
+
+export const PATCH_BETS: readonly PatchBet[] = [
+	{
+		feature: "tool-execution",
+		source: "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+		depends:
+			"ToolExecutionComponent.prototype.render / updateDisplay / contentBox / children / expanded / toolCallId",
+		since: "1.4.0",
+	},
+	{
+		feature: "assistant-message",
+		source: "packages/coding-agent/src/modes/interactive/components/assistant-message.ts",
+		depends:
+			"AssistantMessageComponent.prototype.updateContent / contentContainer / markdownSlots / lastMessage / outputPad / isStreaming",
+		since: "1.4.0",
+	},
+	{
+		feature: "markdown",
+		source: "packages/tui/src/components/markdown.ts",
+		depends: "Markdown.prototype.render / setText / invalidate / cachedTokens WeakRef",
+		since: "1.5.0",
+	},
+	{
+		feature: "container",
+		source: "packages/tui/src/tui.ts",
+		depends: "Container.prototype.addChild / removeChild / clear / children 数组",
+		since: "1.4.0",
+	},
+
+	{
+		feature: "tool-grouping",
+		source:
+			"packages/coding-agent/src/modes/interactive/components/tool-execution.ts + assistant-message.ts",
+		depends: "ToolExecutionComponent 在 contentContainer 中的挂载顺序 / toolCall.id 字段",
+		since: "1.4.0",
+	},
+	{
+		feature: "transcript-gutter",
+		source: "packages/tui/src/tui.ts + chatContainer 布局",
+		depends: "transcript 容器在组件树中的位置与直接子组件构成（消息组件识别）",
+		since: "1.5.0",
+	},
+	{
+		feature: "tool-mouse",
+		source: "packages/tui/src/tui-alt-screen.ts + layout.ts",
+		depends:
+			"tui.currentLayout（LayoutFrame）恒等失效语义 / SGR mouse 事件流 / componentAtLocalRow 命中坐标系。" +
+			"注意：上游 PR #11968（fullscreen scroll O(viewport)）拟让 renderCache 跨帧存活，" +
+			"layout 对象可能改为部分复用而非每帧新建——hover/sticky 的 `layout !== tui.currentLayout`" +
+			" 判失效逻辑要复查；PR #11598 的 transcript 虚拟化更可能把消息组件改为 windowed " +
+			"build-factory，本 patch 面届时需整体重估",
+		since: "1.5.0",
+	},
+	{
+		feature: "main-screen-do-render",
+		source: "packages/tui/src/tui-main-screen.ts",
+		depends:
+			"TuiMainScreen.applyLineResets / previousLines / previousViewportTop。" +
+			"上游 fullscreen 已 O(viewport) 化推进中，regular 主屏差分是同类优化的下一块，" +
+			"本 patch 押注的内部字段（previousLines 可变数组）若改不可变帧结构需重写",
+		since: "1.5.0",
+	},
+	{
+		feature: "editor-factory",
+		source: "packages/coding-agent 的 editor 工厂链",
+		depends: "setEditorComponent 一次性替换语义 / editor.handleInput 实例方法可被包装",
+		since: "1.4.0",
+	},
+	{
+		feature: "write-ownership",
+		source: "packages/coding-agent 的工具注册表",
+		depends: "registerTool 先到先得语义 / toolDefinition vs builtInToolDefinition 字段",
+		since: "1.4.0",
+	},
+];
+
+/** 押注清单查询：feature → 登记行（diag 与升级巡检共用）。 */
+export function patchBetFor(feature: string): PatchBet | undefined {
+	return PATCH_BETS.find((bet) => bet.feature === feature);
+}
+
 const issues: CompatIssue[] = [];
 const seenIssues = new Set<string>();
 /** 最近一次 drain 的内容：session_start 清空 issues 后，诊断仍能看到本会话漂移。 */

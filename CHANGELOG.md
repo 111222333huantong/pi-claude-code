@@ -6,7 +6,8 @@
 ## Unreleased — 生态调研对标优化
 
 本轮改动来自对 Codex / Grok Build / opencode / Claude Code 四家 TUI 源码
-（locode `tui-harness-study.md`，2026-07）与 pi 生态竞品的调研对标。
+（locode `tui-harness-study.md`，2026-07）与 pi 生态竞品的调研对标；
+第三、四轮补 UX/性能专项。
 
 ### 新功能
 
@@ -20,6 +21,15 @@
   分支名（轻量 `git branch --show-current`），`off` 完全停轮询——Windows
   多 worktree 或 git 进程敏感场景的降级档（pi-powerline-footer #57 同口径）。
   `/statusline git full|branch|off` 切换，立即写配置、下一会话生效。
+
+### UX 微调
+
+- compat 漂移提示附可行动路径（「/ccstyle diag 查看 / /ccstyle off 回退」），
+  对齐 hermes error-surface 的「what happened + what to do」模式。
+- session-reference 未找到/读取失败提示附原因猜测与建议
+  （删了 or compact 掉了；换一个 @-reference）。
+- 启动 tips 池 5 → 10 条：补 Ctrl+O 浏览、`/loaded`、`/statusline git branch`、
+  图片粘贴、`/ccstyle diag`。
 
 ### 修复
 

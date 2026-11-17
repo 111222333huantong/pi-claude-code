@@ -344,7 +344,13 @@ export default function (
 		const compatIssues = drainCompatIssues();
 		if (compatIssues.length > 0) {
 			const summary = compatIssues.map((issue) => `${issue.feature}: ${issue.missing}`).join(", ");
-			ctx.ui?.notify?.(`ccstyle: 与当前 Pi 版本不兼容，部分样式已回退（${summary}）`, "warning");
+			// 「发生了什么 + 怎么修」：对齐 hermes error-surface 模式——不只报名字，
+			// 给出下一步（降级/升级/查 diag），降低用户把漂移当成插件 bug 的概率。
+			ctx.ui?.notify?.(
+				`ccstyle: 与当前 Pi 版本不兼容，部分样式已回退原生渲染（${summary}）。` +
+					`可 /ccstyle diag 查看详情；若刚升级 Pi，等本扩展更新或暂时 /ccstyle off。`,
+				"warning",
+			);
 		}
 		// 撞 patch 主动检测：装了补丁但 updateContent 链顶层不是我们命名的包装器，
 		// 说明另一个 UI 扩展后加载接管了渲染（典型：pi-open-tui / pi-ui-extension / pi-diff）。

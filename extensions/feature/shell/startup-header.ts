@@ -260,6 +260,11 @@ const STARTUP_TIPS = [
 	"Mention @ to reference sessions and subagents",
 	"Double-Esc clears the draft",
 	"Click 'show more' to expand long tool cards",
+	"Ctrl+O browses the full session transcript",
+	"Run /loaded to see loaded resources",
+	"Run /statusline git branch for a lighter footer on Windows",
+	"Paste images directly — they become attachments",
+	"Run /ccstyle diag when something looks off",
 ];
 
 let startupTip: string | undefined;

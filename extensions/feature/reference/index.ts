@@ -465,7 +465,11 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		const selected = matchingReferences.slice(0, MAX_REFERENCED_SESSIONS);
 
 		if (selected.length === 0) {
-			ctx.ui.notify("session-reference: referenced sessions were not found", "warning");
+			ctx.ui.notify(
+				"session-reference: referenced sessions were not found — " +
+					"the session may have been deleted, or @-reference pointed at a different agent dir",
+				"warning",
+			);
 			return;
 		}
 
@@ -498,7 +502,8 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
 				ctx.ui.notify(
-					`session-reference: failed to read ${reference.info.id}: ${reason}`,
+					`session-reference: could not read ${reference.info.id} (${reason}) — ` +
+						"it was likely deleted or compacted away; remove the @-reference or pick a different one",
 					"warning",
 				);
 			}

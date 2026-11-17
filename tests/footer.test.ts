@@ -46,9 +46,13 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 	assert.equal(normalizeConfig({ enableCustomFooter: false }).enableCustomFooter, false);
 	assert.match(formatConfigStatus(normalizeConfig({})), /footer=on/);
 	assert.match(formatConfigStatus(normalizeConfig({ enableCustomFooter: false })), /footer=off/);
-	assert.equal(normalizeConfig({}).footerNerdIcons, true);
+	// 默认 auto：Ghostty/WezTerm/Kitty 等内置符号的终端走 nerd，其余回 plain。
+	assert.equal(normalizeConfig({}).footerNerdIcons, "auto");
+	assert.equal(normalizeConfig({ footerNerdIcons: true }).footerNerdIcons, true);
 	assert.equal(normalizeConfig({ footerNerdIcons: false }).footerNerdIcons, false);
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerIcons=nerd/);
+	assert.equal(normalizeConfig({ footerNerdIcons: "auto" }).footerNerdIcons, "auto");
+	assert.match(formatConfigStatus(normalizeConfig({})), /footerIcons=auto/);
+	assert.match(formatConfigStatus(normalizeConfig({ footerNerdIcons: true })), /footerIcons=nerd/);
 	assert.match(
 		formatConfigStatus(normalizeConfig({ footerNerdIcons: false })),
 		/footerIcons=plain/,
@@ -118,6 +122,9 @@ test("footerGlyphs drops Nerd Font icons when disabled", () => {
 	});
 	// token 芯片不能只剩数字：纯文本模式退回 Σ。
 	assert.deepEqual(footerGlyphs(false), { git: "", cache: "", mcp: "", tokens: "Σ" });
+	// auto 档依赖终端探测：测试环境（无 WEZTERM/KITTY/ghostty env）回 plain。
+	const autoResult = footerGlyphs("auto");
+	assert.ok(autoResult.tokens === "Σ" || autoResult.git === FOOTER_NERD_ICON_GIT);
 });
 
 test("normalizeConfig defaults builtin chips on their original lines", () => {

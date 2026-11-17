@@ -102,6 +102,15 @@ export type Config = {
 	showRawThinking: boolean;
 	showStartupHeader: boolean;
 	startupAnimation: boolean;
+	/**
+	 * 动效总闸（prefers-reduced-motion 的终端等价，对齐 Crush
+	 * `reduce_animations` / opencode `tui.animations`）：
+	 * - `true`（默认）：mascot 启动动画、spinner shimmer、compaction 进度条等全跑
+	 * - `false`：全部收敛为静态帧/文本——vestibular 敏感用户、SSH 慢链路、
+	 *   以及单纯不想为动画付 CPU 的场景
+	 * 亦可用 `CCSTYLE_REDUCE_ANIMATIONS=1` env 覆盖（同 Crush 的环境变量思路）。
+	 */
+	reduceAnimations: boolean;
 	/** 启动头 slogan（空串关闭）；独立主题色，不跟随 logo/accent 以外文案。 */
 	startupSlogan: string;
 	startupSloganColor: ThemeColor;
@@ -154,7 +163,8 @@ export type Config = {
 	footerCurrency: string;
 	/** 1 单位费用对应的显示币种数量。null 只换符号、不乘倍率。 */
 	footerCurrencyRate: number | null;
-	footerNerdIcons: boolean;
+	/** Nerd Font 图标：true=恒用 nerd、false=恒用 plain、"auto"=按终端探测（默认）。 */
+	footerNerdIcons: boolean | "auto";
 	footerGitStatsMode: FooterGitStatsMode;
 	/** Denominator of the context chip; compaction = contextWindow − compaction.reserveTokens. */
 	footerContextLimit: FooterContextLimit;
@@ -255,6 +265,7 @@ export const DEFAULT_CONFIG: Config = {
 	showRawThinking: false,
 	showStartupHeader: true,
 	startupAnimation: true,
+	reduceAnimations: false,
 	startupSlogan: "",
 	startupSloganColor: "accent",
 	quietStartup: true,
@@ -288,7 +299,7 @@ export const DEFAULT_CONFIG: Config = {
 	footerSessionTokens: false,
 	footerCurrency: "USD",
 	footerCurrencyRate: null,
-	footerNerdIcons: true,
+	footerNerdIcons: "auto",
 	footerGitStatsMode: "working",
 	footerContextLimit: "window",
 	...DEFAULT_FOOTER_CHIP_LAYOUT,
@@ -457,6 +468,11 @@ export function normalizeConfig(input: unknown): Config {
 		showRawThinking: source.showRawThinking === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		startupAnimation: source.startupAnimation !== false,
+		// reduceAnimations：显式配置优先，未写时读 CCSTYLE_REDUCE_ANIMATIONS env。
+		reduceAnimations:
+			source.reduceAnimations === true ||
+			(source.reduceAnimations !== false &&
+				/^(1|true|yes)$/i.test(process.env.CCSTYLE_REDUCE_ANIMATIONS ?? "")),
 		startupSlogan:
 			typeof source.startupSlogan === "string"
 				? source.startupSlogan.slice(0, MAX_STARTUP_SLOGAN_LENGTH)
@@ -519,7 +535,10 @@ export function normalizeConfig(input: unknown): Config {
 		footerSessionTokens: source.footerSessionTokens === true,
 		footerCurrency: normalizeCurrency(source.footerCurrency),
 		footerCurrencyRate: normalizeFooterCurrencyRate(source.footerCurrencyRate),
-		footerNerdIcons: source.footerNerdIcons !== false,
+		// `footerNerdIcons` 三态：false→plain、true→nerd、"auto"→终端探测；
+		// 未写或 "auto" 时走探测（NERD_FONT env / 内置 symbols 的终端白名单）。
+		footerNerdIcons:
+			source.footerNerdIcons === false ? false : source.footerNerdIcons === true ? true : "auto",
 		footerGitStatsMode: pickEnum(
 			source.footerGitStatsMode,
 			FOOTER_GIT_STATS_MODES,
@@ -545,6 +564,7 @@ export function getCompactThinkingConfig(source: Config = config): CompactThinki
 		thinkingSummaryLimit: source.thinkingSummaryLimit,
 		thinkingDocumentMaxLines: source.thinkingDocumentMaxLines,
 		showRawThinking: source.showRawThinking,
+		reduceAnimations: source.reduceAnimations,
 	};
 }
 
@@ -630,6 +650,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingRaw=${source.showRawThinking ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
+		`reduceAnimations=${source.reduceAnimations ? "on" : "off"}`,
 		`startupSlogan=${source.startupSlogan ? `"${source.startupSlogan}"` : "off"}`,
 		`quietStartup=${source.quietStartup ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
@@ -659,7 +680,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`footerSessionTokens=${source.footerSessionTokens ? "on" : "off"}`,
 		`footerCurrency=${source.footerCurrency}`,
 		`footerRate=${source.footerCurrencyRate ?? "-"}`,
-		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
+		`footerIcons=${source.footerNerdIcons === false ? "plain" : source.footerNerdIcons === true ? "nerd" : "auto"}`,
 		`footerGitStats=${source.footerGitStatsMode}`,
 		`footerContextLimit=${source.footerContextLimit}`,
 		formatFooterChipSummary(source),

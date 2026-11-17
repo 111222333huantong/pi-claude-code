@@ -76,6 +76,8 @@ export type CompactThinkingConfig = {
 	animationIntervalMs: number;
 	/** 展开态最大行数（旧版 raw preview 的 tail 窗口；文档模式忽略）。 */
 	thinkingExpandedMaxLines: number;
+	/** 动效总闸（prefers-reduced-motion 等价）：true 时不启动 thinking 帧循环。 */
+	reduceAnimations?: boolean;
 	/** true=文档模式（折叠两行 + 展开全文）；false=旧版 raw preview。 */
 	thinkingLiveSummary?: boolean;
 	/** 文档模式折叠态保留的正文行数。 */
@@ -163,6 +165,7 @@ const COMPACT_THINKING_DEFAULTS: Required<CompactThinkingConfig> = {
 	thinkingSummaryLimit: 0,
 	thinkingDocumentMaxLines: 0,
 	showRawThinking: false,
+	reduceAnimations: false,
 };
 
 const config: CompactThinkingConfig = { ...COMPACT_THINKING_DEFAULTS };
@@ -1795,7 +1798,9 @@ function compactThinking(pi: ExtensionAPI): boolean {
 	(installedUpdateContent as any)[PROTOTYPE_ORIGINAL_KEY] = originalUpdateContent;
 
 	function ensureAnimationTimer() {
-		if (animationTimer) return;
+		// reduceAnimations：不启动帧循环，thinking 标题/时长仍随 message_update
+		// 更新（数据流不缺），只是没有动画帧的主动 requestRender。
+		if (animationTimer || config.reduceAnimations) return;
 		animationTimer = setInterval(() => {
 			animationFrame++;
 			// 标题/时长在 ThinkingPreviewBlock.render 里现算，动画帧只 requestRender。

@@ -424,7 +424,8 @@ export function applyStartupHeader(ctx: any, pi?: unknown): void {
 	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
 	// 禁用时不碰槽位，避免清掉其他扩展的 header；恢复原生走 clearStartupHeader。
 	if (!config.showStartupHeader) return;
-	const skipAnimation = !config.startupAnimation || headerAnimatedThisProcess();
+	const skipAnimation =
+		!config.startupAnimation || config.reduceAnimations || headerAnimatedThisProcess();
 	const anim = headerAnimState();
 	if (skipAnimation) {
 		// 关动画或已播过：直接末帧，不启动定时器。

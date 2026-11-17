@@ -24,6 +24,15 @@
 
 ### UX 微调
 
+- **`footerNerdIcons` 新增 `auto` 档**（默认）：Ghostty/WezTerm/Kitty 等内置
+  Nerd Symbols 的终端用 nerd 图标，其余回 plain——不再有终端显示豆腐块
+  （`has-nerd-font` 白名单方案；`NERD_FONT=1|0` env 可覆盖）。
+- **`reduceAnimations` 动效总闸**（prefers-reduced-motion 终端等价，对齐
+  Crush `reduce_animations` / opencode `tui.animations`）：`true` 或
+  `CCSTYLE_REDUCE_ANIMATIONS=1` 时收敛 mascot 启动动画、thinking 帧循环、
+  compaction 进度条为静态文本/跳帧——vestibular 敏感用户、SSH 慢链路、
+  不想为动画付 CPU 的场景。
+
 - compat 漂移提示附可行动路径（「/ccstyle diag 查看 / /ccstyle off 回退」），
   对齐 hermes error-surface 的「what happened + what to do」模式。
 - session-reference 未找到/读取失败提示附原因猜测与建议

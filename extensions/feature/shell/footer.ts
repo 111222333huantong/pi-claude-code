@@ -22,6 +22,7 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import { config, type FooterContextLimit } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 import { formatTokenCount } from "../../utils/format.ts";
+import { detectNerdFont } from "../../utils/nerd-font.ts";
 import { formatFooterCost } from "./footer-currency.ts";
 import {
 	FOOTER_CACHE_KEY,
@@ -164,13 +165,17 @@ export const FOOTER_NERD_ICON_TOKENS = "\u{f04a0}";
 // 不留空：只剩数字时看不出是 token 总数。
 export const FOOTER_PLAIN_ICON_TOKENS = "Σ";
 
-export function footerGlyphs(nerdIcons: boolean): {
+export function footerGlyphs(nerdIcons: boolean | "auto"): {
 	git: string;
 	cache: string;
 	mcp: string;
 	tokens: string;
 } {
-	return nerdIcons
+	// "auto" 档在调用点解析一次（detectNerdFont 内部进程缓存）：
+	// 内置 Nerd Symbols 的终端（Ghostty/WezTerm/Kitty）用 nerd 图标，
+	// 其余终端回落 plain，避免 PUA 私用区显示豆腐块。
+	const useNerd = nerdIcons === "auto" ? detectNerdFont() : nerdIcons === true;
+	return useNerd
 		? {
 				git: FOOTER_NERD_ICON_GIT,
 				cache: FOOTER_NERD_ICON_CACHE,

@@ -208,8 +208,12 @@ function installLoaderPatch(): () => void {
 	// 下一层照旧负责 spinner glyph 与颜色。
 	const inner = proto.updateDisplay;
 	const installed = function (this: any) {
+		// reduceAnimations：保留「正在压缩」静态文案（含已用时长），不画进度条——
+		// 数据仍准确，只是不定格在动画帧上（Crush reduce_animations 同语义）。
 		if (state.active && this?.kind === "compaction") {
-			this.message = buildProgressMessage();
+			this.message = config.reduceAnimations
+				? `${reasonPrefix(state.reason)}… ${formatDuration(Math.max(0, Date.now() - state.startedAt)) || "0s"}`
+				: buildProgressMessage();
 		}
 		return inner.call(this);
 	};

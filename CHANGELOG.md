@@ -22,6 +22,14 @@
   多 worktree 或 git 进程敏感场景的降级档（pi-powerline-footer #57 同口径）。
   `/statusline git full|branch|off` 切换，立即写配置、下一会话生效。
 
+### 新功能（续）
+
+- **`/undo` 命令**：回滚最近一次 `write` 工具调用的文件改动——恢复快照时
+  已存的旧内容；write 新建的文件按删除处理（快照语义：write 前不存在）。
+  快照沿用 write override 的写前捕获（`absolutePath` + `capturedAt` 补记）。
+  只覆盖 `write`：`edit` 走官方内置工具无快照，旧会话也无快照——不可回滚
+  时如实告知而非静默失败。
+
 ### UX 微调
 
 - **`footerNerdIcons` 新增 `auto` 档**（默认）：Ghostty/WezTerm/Kitty 等内置

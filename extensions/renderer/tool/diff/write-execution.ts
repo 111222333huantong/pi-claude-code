@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { createWriteToolDefinition, type WriteOperations } from "@earendil-works/pi-coding-agent";
 
 export const MAX_COMPARABLE_WRITE_BYTES = 512_000;
@@ -11,6 +11,10 @@ export type WriteExecutionMeta = {
 	diffUnavailableReason?: string;
 	/** 工具执行耗时（毫秒，含队列等待+落盘）；缺失表示未知，不展示。 */
 	elapsedMs?: number;
+	/** 官方解析后的绝对路径（undo 回滚用）；缺失表示快照时未记录。 */
+	absolutePath?: string;
+	/** 快照时间戳；undo 时用于「最近 write」判定。 */
+	capturedAt?: number;
 };
 
 export class WriteExecutionMetadataStore {
@@ -36,6 +40,49 @@ export class WriteExecutionMetadataStore {
 
 	clear(): void {
 		this.entries.clear();
+	}
+
+	/**
+	 * 最近一次有快照的 write（capturedAt 最大且带 absolutePath）。
+	 * undo 命令据此定位回滚目标；无快照返回 undefined。
+	 */
+	latestSnapshot(): { toolCallId: string; meta: WriteExecutionMeta } | undefined {
+		let latest: { toolCallId: string; meta: WriteExecutionMeta } | undefined;
+		for (const [toolCallId, meta] of this.entries) {
+			if (typeof meta.absolutePath !== "string" || meta.absolutePath.length === 0) continue;
+			if (
+				!latest ||
+				(meta.capturedAt ?? 0) > (latest.meta.capturedAt ?? 0) ||
+				(meta.capturedAt === latest.meta.capturedAt && toolCallId > latest.toolCallId)
+			) {
+				latest = { toolCallId, meta };
+			}
+		}
+		return latest;
+	}
+
+	/**
+	 * 回滚最近一次 write：恢复快照内容；写入前不存在的文件按删除处理。
+	 * 返回 { path, restoredBytes } 供调用方提示；失败抛错。
+	 */
+	async undoLatest(): Promise<{ path: string; restoredBytes: number } | undefined> {
+		const latest = this.latestSnapshot();
+		if (!latest) return undefined;
+		const { toolCallId, meta } = latest;
+		const path = meta.absolutePath!;
+		if (meta.fileExistedBeforeWrite === false) {
+			// 快照时文件不存在：write 新建的文件 → undo 即删除。
+			await unlink(path);
+			this.entries.delete(toolCallId);
+			return { path, restoredBytes: 0 };
+		}
+		if (typeof meta.previousContent !== "string") {
+			// 无快照内容（diffUnavailableReason 分支）：不回滚，防止丢数据。
+			return undefined;
+		}
+		await writeFile(path, meta.previousContent, "utf8");
+		this.entries.delete(toolCallId);
+		return { path, restoredBytes: Buffer.byteLength(meta.previousContent, "utf8") };
 	}
 }
 
@@ -126,7 +173,12 @@ function writeSnapshotOperations(
 			if (signal?.aborted) throw new Error("Operation aborted");
 			await writeFile(absolutePath, content, "utf8");
 			// 写已生效：后续 abort 不得把这次写报成失败，快照先落下。
-			store.set(toolCallId, metadata);
+			// absolutePath + capturedAt 补记：undo 命令据此找回「最近一次 write」回滚。
+			store.set(toolCallId, {
+				...metadata,
+				absolutePath,
+				capturedAt: Date.now(),
+			});
 		},
 	};
 }

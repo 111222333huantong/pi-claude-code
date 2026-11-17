@@ -231,6 +231,33 @@ export default function (
 		return installation;
 	};
 
+	pi.registerCommand("undo", {
+		description: "Undo the most recent write tool call (restores snapshot taken before write)",
+		handler: async (_args, ctx) => {
+			try {
+				const undone = await writeExecutionMetadata.undoLatest();
+				if (!undone) {
+					ctx.ui.notify(
+						"undo: no recent write to roll back (only write tool snapshots are kept; " +
+							"edit calls and pre-existing sessions have no snapshot)",
+						"warning",
+					);
+					return;
+				}
+				const label =
+					undone.restoredBytes === 0
+						? `deleted ${undone.path} (did not exist before write)`
+						: `restored ${undone.path} (${undone.restoredBytes} bytes)`;
+				ctx.ui.notify(`undo: ${label}`, "info");
+			} catch (error) {
+				ctx.ui.notify(
+					`undo failed: ${error instanceof Error ? error.message : String(error)}`,
+					"error",
+				);
+			}
+		},
+	});
+
 	pi.registerCommand("ccstyle", {
 		description: "Configure Claude Code style and rich diff options",
 		getArgumentCompletions: (prefix) => {

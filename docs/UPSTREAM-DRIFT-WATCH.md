@@ -162,3 +162,55 @@ Codex PR #12523/#20252 + VectorJet/tui-md：表格超宽时**保持自然列宽�
 **行动**：可扩展 `docs/STREAMING-STABLE-TAIL.md` 的 issue 草案，加
 「宽表格横滚」为第二个诉求——或观察 Codex PR #22052 落地后用户
 反馈再决定。
+
+## 七、第四轮补充（性能专项，2026-11）
+
+性能维度的调研与实测结论：本扩展热路径已优化较深（bench 防线 +
+shiki 三级 LRU + 事件驱动缓存 + 两档节流），剩余优化点多在「需上游
+配合」或「边际收益低」区。
+
+### 1. diff 库：JsDiff 够用，fast-myers-diff 不换
+
+- `diff@9` 的 `structuredPatch` 已是 Myers O(ND)；`fast-myers-diff@3.2`
+  主打 O(min(N,M)+D) 空间（JsDiff 是 O(N+M) 全序列）。
+- 我们 `MAX_COLLAPSED_LINES=200_000` 有上限，且 diff 只在展开/落地时
+  算一次（非热路径）。换库收益仅限极端大 diff 的内存峰值，不实施。
+
+### 2. 增量 markdown lexer：方向对，但属上游
+
+- `mdtext`（kirawi）为 LLM streaming 设计的完全增量 lexer，线性 vs
+  pulldown-cmark 二次方；hermes #67154 的 incremental block lexing
+  同思路 14×。
+- pi-tui 用 `marked` 全量 lexer（`markdown.js:171`）——这正是 stable/tail
+  文档里记的结构缺口，等上游；扩展侧替换 lexer 需要重写 Markdown
+  渲染管线，不现实。
+
+### 3. cell-level vs line-level diff：上游层
+
+Storm/FrankenTUI 的 cell-diffing（97% cell 不变跳过）是新一代 TUI 框架
+标配；pi 是 line-level diff（`applyLineResets`）+ `previousLines` 比对。
+属 pi-tui 底层，我们无法改；若上游哪天换 cell-diff，`main-screen-do-render`
+patch 需整体重估（已记押注）。
+
+### 4. WeakRef 的 GC 陷阱：已规避
+
+xterm.js #3916/#5821 的教训：callback 闭包 retains this → 泄 RenderService。
+审计我们代码：组件追踪全部走 `trackedAssistantComponents`/`trackedToolComponents`
+Set 强引用 + 事件清理，未用闭包 WeakRef；markdown.js 的
+`cachedTokens`/`blocks` WeakRef 是 pi 自带、用法正确（WeakRef 包住
+缓存值而非缓存 key）。无问题。
+
+### 5. 本扩展实测瓶颈分布（bench-hot 2026-11）
+
+| 路径 | 量级 | 评价 |
+|---|---|---|
+| diff expanded 2200 行 | 88–153ms/次 | 落地一次，shiki LRU 已摊；不热 |
+| stream 40 帧（未节流）| 218ms | 节流后 43ms；剩余是 lexer 全量——结构缺口 |
+| bash preview 200k 行 tail | 2.9ms | 已缓存；健康 |
+| usage full scan 20k entry | 0.36ms | 事件驱动失效已摊 |
+| transcript-gutter BFS | 命中时 O(1) | 已缓存 64 拍 |
+| compact-mode tailContainerOf | O(tree)/call | 低频调用点（mount/cross 检查），不热 |
+
+**结论**：性能专项无新落地项，现有防线足够。剩余可做的都在「需上游
+API」象限（stable-commit lexer、cell-diff、宽表格横滚），已在文档中
+备好 issue 素材。

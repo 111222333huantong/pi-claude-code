@@ -436,7 +436,14 @@ function buildNumberInputSubmenu(
 
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
 type CcstyleSection = {
-	id: "style" | "diff" | "thinking" | "ui" | "feature" | "footer";
+	id:
+		| "essentials"
+		| "advanced-style"
+		| "advanced-features"
+		| "advanced-ui"
+		| "advanced-diff"
+		| "advanced-thinking"
+		| "advanced-footer";
 	label: string;
 	items: any[];
 };
@@ -1512,15 +1519,36 @@ export async function showCcstylePanel(
 			ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 		};
 
+		// Progressive disclosure（NN/g + Android settings guidelines）：
+		// Essentials 放"装完必须看一眼"的 11 项；Advanced 保留全部高级/遗留开关，
+		// 点开后再进原分组。DEPRECATED_CONFIG_KEYS 里的键不在任何 section 出现——
+		// 旧配置仍读值生效，但新用户看不到这些可调项。
 		const sections: CcstyleSection[] = [
 			{
-				id: "style",
-				label: "Style",
-				items: [modeSetting, excludeSetting],
+				id: "essentials",
+				label: "Essentials",
+				items: [
+					modeSetting,
+					stickyUserMessageSetting,
+					scrollStepSetting,
+					livePreviewToggle.setting,
+					startupHeaderSetting,
+					diffViewSetting,
+					diffIndicatorSetting,
+					thinkingLiveSummarySetting,
+					footerNerdIconsSetting,
+					footerContextLimitSetting,
+					pathHyperlinksToggle.setting,
+				],
 			},
 			{
-				id: "feature",
-				label: "Features",
+				id: "advanced-style",
+				label: "Advanced · Style",
+				items: [excludeSetting],
+			},
+			{
+				id: "advanced-features",
+				label: "Advanced · Features",
 				items: [
 					sessionReferenceToggle.setting,
 					subagentAutocompleteToggle.setting,
@@ -1529,33 +1557,28 @@ export async function showCcstylePanel(
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
 					imagePasterToggle.setting,
-					pathHyperlinksToggle.setting,
 					clipboardPasteToggle.setting,
 					escSteerToggle.setting,
 					doubleEscClearToggle.setting,
-					livePreviewToggle.setting,
 					compactionProgressToggle.setting,
 					statuslineToggle.setting,
 					markdownEnhanceToggle.setting,
 				],
 			},
 			{
-				id: "ui",
-				label: "UI",
+				id: "advanced-ui",
+				label: "Advanced · UI",
 				items: [
 					expandedInputSetting,
 					expandedOutputSetting,
 					expandedMaxSetting,
 					toolLabelClipSetting,
-					stickyUserMessageSetting,
 					scrollButtonSetting,
 					cleanCopySetting,
-					startupHeaderSetting,
 					startupAnimationSetting,
 					sloganSetting,
 					sloganColorSetting,
 					quietStartupSetting,
-					scrollStepSetting,
 					completionBellSetting,
 					livePreviewLinesSetting,
 					streamThrottleSetting,
@@ -1563,11 +1586,9 @@ export async function showCcstylePanel(
 				],
 			},
 			{
-				id: "diff",
-				label: "Diff",
+				id: "advanced-diff",
+				label: "Advanced · Diff",
 				items: [
-					diffViewSetting,
-					diffIndicatorSetting,
 					diffPaletteSetting,
 					diffSplitSetting,
 					diffCollapsedSetting,
@@ -1577,33 +1598,30 @@ export async function showCcstylePanel(
 				],
 			},
 			{
-				id: "thinking",
-				label: "Thinking",
+				id: "advanced-thinking",
+				label: "Advanced · Thinking",
 				items: [
 					thinkingTitleSetting,
 					thinkingPreviewSetting,
 					completedThinkingPreviewSetting,
 					thinkingAnimationSetting,
 					thinkingExpandedSetting,
-					thinkingLiveSummarySetting,
 					thinkingSummaryLimitSetting,
 					thinkingDocumentMaxLinesSetting,
 					showRawThinkingSetting,
 				],
 			},
 			{
-				id: "footer",
-				label: "Footer",
+				id: "advanced-footer",
+				label: "Advanced · Footer",
 				items: [
 					customFooterSetting,
-					footerContextLimitSetting,
 					footerTokenRateSetting,
 					footerTokenRateModeSetting,
 					footerTokenRateTtftSetting,
 					footerSessionTokensSetting,
 					footerCurrencySetting,
 					footerCurrencyRateSetting,
-					footerNerdIconsSetting,
 					footerGitStatsSetting,
 					pluginChipsSetting,
 				],

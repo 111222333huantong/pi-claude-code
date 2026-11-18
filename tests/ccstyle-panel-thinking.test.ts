@@ -45,9 +45,9 @@ test("Completed preview accepts custom numbers and follow while retaining preset
 		refreshCurrentTranscript() {},
 	});
 	try {
-		// Tab order is Style / Features / UI / Diff / Thinking: inserting or reordering a tab
-		// before Thinking means updating the 4 Tab presses and 2 arrow downs below.
-		for (let i = 0; i < 4; i++) panel.handleInput("\t");
+		// Tab order: Essentials / Adv·Style / Adv·Features / Adv·UI / Adv·Diff / Adv·Thinking.
+		// 走到 Thinking 需 5 次 Tab；Completed preview 在 Thinking 分组第 3 行（2 次 ↓）。
+		for (let i = 0; i < 5; i++) panel.handleInput("\t");
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\x1b[B");
 		panel.handleInput("\r");

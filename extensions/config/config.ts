@@ -239,6 +239,65 @@ export const EXCLUDE_RENDERER_CANDIDATES = [
 	"wait",
 ];
 
+/**
+ * 已隐藏配置键（仍读旧值、行为生效，但不进面板/文档——新用户不可见）。
+ * 按 Terraform/GitLab deprecation 模式：功能冻结、配置兼容，2.x 可考虑移除 normalize。
+ * 彻底删的键（startupSlogan/startupSloganColor/scrollButtonMode）不列于此——已从 Config 移除。
+ */
+export const DEPRECATED_CONFIG_KEYS = new Set<keyof Config>([
+	// Diff 细分调优——默认值已合理，过度细分
+	"diffPalette",
+	"diffSplitMinWidth",
+	"writeDiffCollapsedLines",
+	"diffCollapsedPreviewLines",
+	"diffWordWrap",
+	// 展开卡行数——自适应已合理
+	"expandedPreviewMaxLines",
+	"expandedInputMaxLines",
+	"expandedOutputMaxLines",
+	"toolLabelClip",
+	// Thinking 细分调优
+	"useSummaryTitlesAsThinkingTitle",
+	"previewLines",
+	"completedPreviewLines",
+	"animationIntervalMs",
+	"thinkingExpandedMaxLines",
+	"thinkingSummaryLimit",
+	"thinkingDocumentMaxLines",
+	// UI 细节——默认值已最优
+	"liveToolPreviewLines",
+	"streamThrottleMs",
+	"cleanCopy",
+	"startupAnimation",
+	"quietStartup",
+	// 功能开关——"true 更好"型，不该关
+	"enableSessionReference",
+	"enableSubagentAutocomplete",
+	"enableContextCommand",
+	"enableAgentSummary",
+	"enableWorkingMessage",
+	"enableAliases",
+	"enableImagePaster",
+	"enableClipboardPaste",
+	"enableEscSteer",
+	"enableDoubleEscClear",
+	"enableCompactionProgress",
+	"enableMarkdownEnhance",
+	"enableEditorPrefix",
+	// Footer 细节
+	"enableCustomFooter",
+	"footerTokenRate",
+	"footerTokenRateMode",
+	"footerTokenRateTtft",
+	"footerSessionTokens",
+	"footerCurrency",
+	"footerCurrencyRate",
+	"footerGitStatsMode",
+	"footerLine1Keys",
+	"footerLine2Keys",
+	"footerLine3Keys",
+]);
+
 export const DEFAULT_CONFIG: Config = {
 	mode: "on",
 	excludeRenderers: [],
@@ -623,67 +682,32 @@ export function mergeExcludeRendererCandidates(
 	return merged.sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * formatConfigStatus：只列 Essentials + Advanced 可见键——DEPRECATED_CONFIG_KEYS
+ * 里的项仍读值生效但不展示（diag 输出从 ~60 项收敛到 16 项）。
+ */
 export function formatConfigStatus(source: Config = config): string {
 	return [
+		// Essentials
 		`mode=${source.mode}`,
-		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
+		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
+		`scrollStep=${source.scrollStepLines}`,
+		`livePreview=${source.liveToolPreview ? `${source.liveToolPreviewLines} lines` : "off"}`,
+		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
-		`diffPalette=${source.diffPalette}`,
-		`diffSplitMin=${source.diffSplitMinWidth}`,
-		`editCollapsed=${source.editDiffCollapsedLines}`,
-		`writeCollapsed=${source.writeDiffCollapsedLines}`,
-		`collapsedPreview=${source.diffCollapsedPreviewLines}`,
-		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
-		`expandedMax=${source.expandedPreviewMaxLines}`,
-		`expandedInput=${source.expandedInputMaxLines}`,
-		`expandedOutput=${source.expandedOutputMaxLines}`,
-		`toolLabelClip=${source.toolLabelClip}`,
-		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
-		`thinkingPreview=${source.previewLines}`,
-		`thinkingPreviewDone=${source.completedPreviewLines ?? "follow"}`,
-		`thinkingAnimation=${source.animationIntervalMs}ms`,
-		`thinkingExpanded=${source.thinkingExpandedMaxLines}`,
 		`thinkingLive=${source.thinkingLiveSummary ? "on" : "off"}`,
-		`thinkingSummaryLimit=${source.thinkingSummaryLimit}`,
-		`thinkingDocumentMax=${source.thinkingDocumentMaxLines > 0 ? source.thinkingDocumentMaxLines : "off"}`,
-		`thinkingRaw=${source.showRawThinking ? "on" : "off"}`,
-		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
-		`startupAnimation=${source.startupAnimation ? "on" : "off"}`,
-		`reduceAnimations=${source.reduceAnimations ? "on" : "off"}`,
-		`startupSlogan=${source.startupSlogan ? `"${source.startupSlogan}"` : "off"}`,
-		`quietStartup=${source.quietStartup ? "on" : "off"}`,
-		`scrollStep=${source.scrollStepLines}`,
-		`bellAfter=${source.completionBellAfterSec}s`,
-		`stickyUserMessage=${source.stickyUserMessage ? "on" : "off"}`,
-		`livePreview=${source.liveToolPreview ? `${source.liveToolPreviewLines} lines` : "off"}`,
-		`streamThrottle=${source.streamThrottleMs > 0 ? `${source.streamThrottleMs}ms` : "off"}`,
-		`scrollButton=${source.scrollButtonMode}`,
-		`cleanCopy=${source.cleanCopy ? "on" : "off"}`,
-		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
-		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
-		`context=${source.enableContextCommand ? "on" : "off"}`,
-		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
-		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
-		`aliases=${source.enableAliases ? "on" : "off"}`,
-		`imagePaster=${source.enableImagePaster ? "on" : "off"}`,
-		`pathLinks=${source.enablePathHyperlinks ? "on" : "off"}`,
-		`clipboardPaste=${source.enableClipboardPaste ? "on" : "off"}`,
-		`escSteer=${source.enableEscSteer ? "on" : "off"}`,
-		`doubleEscClear=${source.enableDoubleEscClear ? "on" : "off"}`,
-		`markdownEnhance=${source.enableMarkdownEnhance ? "on" : "off"}`,
-		`editorPrefix=${source.enableEditorPrefix ? "on" : "off"}`,
-		`footer=${source.enableCustomFooter ? "on" : "off"}`,
-		`footerTokenRate=${source.footerTokenRate ? "on" : "off"}`,
-		`footerTokenRateMode=${source.footerTokenRateMode}`,
-		`footerTokenRateTtft=${source.footerTokenRateTtft ? "on" : "off"}`,
-		`footerSessionTokens=${source.footerSessionTokens ? "on" : "off"}`,
-		`footerCurrency=${source.footerCurrency}`,
-		`footerRate=${source.footerCurrencyRate ?? "-"}`,
 		`footerIcons=${source.footerNerdIcons === false ? "plain" : source.footerNerdIcons === true ? "nerd" : "auto"}`,
-		`footerGitStats=${source.footerGitStatsMode}`,
 		`footerContextLimit=${source.footerContextLimit}`,
+		`pathLinks=${source.enablePathHyperlinks ? "on" : "off"}`,
+		// Advanced（保留可见的 5 项）
+		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
+		`editCollapsed=${source.editDiffCollapsedLines}`,
+		`bellAfter=${source.completionBellAfterSec}s`,
+		`thinkingRaw=${source.showRawThinking ? "on" : "off"}`,
 		formatFooterChipSummary(source),
+		// 运行时状态（非配置但值得看）
+		`reduceAnimations=${source.reduceAnimations ? "on" : "off"}`,
 	].join(" · ");
 }
 

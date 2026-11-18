@@ -231,7 +231,8 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ mode: "invalid" }).mode, "on");
 	assert.equal(normalizeConfig({}).enableMarkdownEnhance, true);
 	assert.equal(normalizeConfig({ enableMarkdownEnhance: false }).enableMarkdownEnhance, false);
-	assert.match(formatConfigStatus(normalizeConfig({})), /markdownEnhance=on/);
+	// markdownEnhance 已进 DEPRECATED_CONFIG_KEYS——不展示在 status（仍读值生效）。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /markdownEnhance=/);
 	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({}).toolLabelClip, 0);
@@ -244,13 +245,15 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ toolLabelClip: 9999 }).toolLabelClip, 500);
 	// 旧配置键 inputClip 自动迁移
 	assert.equal(normalizeConfig({ inputClip: 60 }).toolLabelClip, 60);
-	assert.match(formatConfigStatus(normalizeConfig({})), /toolLabelClip=0/);
+	// toolLabelClip 已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /toolLabelClip=/);
 	assert.equal(normalizeConfig({}).expandedInputMaxLines, 5);
 	assert.equal(normalizeConfig({}).expandedOutputMaxLines, 10);
 	assert.equal(normalizeConfig({ expandedInputMaxLines: 20 }).expandedInputMaxLines, 20);
 	assert.equal(normalizeConfig({ expandedOutputMaxLines: 40 }).expandedOutputMaxLines, 40);
-	assert.match(formatConfigStatus(normalizeConfig({})), /expandedInput=5/);
-	assert.match(formatConfigStatus(normalizeConfig({})), /expandedOutput=10/);
+	// expanded 行数已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /expandedInput=/);
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /expandedOutput=/);
 	assert.equal(normalizeConfig({}).completionBellAfterSec, 0);
 	assert.equal(normalizeConfig({ completionBellAfterSec: 30 }).completionBellAfterSec, 30);
 	assert.equal(normalizeConfig({ completionBellAfterSec: -5 }).completionBellAfterSec, 0);
@@ -264,15 +267,17 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).thinkingDocumentMaxLines, 0);
 	assert.equal(normalizeConfig({ thinkingDocumentMaxLines: 2000 }).thinkingDocumentMaxLines, 2000);
 	assert.equal(normalizeConfig({ thinkingDocumentMaxLines: -5 }).thinkingDocumentMaxLines, 0);
-	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDocumentMax=off/);
-	assert.match(
+	// thinkingDocumentMaxLines 已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /thinkingDocumentMax=/);
+	assert.doesNotMatch(
 		formatConfigStatus(normalizeConfig({ thinkingDocumentMaxLines: 500 })),
-		/thinkingDocumentMax=500/,
+		/thinkingDocumentMax=/,
 	);
 	assert.equal(normalizeConfig({}).showRawThinking, false);
 	assert.equal(normalizeConfig({ showRawThinking: true }).showRawThinking, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingLive=on/);
-	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingSummaryLimit=0/);
+	// thinkingSummaryLimit 已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /thinkingSummaryLimit=/);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingRaw=off/);
 
 	let completions: Array<{ value: string }> = [];

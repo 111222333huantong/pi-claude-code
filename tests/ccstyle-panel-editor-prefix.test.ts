@@ -76,8 +76,9 @@ function fakePanelUi() {
 
 const hooks = { applyStyleMode: () => {}, refreshCurrentTranscript: () => {} };
 
-/** 从 Style 页签走到 UI 页签最后的 Editor prefix 行（向上越界会回到末项）。 */
+/** 从 Essentials 页签走 3 次 Tab 到 Advanced·UI 页签末行 Editor prefix（向上越界回末项）。 */
 function selectEditorPrefixRow(panel: Panel): void {
+	panel.handleInput("\t");
 	panel.handleInput("\t");
 	panel.handleInput("\t");
 	panel.handleInput("\x1b[A");

@@ -22,6 +22,19 @@
   多 worktree 或 git 进程敏感场景的降级档（pi-powerline-footer #57 同口径）。
   `/statusline git full|branch|off` 切换，立即写配置、下一会话生效。
 
+### 重大精简（progressive disclosure）
+
+- **`/ccstyle` 面板重构为两层**：`Essentials`（11 项装完必须看一眼的）+
+  `Advanced`（点开进原 6 分组收剩余 63 项）。新手不被 74 项配置墙吓退；
+  调研依据 NN/g progressive-disclosure + CodeRabbit settings 教训 + lazygit
+  "think hard before adding options" VISION。
+- **`DEPRECATED_CONFIG_KEYS` 集合**（config.ts 新导出）：45 个键标注为
+  "隐藏但保留读"——仍 normalize 生效（不破坏老配置），但从面板、
+  `formatConfigStatus`、文档中消失。Terraform/GitLab deprecation 模式：
+  功能冻结、配置兼容，2.x 可考虑移除 normalize。
+- **`formatConfigStatus` 收敛**：从 ~60 项输出缩到 17 项——只列
+  Essentials + Advanced 可见键 + `reduceAnimations` 运行时状态。
+
 ### 新功能（续）
 
 - **`/undo` 命令**：回滚最近一次 `write` 工具调用的文件改动——恢复快照时

@@ -44,8 +44,12 @@ import {
 test("normalizeConfig defaults enableCustomFooter on and honors explicit off", () => {
 	assert.equal(normalizeConfig({}).enableCustomFooter, true);
 	assert.equal(normalizeConfig({ enableCustomFooter: false }).enableCustomFooter, false);
-	assert.match(formatConfigStatus(normalizeConfig({})), /footer=on/);
-	assert.match(formatConfigStatus(normalizeConfig({ enableCustomFooter: false })), /footer=off/);
+	// enableCustomFooter 已进 DEPRECATED——status 不展示（仍读值生效）。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footer=on/);
+	assert.doesNotMatch(
+		formatConfigStatus(normalizeConfig({ enableCustomFooter: false })),
+		/footer=off/,
+	);
 	// 默认 auto：Ghostty/WezTerm/Kitty 等内置符号的终端走 nerd，其余回 plain。
 	assert.equal(normalizeConfig({}).footerNerdIcons, "auto");
 	assert.equal(normalizeConfig({ footerNerdIcons: true }).footerNerdIcons, true);
@@ -62,18 +66,19 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 	assert.equal(normalizeConfig({}).footerTokenRateMode, "average");
 	assert.equal(normalizeConfig({ footerTokenRateMode: "live" }).footerTokenRateMode, "live");
 	assert.equal(normalizeConfig({ footerTokenRateMode: "instant" }).footerTokenRateMode, "average");
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerTokenRate=on/);
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerTokenRateMode=average/);
+	// footerTokenRate/Mode/Ttft/SessionTokens 已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footerTokenRate=/);
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footerTokenRateMode=/);
 	assert.equal(normalizeConfig({}).footerTokenRateTtft, true);
 	assert.equal(normalizeConfig({ footerTokenRateTtft: false }).footerTokenRateTtft, false);
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerTokenRateTtft=on/);
-	assert.match(
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footerTokenRateTtft=/);
+	assert.doesNotMatch(
 		formatConfigStatus(normalizeConfig({ footerTokenRateTtft: false })),
-		/footerTokenRateTtft=off/,
+		/footerTokenRateTtft=/,
 	);
 	assert.equal(normalizeConfig({}).footerSessionTokens, false);
 	assert.equal(normalizeConfig({ footerSessionTokens: true }).footerSessionTokens, true);
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerSessionTokens=off/);
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footerSessionTokens=/);
 });
 
 test("footerGitStatsMode defaults to working and accepts only known modes", () => {
@@ -83,10 +88,11 @@ test("footerGitStatsMode defaults to working and accepts only known modes", () =
 	for (const value of ["invalid", "", true, 42, null]) {
 		assert.equal(normalizeConfig({ footerGitStatsMode: value }).footerGitStatsMode, "working");
 	}
-	assert.match(formatConfigStatus(normalizeConfig({})), /footerGitStats=working/);
-	assert.match(
+	// footerGitStatsMode 已进 DEPRECATED——status 不展示。
+	assert.doesNotMatch(formatConfigStatus(normalizeConfig({})), /footerGitStats=/);
+	assert.doesNotMatch(
 		formatConfigStatus(normalizeConfig({ footerGitStatsMode: "branch" })),
-		/footerGitStats=branch/,
+		/footerGitStats=/,
 	);
 });
 

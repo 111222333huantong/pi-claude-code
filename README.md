@@ -71,7 +71,7 @@ npm install --omit=optional pi-claude-code
 | 诊断                  | 版本、补丁链顺序、compat 漂移、footer 归属与配置路径                             | `/ccstyle diag`                                 |
 | Markdown 增强         | 方言 fence 的 Mermaid 渲染（`statediagram`、`classdiagram` 等）、圈数字转半角括号；标准 mermaid 交给 pi | 自动生效；`enableMarkdownEnhance: false` 关闭   |
 | Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `--tui-mode fullscreen`（pi 1.5 起默认） |
-| 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
+| 配置面板              | `Essentials`（11 项）+ `Advanced`（点开进原分组收其余）                        | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | 会话记录浏览          | 全屏浏览完整会话记录，工具输出全展开；对话区有可展开的 `!` 输出时把键让给 pi | `Ctrl+O`                                        |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
@@ -89,89 +89,99 @@ npm install --omit=optional pi-claude-code
 
 ## 配置
 
-`/ccstyle` 的行为由 `~/.pi/agent/pi-cc-extensions.json` 配置：
+`/ccstyle` 装完即用最顺手——**以下 11 项是 Essentials**（面板第一页），其余 60+ 高级/遗留键收在 `Advanced` 分组（点开面板按 Tab 切换）：
 
 ```jsonc
 {
-  // style
-  "mode": "on",                            // on / compact / off
-  "excludeRenderers": [],                  // 走原生渲染的工具名，匹配忽略大小写；Agent 始终保留专用渲染器
-
-  // features
-  "enableSessionReference": true,          // @ session 引用
-  "enableSubagentAutocomplete": true,      // @subagent:[name] 补全与委派提示
-  "enableContextCommand": true,            // /context 上下文检查
-  "enableAgentSummary": true,              // 每回合工具摘要
-  "enableWorkingMessage": true,            // Working... 底部 token/耗时
-  "enableAliases": true,                   // /clear、/exit 别名
-  "enableMarkdownEnhance": true,           // markdown 转换：Mermaid 方言渲染、圈数字转半角括号；false 让位给其他扩展
-  "enableEditorPrefix": true,              // 输入框 ❯ 前缀
-
-  // ui
-  "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
-  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
-  "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
-  "toolLabelClip": 0,                      // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
-  "showStartupHeader": true,               // 启动头（logo + tips）开关
-  "stickyUserMessage": true,               // fullscreen：userMessage 正文首行滚出视口上沿后钉住，直到下一条指令接手
-  "scrollButtonMode": "dock",              // fullscreen：dock 独占行 / native Pi 原生浮层
-  "cleanCopy": true,                       // fullscreen 选区复制去掉工具树线、代码框与展开提示
-
-  // diff
-  "diffViewMode": "auto",                  // 布局：auto / split / unified
-  "diffIndicatorMode": "bars",             // 变更指示：bars / classic / none
-  "diffPalette": "theme",                 // 配色：theme 跟随主题；claude 固定 CC 红绿 + 删行不高亮
-  "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
-  "editDiffCollapsedLines": "auto",        // edit 折叠：auto = 小 diff 全显、大 diff 只留摘要；数字 = 固定行数；0 = 仅摘要
-  "writeDiffCollapsedLines": 0,            // write 折叠行数，0 只留创建摘要
-  "diffCollapsedPreviewLines": "auto",     // 折叠预览：auto = 纯增/删最多 3 行、删加混合最多 5 行；0 = 只显示摘要
-  "diffWordWrap": true,                    // 长 diff 行换行
-
-  // thinking
-  "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
-  "previewLines": 3,                       // 预览内容行数（空行不占窗口），0 隐藏
-  "completedPreviewLines": null,           // 完成态预览行数；null = 跟随 previewLines，0 = 只显示状态行
-  "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
-  "thinkingExpandedMaxLines": 200,         // 旧版 raw preview 的展开行数；文档模式忽略
-  "thinkingLiveSummary": true,             // 文档模式：折叠两行 + 展开全文
-  "thinkingSummaryLimit": 0,               // 折叠态正文行数；0 = 只显示状态行（OpenCode 式）
-  "thinkingDocumentMaxLines": 0,           // 展开态尾部窗口行数；0 = 始终显示全文
-  "showRawThinking": false,                // 保留兼容；文档模式始终显示全文
-
-  // ui（本 fork 增补）
-  "showStartupHeader": true,               // 启动头（mascot + tips + Loaded）开关
-  "startupAnimation": true,                // 每进程播放一次 mascot 成长动画
-  "startupSlogan": "",                     // 启动头 slogan（空串关闭）；独立颜色见下
-  "startupSloganColor": "accent",          // slogan 独立色：accent / success / warning / error / text / muted
-  "quietStartup": true,                    // 隐藏原生启动资源列表，下会话生效
-  "scrollStepLines": 3,                    // fullscreen 滚轮步进
-  "completionBellAfterSec": 0,             // 回合超过 N 秒完成时响铃，0 关闭
-  "liveToolPreview": true,                 // bash 执行中/落定尾预览开关
-  "liveToolPreviewLines": 5,               // bash 尾预览行数
-  "streamThrottleMs": 100,                 // 流式正文合并间隔（ms）；0 = 每个 token 都重绘（长回复 CPU 高）
-
-  // features（本 fork 增补）
-  "enableImagePaster": true,               // 图片粘贴：剪贴板/拖拽图片转附件
-  "enableClipboardPaste": true,            // Ctrl+V 剪贴板粘贴（仅 Windows）
-  "enablePathHyperlinks": false,           // 工具标题文件路径 OSC8 超链接（默认关）
-  "enableEscSteer": true,                  // 空草稿 Esc 中断后续跑
-  "enableDoubleEscClear": true,            // 双击 Esc 清空草稿
-  "enableCustomFooter": true,               // 上游 footer（本 fork 状态栏关闭时回退用）
-  "footerTokenRate": true,                 // 输出速率芯片；false 隐藏
-  "footerTokenRateMode": "average",        // average：整段指令平均（avg）；live：最近 1 秒瞬时（live）
-  "footerTokenRateTtft": true,             // 速率芯片是否带 TTFT；false 只显示 tok/s
-  "footerSessionTokens": false,            // 会话累计 token 芯片（Σ 402k）；默认关
-  "footerCurrency": "USD",                 // 底栏费用的显示币种
-  "footerCurrencyRate": null,              // 1 单位费用换成多少显示币种；null 只换符号、不乘倍率
-  "footerNerdIcons": true,                 // git/缓存/token 用 Nerd Font 图标；false 为纯文本
-  "footerGitStatsMode": "working",         // working（默认）：未提交改动；branch：分支累计净改动
-  "footerContextLimit": "window",          // 上下文芯片分母：window（默认）｜compaction 自动压缩点｜both 压缩点+窗口；越过压缩点才压缩，可短暂超过 100%
-  "footerHiddenKeys": [],                  // 隐藏的芯片 key
-  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"], // 每行芯片顺序；内置项与插件同一套排布
-  "footerLine2Keys": ["cwd", "git"],       // cwd：目录和会话名；git：分支和改动。可换到任意行
-  "footerLine3Keys": []                    // 有可见芯片才占行
+  // Essentials（/ccstyle 第一页）
+  "mode": "on",                      // on / compact / off——整体观感主开关
+  "stickyUserMessage": true,         // 用户消息滚出视口后钉住直到下一条指令
+  "scrollStepLines": 3,              // 滚轮一次滚几行
+  "liveToolPreview": true,           // bash/grep 执行中实时预览输出
+  "showStartupHeader": true,         // 启动头 logo/tips 开关
+  "diffViewMode": "auto",            // diff 布局：auto / split / unified
+  "diffIndicatorMode": "bars",       // diff 变更指示：bars / signs / none
+  "thinkingLiveSummary": true,       // thinking 折叠两行+实时摘要
+  "footerNerdIcons": "auto",         // nerd/plain/auto——按终端探测
+  "footerContextLimit": "window",    // context 芯片分母：window/compaction/both
+  "enablePathHyperlinks": false      // 工具标题路径 OSC8 链接（默认关：有的终端不支持）
 }
 ```
+
+**Advanced**（点开 `/ccstyle` 按 Tab 进对应分组；仍读值生效，新用户不必配）：
+
+```jsonc
+{
+  // Advanced · Style
+  "excludeRenderers": [],            // 走原生渲染的工具名
+
+  // Advanced · Features（都是默认 true 的"锦上添花"开关）
+  "enableSessionReference": true,
+  "enableSubagentAutocomplete": true,
+  "enableContextCommand": true,
+  "enableAgentSummary": true,
+  "enableWorkingMessage": true,
+  "enableAliases": true,
+  "enableImagePaster": true,
+  "enableClipboardPaste": true,
+  "enableEscSteer": true,
+  "enableDoubleEscClear": true,
+  "enableCompactionProgress": true,
+  "enableMarkdownEnhance": true,
+  "enableEditorPrefix": true,
+
+  // Advanced · UI
+  "expandedInputMaxLines": 5,
+  "expandedOutputMaxLines": 10,
+  "expandedPreviewMaxLines": 40,
+  "toolLabelClip": 0,
+  "scrollButtonMode": "dock",
+  "cleanCopy": true,
+  "startupAnimation": true,
+  "startupSlogan": "",
+  "startupSloganColor": "accent",
+  "quietStartup": true,
+  "completionBellAfterSec": 0,
+  "liveToolPreviewLines": 5,
+  "streamThrottleMs": 100,
+
+  // Advanced · Diff
+  "diffPalette": "theme",
+  "diffSplitMinWidth": 120,
+  "editDiffCollapsedLines": "auto",
+  "writeDiffCollapsedLines": 0,
+  "diffCollapsedPreviewLines": "auto",
+  "diffWordWrap": true,
+
+  // Advanced · Thinking
+  "useSummaryTitlesAsThinkingTitle": true,
+  "previewLines": 3,
+  "completedPreviewLines": null,
+  "animationIntervalMs": 90,
+  "thinkingExpandedMaxLines": 200,
+  "thinkingSummaryLimit": 0,
+  "thinkingDocumentMaxLines": 0,
+  "showRawThinking": false,
+
+  // Advanced · Footer
+  "enableCustomFooter": true,
+  "footerTokenRate": true,
+  "footerTokenRateMode": "average",
+  "footerTokenRateTtft": true,
+  "footerSessionTokens": false,
+  "footerCurrency": "USD",
+  "footerCurrencyRate": null,
+  "footerGitStatsMode": "working",
+  "footerHiddenKeys": [],
+  "footerLine1Keys": ["model", "context", "cache", "rate", "cost", "tokens", "pi-usage"],
+  "footerLine2Keys": ["cwd", "git"],
+  "footerLine3Keys": []
+}
+```
+
+> **设计原则**：每个配置都意味着一次"让用户替设计者做决定"。本扩展的目标是
+> **开箱即用的 Claude Code 体验**——11 项 Essentials 覆盖 95% 场景，Advanced
+> 留给真正需要调优的用户，45 个已 deprecated 的键仍读值但不再展示。
 
 > `thinkingLiveSummary: true` 是新的文档模式：折叠只显示状态 + 最新一句正文，展开直接给全文，
 > 原文不会被摘要替换；provider 的 `**Section title**` 会作为文档小节保留。
@@ -183,10 +193,6 @@ npm install --omit=optional pi-claude-code
 > 竖线 `│` 与工具卡树线同列，正文与工具卡标题/展开节正文同列。
 > 展开态保留同一条淡竖线；折叠态只有状态行，鼠标悬停时的 `expand` / `collapse`
 > 内联在状态行末尾，hover 时提示提亮，整块都可点击。
-> 活动态用 OpenCode 同款 braille 蛇形点（`⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`，90ms 一帧），
-> 状态词保持静态；下方 working spinner 继续用自己的星形 glyph 和动词扫光。
-> 极端长文档可把 `thinkingDocumentMaxLines` 设为 2000 之类的尾部窗口；默认 `0` 仍是完整原文。
-> 流式渲染按两档节奏：正常按 `streamThrottleMs` 合并，积压超过 8 帧时短暂进入 catch-up 立即 drain。
 
 本 fork 状态栏走独立文件 `~/.pi/agent/statusline.json`（`/statusline` 开关，`/ccstyle` Features 页亦可切）。保存后自动生效；`/statusline worktree on|off` 可立即切换 L2 的 worktree 段：
 

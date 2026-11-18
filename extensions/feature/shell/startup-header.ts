@@ -255,7 +255,7 @@ export function resolveAgentsFlag(cwd: string, agentDir: string): string {
 
 /** 启动小贴士：右栏固定文案的轮换池，每进程随机一条（均有仓库内实现对应）。 */
 const STARTUP_TIPS = [
-	"Run /ccstyle to configure the look",
+	"Run /ccstyle to configure the look — Tab switches to Advanced for the rest",
 	"Run /context to inspect context usage",
 	"Mention @ to reference sessions and subagents",
 	"Double-Esc clears the draft",

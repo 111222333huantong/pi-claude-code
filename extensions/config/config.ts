@@ -148,6 +148,8 @@ export type Config = {
 	enableCompactionProgress: boolean;
 	/** markdown 转换：Mermaid 方言渲染、圈数字转半角括号。关掉让位给其他扩展。 */
 	enableMarkdownEnhance: boolean;
+	/** Fullscreen 助手正文表格的整表复制按钮；默认关。 */
+	enableTableCopy: boolean;
 	/** 输入框 `❯ ` 前缀（占左侧 2 列，颜色随 thinking/bash mode 联动）。 */
 	enableEditorPrefix: boolean;
 	enableCustomFooter: boolean;
@@ -286,6 +288,7 @@ export const DEPRECATED_CONFIG_KEYS = new Set<keyof Config>([
 	"enableEditorPrefix",
 	// Footer 细节
 	"enableCustomFooter",
+	"enableTableCopy",
 	"footerTokenRate",
 	"footerTokenRateMode",
 	"footerTokenRateTtft",
@@ -350,6 +353,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableDoubleEscClear: true,
 	enableCompactionProgress: true,
 	enableMarkdownEnhance: true,
+	enableTableCopy: false,
 	enableEditorPrefix: true,
 	enableCustomFooter: true,
 	footerTokenRate: true,
@@ -582,6 +586,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableDoubleEscClear: source.enableDoubleEscClear !== false,
 		enableCompactionProgress: source.enableCompactionProgress !== false,
 		enableMarkdownEnhance: source.enableMarkdownEnhance !== false,
+		enableTableCopy: source.enableTableCopy === true,
 		enableEditorPrefix: (source.enableEditorPrefix ?? source.enableInputPrompt) !== false, // 兼容旧配置键
 		enableCustomFooter: source.enableCustomFooter !== false,
 		footerTokenRate: source.footerTokenRate !== false,

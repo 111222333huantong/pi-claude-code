@@ -3,6 +3,14 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
+## 上游合并 v1.0.21（minuque/pi-cc-extensions）
+
+- Markdown 表格可整表复制为 TSV、CSV 或 Markdown（默认关闭，`enableTableCopy`）——
+  已进本 fork 的 Advanced · Features 分组。
+
+- 表格复制的边界交互与悬停绘制收紧，复制范围不再越界。（#102，by @tarnish233）
+  Table copy edges and hover drawing are tightened, so the copy range no longer overflows. (#102, by @tarnish233)
+
 ## Unreleased — 生态调研对标优化
 
 本轮改动来自对 Codex / Grok Build / opencode / Claude Code 四家 TUI 源码

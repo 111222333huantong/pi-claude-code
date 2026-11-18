@@ -128,6 +128,7 @@ npm install --omit=optional pi-claude-code
   "enableDoubleEscClear": true,
   "enableCompactionProgress": true,
   "enableMarkdownEnhance": true,
+  "enableTableCopy": false,               // TSV/CSV/Markdown 整表复制（助手正文）
   "enableEditorPrefix": true,
 
   // Advanced · UI

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MarkdownTransformContext } from "@earendil-works/pi-coding-agent";
 import { diagramKind, render as renderMermaid, sourceBox } from "grok-mermaid";
 import { installCodeBlockBox } from "./tool/code-block.ts";
 
@@ -467,6 +467,28 @@ function normalizeMultilineLinks(markdown: string): string {
 // ============================================================================
 // 注册
 // ============================================================================
+
+export const MARKDOWN_ENHANCE_MESSAGE_TYPES: readonly string[] = [
+	"user",
+	"assistant",
+	"assistant-thinking",
+	"custom",
+	"summary",
+];
+
+/** Pure conversion so the package entry point can share Pi's single transformer slot. */
+export function transformMarkdown(
+	markdown: string,
+	context?: Partial<MarkdownTransformContext>,
+): string {
+	const { messageType, isStreaming = false } = context ?? {};
+	// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
+	if (messageType === "assistant-thinking") return markdown;
+	markdown = normalizeMultilineLinks(markdown);
+	if (isStreaming) return markdown;
+	markdown = deCircled(markdown);
+	return renderDiagrams(markdown, context);
+}
 
 export default function (pi: ExtensionAPI): void {
 	// 代码块套框（Markdown.render 后处理，与 transformer 槽位无关）。

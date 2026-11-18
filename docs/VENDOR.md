@@ -298,3 +298,26 @@
 - [x] §6 上游 pending BOM/换行归一可选抄入（2026-09-16 P2.3 已做：BOM 去除 + CRLF 经
   `splitWriteContentLines` 归一 + `~` 展开 + `realpath` 工作区逃逸检查，见
   `extensions/renderer/tool/diff/pending-preview.ts`）
+
+## 14. 合并记录（`upstream/main 9a0ecdd` v1.0.21）
+
+- **基线**：`1c3a426`（v1.0.20）→ `9a0ecdd`（v1.0.21），3 个提交
+  （`0428c70` Markdown 表格整表复制、`9ffa572`/`ae0e2a2` 边界与默认关闭修复）。
+- **收进**：`extensions/renderer/table-copy.ts`（fullscreen 助手正文表格
+  TSV/CSV/Markdown 整表复制 + hover 高亮）；`enableTableCopy` 配置键
+  （上游默认关）；3 个上游测试文件（~870 行）。
+- **与本 fork 精简的协调**：`enableTableCopy` 进 `DEPRECATED_CONFIG_KEYS`
+  并在面板 `Advanced · Features` 分组保留开关；`formatConfigStatus` 不展示。
+- **类型垫片**：上游用 `MarkdownMessageType` / `MarkdownTransformerOptions`
+  （pi ≥1.5.x 运行时支持 custom/summary/changelog 消息类型，1.5.2 类型声明
+  未导出）→ 新增 `extensions/utils/pi-type-compat.ts` 本地别名；
+  `table-copy.ts` 的 `noteSource` 签名相应放宽，`registerMarkdownTransformer`
+  第二参维持 `@ts-expect-error`。
+- **冲突取舍**：`package.json` / `package-lock.json` / `CHANGELOG.md` /
+  `README.md` 取 ours（fork 包名/版本、Essentials/Advanced 文档结构），
+  上游功能描述折进 CHANGELOG 合并条目；`config.ts` 保 fork 的
+  Essentials/Advanced 精简状态输出；`markdown-enhance.ts` 取 HEAD
+  （`installCodeBlockBox` + 链式 transformer，上游的独立
+  `transformMarkdown`/`MARKDOWN_ENHANCE_MESSAGE_TYPES` 已等价存在）。
+- **结果**：`npm run typecheck`、`npm test` 全绿（1027 例，含上游 49 个
+  table-copy/edge-case 新测试）。

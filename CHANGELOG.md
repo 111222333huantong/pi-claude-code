@@ -3,15 +3,9 @@
 本文件记录本 fork（`pi-claude-code`）的对外变化。上游合并记录见
 [`docs/VENDOR.md`](./docs/VENDOR.md)。
 
-## 上游合并 v1.0.21（minuque/pi-cc-extensions）
+## [1.8.0] — 2026-11-18
 
-- Markdown 表格可整表复制为 TSV、CSV 或 Markdown（默认关闭，`enableTableCopy`）——
-  已进本 fork 的 Advanced · Features 分组。
-
-- 表格复制的边界交互与悬停绘制收紧，复制范围不再越界。（#102，by @tarnish233）
-  Table copy edges and hover drawing are tightened, so the copy range no longer overflows. (#102, by @tarnish233)
-
-## Unreleased — 生态调研对标优化
+本轮：上游 v1.0.21 合并 + 生态调研对标 UX/精简专项。
 
 本轮改动来自对 Codex / Grok Build / opencode / Claude Code 四家 TUI 源码
 （locode `tui-harness-study.md`，2026-07）与 pi 生态竞品的调研对标；
@@ -45,6 +39,8 @@
 
 ### 新功能（续）
 
+- **上游合并 v1.0.21**：Markdown 表格整表复制 TSV/CSV/Markdown（`enableTableCopy`，
+  默认关，Advanced · Features 可开）+ 复制边界/hover 交互收紧（上游 #102）。
 - **`/undo` 命令**：回滚最近一次 `write` 工具调用的文件改动——恢复快照时
   已存的旧内容；write 新建的文件按删除处理（快照语义：write 前不存在）。
   快照沿用 write override 的写前捕获（`absolutePath` + `capturedAt` 补记）。
